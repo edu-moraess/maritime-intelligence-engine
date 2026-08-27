@@ -1,0 +1,154 @@
+# Maritime Intelligence Engine (MIE)
+
+Plataforma de inteligência marítima para ingestão, validação, análise de trajetórias, visualização geoespacial e detecção explicável de anomalias comportamentais em dados **AIS reais**.
+
+> **Regra de integridade:** o MIE não implementa AIS sintético, embarcações simuladas, trajetórias falsas, fallback datasets ou resultados fabricados. Sem conexão válida com o AISStream, a aplicação apresenta um estado operacional vazio e informa `REAL AIS DATA UNAVAILABLE`.
+
+## Visão geral
+
+O sistema usa o [AISStream.io](https://aisstream.io/documentation) como provedor de dados em tempo real. A conexão é feita exclusivamente no servidor por WebSocket, e a chave é lida de uma variável de ambiente local ou de `st.secrets` no Streamlit Community Cloud. Conexões diretas do navegador ao AISStream não são usadas, de modo que a credencial nunca é exposta ao frontend [1].
+
+A interface foi desenhada como um posto operacional escuro e compacto, com o mapa como elemento principal. O estado de dados é sempre explícito: `LIVE AIS` quando mensagens reais estão sendo recebidas, `CONNECTING` durante a abertura/assinatura do WebSocket e `DISCONNECTED` quando não há disponibilidade. Dados de sessão não são reclassificados como históricos.
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    A[AISStream.io<br/>Real AIS WebSocket] --> B[Ingestion Service]
+    B --> C[Validation and normalization]
+    C --> D[Bounded session store]
+    D --> E[Trajectory features]
+    E --> F[Runtime PCA representation]
+    F --> G[Isolation Forest + explainable rules]
+    D --> H[Streamlit operational UI]
+    G --> H
+    I[Optional PostgreSQL/PostGIS adapter] -. future .-> D
+```
+
+O frontend Streamlit atua somente como camada de apresentação e orquestração da sessão. O contrato `AISProvider` permite a substituição futura por outro provedor real, sem criar um provedor sintético.
+
+| Camada | Implementação atual | Garantia de integridade |
+| --- | --- | --- |
+| Ingestão | `AISStreamProvider` com `websocket-client` | Decodifica frames binários UTF-8 e aceita somente mensagens `PositionReport` válidas |
+| Processamento | `processing.quality` e `trajectory.features` | Valida MMSI, coordenadas, velocidade, curso, duplicidades, gaps e saltos impossíveis |
+| Armazenamento | `ObservationStore` em memória por sessão | Limite de mensagens; nenhum dado é inventado ou persistido como live sem origem real |
+| Representação | Vetor de características + `StandardScaler` + PCA | Ajustado somente sobre tracks reais recebidos nesta sessão |
+| Anomalias | `IsolationForest` e regras explicáveis | Sinaliza anomalias comportamentais; nunca infere intenção hostil |
+| Interface | Streamlit + Plotly + PyDeck | Estados de conexão e indisponibilidade transparentes |
+
+## Fluxo de dados
+
+```mermaid
+sequenceDiagram
+    participant UI as Streamlit
+    participant P as AISStreamProvider
+    participant S as AISStream.io
+    participant E as Intelligence Engine
+
+    UI->>E: Collect real AIS
+    E->>P: open stream + server-side subscription
+    P->>S: WSS subscription with BoundingBoxes
+    S-->>P: binary UTF-8 JSON AIS frames
+    P-->>E: normalized observations only
+    E-->>UI: map, telemetry, quality and findings
+    S-->>P: close / interruption
+    P-->>E: DISCONNECTED + reason, no fallback data
+```
+
+A assinatura deve incluir uma caixa geográfica e ser enviada logo após a abertura da conexão. O AISStream documenta limite de três conexões por conta e por IP, necessidade de leitura contínua e reconexão com backoff; o cliente deste projeto usa uma janela finita por ação do operador e reconexão exponencial com jitter [1].
+
+## Estrutura do projeto
+
+```text
+maritime-intelligence-engine/
+├── app.py
+├── src/
+│   ├── analytics/traffic.py
+│   ├── anomaly/detector.py
+│   ├── config/settings.py
+│   ├── geospatial/map_data.py
+│   ├── ingestion/aisstream.py
+│   ├── ingestion/models.py
+│   ├── intelligence/engine.py
+│   ├── ml/embeddings.py
+│   ├── processing/quality.py
+│   ├── storage/memory.py
+│   ├── trajectory/features.py
+│   └── ui/
+│       ├── pages.py
+│       └── presentation.py
+├── tests/test_core.py
+├── .streamlit/config.toml
+├── .env.example
+├── Dockerfile
+├── docker-compose.yml
+├── packages.txt
+├── requirements.txt
+└── README.md
+```
+
+As áreas de trabalho disponíveis são Overview, Vessels, Vessel Intelligence, Trajectory Analysis, Behavior, Anomalies, Traffic, Data Quality e System. A navegação é feita no mesmo shell operacional, evitando a aparência de páginas Streamlit desconectadas.
+
+## Inteligência e limitações do modelo
+
+Não há um checkpoint público pré-treinado de trajetória incluído ou alegado neste repositório. O sistema informa explicitamente `none: runtime PCA/IsolationForest trained only on real AIS observations`. A representação é construída a partir de latitude, longitude, SOG, COG, heading change, delta temporal, distância percorrida e velocidade calculada; depois, o PCA e o detector são ajustados somente quando há observações reais suficientes.
+
+A detecção combina limiares explicáveis para velocidade, gaps, mudanças bruscas de curso e permanência, com o score do Isolation Forest sobre a projeção. O resultado deve ser interpretado como **behavioral anomaly detected**, não como ameaça, intenção ou atividade hostil. Sem histórico AIS real conectado, a busca de similaridade não é rotulada como histórica.
+
+## Configuração local
+
+Instale Python 3.11 ou superior, crie um ambiente virtual e instale as dependências:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
+
+Execute:
+
+```bash
+streamlit run app.py
+```
+
+Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas.
+
+## Streamlit Community Cloud
+
+Publique o repositório e configure `app.py` como arquivo principal. Em **Settings → Secrets**, adicione a chave como TOML:
+
+```toml
+AISSTREAM_API_KEY = "sua-chave-fornecida-pelo-aisstream"
+AIS_AREA_MIN_LAT = "25.835"
+AIS_AREA_MIN_LON = "-80.208"
+AIS_AREA_MAX_LAT = "25.603"
+AIS_AREA_MAX_LON = "-79.879"
+```
+
+Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
+
+## Testes
+
+A suíte cobre configuração sem credencial, parsing do envelope AISStream, descarte de mensagens que não são `PositionReport`, matemática de distância, guarda de trajetória insuficiente, qualidade vazia e inválida, ausência de anomalias sem observações e transparência sobre o não uso de checkpoint pré-treinado:
+
+```bash
+pytest -q
+python -m compileall app.py src tests
+```
+
+Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional.
+
+## Segurança e privacidade
+
+O `.gitignore` exclui `.env`, `st.secrets.toml`, bancos locais, caches de modelos e artefatos temporários. O repositório não contém credenciais. A aplicação não imprime a chave, não a envia ao browser e não registra o payload bruto no frontend.
+
+## Roadmap técnico
+
+A próxima evolução recomendada é adicionar um repositório PostgreSQL/PostGIS opcional com retenção e classificação explícita de `HISTORICAL AIS`. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. Por fim, é necessário avaliar qualquer checkpoint de séries temporais publicamente disponível antes de integrá-lo, mantendo a regra de que nenhum modelo é chamado de pré-treinado sem documentação verificável.
+
+## Referências
+
+[1]: https://aisstream.io/documentation "AISStream — Developer Documentation"
