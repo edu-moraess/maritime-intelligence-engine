@@ -34,7 +34,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     st.write("")
     left, center, right = st.columns([1.35, 4.8, 1.45], gap="small")
     with left:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         panel_title("Filters", "operator")
         vessel_type = st.selectbox("Vessel type", ["All observed AIS", "Position reports"], label_visibility="collapsed")
         min_speed = st.slider("Minimum SOG (kn)", 0.0, 40.0, 0.0, 0.5)
@@ -45,7 +44,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
         show_trails = st.checkbox("Observed trails", value=True)
         show_anomalies = st.checkbox("Behavioral findings", value=True)
         st.markdown("<p class='small-note'>All layers originate from current real AIS observations. No synthetic vessel or fallback layer is rendered.</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
     with center:
         panel_title("Operational map", f"{len(snapshot.vessels)} targets")
         rows = vessel_rows(snapshot.vessels)
@@ -59,7 +57,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
             _render_vessel_map(rows, snapshot, settings, show_heading, show_trails, show_anomalies)
             st.caption("WebGL map · AISStream position reports · click a vessel row in Vessels or Vessel Intelligence to inspect it")
     with right:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         panel_title("Intel panel", "selected")
         selected = _selected_vessel(snapshot.vessels)
         if selected is None:
@@ -72,7 +69,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
                 notice(f"Behavioral anomaly detected · {top.category} · score {top.score:.2f}", "red")
             else:
                 notice("No behavioral anomaly detected in the available observations.", "green")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
@@ -107,10 +103,8 @@ def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     if options:
         selected = st.selectbox("Inspect vessel", options, format_func=lambda value: _vessel_label(value, snapshot.vessels))
         st.session_state.selected_mmsi = selected
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         selected_vessel = next(v for v in snapshot.vessels if v.mmsi == selected)
         _vessel_compact(selected_vessel)
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
@@ -121,13 +115,11 @@ def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: Eng
         return
     left, right = st.columns([1.1, 2.5], gap="medium")
     with left:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         panel_title("Identity and telemetry", "AIS")
         _vessel_compact(selected)
         findings = [finding for finding in snapshot.findings if finding.mmsi == selected.mmsi]
         normality = max(0.0, 1.0 - max((f.score for f in findings), default=0.0))
         metric_strip({"NORMALITY": f"{normality:.2f}", "ANOMALY": f"{max((f.score for f in findings), default=0.0):.2f}", "REPORTS": selected.message_count})
-        st.markdown("</div>", unsafe_allow_html=True)
         st.write("")
         panel_title("Event timeline", "observed")
         if findings:
@@ -159,13 +151,13 @@ def render_trajectory_analysis(engine: MaritimeIntelligenceEngine, snapshot: Eng
         _render_track_chart(track, title="Current real AIS trajectory")
         _render_speed_chart(track)
     with right:
-        panel_title("Similarity search", "real AIS only")
+        panel_title("Similarity search", "real AIS session")
         if snapshot.embeddings is None:
             empty_state("At least three observed tracks with sufficient points are required for runtime similarity analysis.", "INSUFFICIENT REAL AIS DATA")
         else:
-            similar = engine.embedding_adapter.similar_tracks(track, engine.store.tracks())
+            similar = engine.embedding_adapter.similar_tracks(track, engine.store.tracks(), current_mmsi=selected.mmsi)
             if not similar:
-                empty_state("No comparable real AIS tracks are available in this session.", "NO HISTORICAL MATCH")
+                empty_state("No comparable real AIS tracks are available in this session.", "NO REAL AIS MATCH")
             else:
                 st.dataframe(
                     frame_for_table(pd.DataFrame([item.__dict__ for item in similar])),
@@ -291,7 +283,6 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         panel_title("Connection", "server-side")
         st.write(f"**Status:** `{status.state}`")
         st.write(f"**Reason:** {status.reason}")
@@ -299,15 +290,12 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         st.write(f"**Active vessels:** `{status.active_vessels:,}`")
         st.write(f"**Last ingestion:** `{_utc(status.last_message_at)}`")
         st.write(f"**Monitoring box:** `{settings.bbox[0]} → {settings.bbox[1]}`")
-        st.markdown("</div>", unsafe_allow_html=True)
     with right:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
         panel_title("Pipeline", "real AIS")
         st.markdown("`AISStream WebSocket`  →  `Validation`  →  `Trajectory features`  →  `Runtime PCA`  →  `IsolationForest / rules`  →  `Streamlit`")
         st.write("")
         st.write("Storage mode: bounded in-memory session store. PostgreSQL/PostGIS is an explicit future adapter, not required for the deployed disconnected state.")
         st.write("Model checkpoint: none. The current representation is fitted only on real observations received in this session.")
-        st.markdown("</div>", unsafe_allow_html=True)
     if status.state == "LIVE AIS":
         notice("The application is receiving real AIS position reports from AISStream.", "green")
     else:
@@ -321,6 +309,9 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
     layers = [
         pdk.Layer("ScatterplotLayer", data=rows, get_position="[longitude, latitude]", get_fill_color="color", get_radius=340, radius_min_pixels=3, radius_max_pixels=10, pickable=True),
     ]
+    (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
+    bbox_path = [[min_lon, min_lat], [max_lon, min_lat], [max_lon, max_lat], [min_lon, max_lat], [min_lon, min_lat]]
+    layers.append(pdk.Layer("PathLayer", data=[{"path": bbox_path}], get_path="path", get_color=[233, 184, 87, 180], get_width=2, width_min_pixels=1))
     if show_heading:
         layers.append(
             pdk.Layer(

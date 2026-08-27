@@ -25,22 +25,24 @@ class QualityReport:
 
 def validate_observation(observation: AISObservation) -> list[str]:
     errors: list[str] = []
-    if not observation.mmsi.isdigit() or not 7 <= len(observation.mmsi) <= 9:
+    if not observation.mmsi.isdigit() or len(observation.mmsi) != 9:
         errors.append("invalid_mmsi")
     if not isfinite(observation.latitude) or not -90 <= observation.latitude <= 90:
         errors.append("invalid_coordinates")
     if not isfinite(observation.longitude) or not -180 <= observation.longitude <= 180:
         errors.append("invalid_coordinates")
-    if observation.sog_knots is not None and (not isfinite(observation.sog_knots) or observation.sog_knots > 70):
+    if observation.sog_knots is not None and (not isfinite(observation.sog_knots) or not 0 <= observation.sog_knots <= 102.2):
         errors.append("impossible_speed")
-    if observation.cog_degrees is not None and not 0 <= observation.cog_degrees <= 360:
+    if observation.cog_degrees is not None and (not isfinite(observation.cog_degrees) or not 0 <= observation.cog_degrees < 360):
         errors.append("invalid_course")
+    if observation.heading_degrees is not None and (not isfinite(observation.heading_degrees) or not 0 <= observation.heading_degrees < 360):
+        errors.append("invalid_heading")
     if not observation.valid:
         errors.append("provider_invalid")
     return errors
 
 
-def build_quality_report(observations: list[AISObservation], stale_after_seconds: int = 180) -> QualityReport:
+def build_quality_report(observations: list[AISObservation], stale_after_seconds: int = 180, duplicate_records: int | None = None) -> QualityReport:
     if not observations:
         return QualityReport(0, 0, 0, 0, 0, 0, 0, 0, 0, 100.0)
     invalid = duplicate = missing = gaps = invalid_mmsi = impossible_speeds = impossible_jumps = stale = 0
@@ -67,6 +69,8 @@ def build_quality_report(observations: list[AISObservation], stale_after_seconds
             distance_km = haversine_km(previous.latitude, previous.longitude, current.latitude, current.longitude)
             if delta_seconds > 0 and distance_km / (delta_seconds / 3600) > 100:
                 impossible_jumps += 1
+    if duplicate_records is not None:
+        duplicate = max(duplicate, int(duplicate_records))
     total_issues = invalid + duplicate + missing + gaps + impossible_jumps
     quality = max(0.0, 100.0 * (1.0 - total_issues / max(1, len(observations))))
     return QualityReport(
@@ -90,4 +94,4 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     lat_delta = radians(lat2 - lat1)
     lon_delta = radians(lon2 - lon1)
     a = sin(lat_delta / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(lon_delta / 2) ** 2
-    return earth_radius_km * 2 * asin(sqrt(a))
+    return earth_radius_km * 2 * asin(sqrt(max(0.0, min(1.0, a))))

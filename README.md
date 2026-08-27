@@ -93,7 +93,7 @@ As áreas de trabalho disponíveis são Overview, Vessels, Vessel Intelligence, 
 
 Não há um checkpoint público pré-treinado de trajetória incluído ou alegado neste repositório. O sistema informa explicitamente `none: runtime PCA/IsolationForest trained only on real AIS observations`. A representação é construída a partir de latitude, longitude, SOG, COG, heading change, delta temporal, distância percorrida e velocidade calculada; depois, o PCA e o detector são ajustados somente quando há observações reais suficientes.
 
-A detecção combina limiares explicáveis para velocidade, gaps, mudanças bruscas de curso e permanência, com o score do Isolation Forest sobre a projeção. O resultado deve ser interpretado como **behavioral anomaly detected**, não como ameaça, intenção ou atividade hostil. Sem histórico AIS real conectado, a busca de similaridade não é rotulada como histórica.
+A detecção combina limiares explicáveis para velocidade, gaps, mudanças bruscas de curso e permanência, com o score do Isolation Forest sobre a projeção. Esses scores são heurísticos e exploratórios, não uma validação científica ou uma classificação operacional de risco. O resultado deve ser interpretado como **behavioral anomaly detected**, não como ameaça, intenção ou atividade hostil. Sem histórico AIS real conectado, a busca de similaridade usa somente a sessão real atual e não é rotulada como histórica. O campo `Timestamp` do PositionReport é tratado como segundo dentro do minuto UTC; para frescor, ordenação e stale state, o sistema usa o instante de recepção do frame e preserva o segundo AIS separadamente.
 
 ## Configuração local
 
@@ -106,7 +106,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
+Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. A alteração feita na interface substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
 
 Execute:
 
@@ -122,13 +122,13 @@ Publique o repositório e configure `app.py` como arquivo principal. Em **Settin
 
 ```toml
 AISSTREAM_API_KEY = "sua-chave-fornecida-pelo-aisstream"
-AIS_AREA_MIN_LAT = "25.835"
+AIS_AREA_MIN_LAT = "25.603"
 AIS_AREA_MIN_LON = "-80.208"
-AIS_AREA_MAX_LAT = "25.603"
+AIS_AREA_MAX_LAT = "25.835"
 AIS_AREA_MAX_LON = "-79.879"
 ```
 
-Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
+Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A alteração da caixa na interface é aplicada à próxima assinatura WebSocket e produz a indicação `Region updated. Collect again to open a new subscription.`. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
 
 ## Testes
 

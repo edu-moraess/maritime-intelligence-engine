@@ -115,6 +115,7 @@ class TrajectoryEmbeddingAdapter:
                 region=region,
                 cluster=cluster,
                 similarity=float(1.0 / (1.0 + distance)),
+                source_label="REAL AIS SESSION",
             )
             for distance, mmsi, cluster in distances[:limit]
         ]

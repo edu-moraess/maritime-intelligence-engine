@@ -28,7 +28,7 @@ class EngineSnapshot:
 
 
 class MaritimeIntelligenceEngine:
-    """Session-scoped coordinator for a real AIS monitoring region."""
+    """Session-scoped coordinator for one real AIS monitoring region."""
 
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
@@ -38,14 +38,21 @@ class MaritimeIntelligenceEngine:
             max_messages=settings.max_messages,
             max_vessels=settings.max_vessels,
             stale_after_seconds=settings.stale_after_seconds,
+            config_error=settings.config_error,
         )
-        self.store = ObservationStore(max_messages=settings.max_messages)
+        self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
-        if not settings.aisstream_api_key:
+        ready, reason = settings.validate_for_connection()
+        if not ready:
+            self.provider.config_error = reason
             self.provider.connect()
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
         self.last_collection_seconds: float = 0.0
+
+    @property
+    def region(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        return self.settings.bbox
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window; returns only actual observations received."""
@@ -53,7 +60,7 @@ class MaritimeIntelligenceEngine:
         started = time.monotonic()
         stop_event = threading.Event()
         collected: list[AISObservation] = []
-        for observation in self.provider.stream(stop_event):
+        for observation in self.provider.stream(stop_event, duration_seconds=duration):
             collected.append(observation)
             if time.monotonic() - started >= duration:
                 stop_event.set()
@@ -73,7 +80,7 @@ class MaritimeIntelligenceEngine:
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
         vessels = self.provider.fetch_vessels()
-        quality = build_quality_report(observations, self.settings.stale_after_seconds)
+        quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         return EngineSnapshot(
             observations=observations,
             vessels=vessels,
@@ -86,9 +93,13 @@ class MaritimeIntelligenceEngine:
 
     def clear_session_data(self) -> None:
         self.store.clear()
+        self.provider.reset_session()
         self.embeddings = None
         self.findings = []
+        if self.settings.config_error or not self.settings.aisstream_api_key:
+            self.provider.connect()
 
 
 def create_engine(settings: AppSettings) -> MaritimeIntelligenceEngine:
+    """Create an isolated engine for the current Streamlit session and region."""
     return MaritimeIntelligenceEngine(settings)

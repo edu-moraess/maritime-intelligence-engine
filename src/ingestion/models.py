@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
+
+
+IngestionState = Literal["DISCONNECTED", "CONNECTING", "LIVE AIS", "REAL AIS DATA UNAVAILABLE"]
+VALID_INGESTION_STATES = {"DISCONNECTED", "CONNECTING", "LIVE AIS", "REAL AIS DATA UNAVAILABLE"}
 
 
 @dataclass(frozen=True)
@@ -12,6 +16,7 @@ class AISObservation:
     mmsi: str
     latitude: float
     longitude: float
+    # Timestamp when the server ingested the frame; AIS Timestamp is only the UTC second within a minute.
     timestamp: datetime
     sog_knots: float | None = None
     cog_degrees: float | None = None
@@ -20,6 +25,7 @@ class AISObservation:
     message_type: str = "PositionReport"
     valid: bool = True
     navigational_status: int | None = None
+    ais_timestamp_second: int | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
@@ -28,6 +34,7 @@ class AISObservation:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "timestamp": self.timestamp.astimezone(timezone.utc).isoformat(),
+            "ais_timestamp_second": self.ais_timestamp_second,
             "sog_knots": self.sog_knots,
             "cog_degrees": self.cog_degrees,
             "heading_degrees": self.heading_degrees,
@@ -54,7 +61,7 @@ class VesselSnapshot:
 
 @dataclass(frozen=True)
 class IngestionStatus:
-    state: str
+    state: IngestionState
     reason: str
     connected_at: datetime | None
     last_message_at: datetime | None
@@ -83,4 +90,4 @@ class SimilarTrack:
     region: str
     cluster: int
     similarity: float
-    source_label: str = "HISTORICAL AIS"
+    source_label: str = "REAL AIS SESSION"

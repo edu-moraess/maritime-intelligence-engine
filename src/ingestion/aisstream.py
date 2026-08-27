@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import random
 import threading
 import time
@@ -15,6 +16,8 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Iterator
+
+from src.config.settings import _validate_bbox
 
 from .models import AISObservation, IngestionStatus, VesselSnapshot
 
@@ -43,7 +46,7 @@ class AISProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def stream(self, stop_event: threading.Event | None = None) -> Iterator[AISObservation]:
+    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
         raise NotImplementedError
 
 
@@ -57,12 +60,14 @@ class AISStreamProvider(AISProvider):
         max_messages: int = 3000,
         max_vessels: int = 1000,
         stale_after_seconds: int = 180,
+        config_error: str | None = None,
     ) -> None:
         self.api_key = api_key
         self.bbox = bbox
         self.max_messages = max_messages
         self.max_vessels = max_vessels
         self.stale_after_seconds = stale_after_seconds
+        self.config_error = config_error
         self._observations: list[AISObservation] = []
         self._tracks: dict[str, list[AISObservation]] = defaultdict(list)
         self._connected_at: datetime | None = None
@@ -86,6 +91,18 @@ class AISStreamProvider(AISProvider):
             websocket_status=self._websocket_status,
         )
 
+    def reset_session(self) -> None:
+        """Start an isolated collection window; never mix regions or stale targets."""
+        self._observations.clear()
+        self._tracks.clear()
+        self._connected_at = None
+        self._last_message_at = None
+        self._messages_received = 0
+        self._state = "DISCONNECTED"
+        self._reason = "Not connected."
+        self._websocket_status = "CLOSED"
+        self._latency_seconds = None
+
     def _subscription(self) -> dict:
         return {
             "APIKey": self.api_key,
@@ -94,29 +111,39 @@ class AISStreamProvider(AISProvider):
         }
 
     def connect(self) -> tuple[bool, str]:
+        if self.config_error:
+            self._set_failure(self.config_error)
+            return False, self._reason
         if websocket is None:
             self._set_failure("websocket-client is not installed.")
             return False, self._reason
         if not self.api_key:
             self._set_failure("AISSTREAM_API_KEY is not configured.")
             return False, self._reason
+        try:
+            corners = ((float(self.bbox[0][0][0]), float(self.bbox[0][0][1])), (float(self.bbox[0][1][0]), float(self.bbox[0][1][1])))
+            _validate_bbox(corners)
+        except (IndexError, TypeError, ValueError) as exc:
+            self._set_failure(f"Invalid AIS bounding box: {exc}")
+            return False, self._reason
         self._state = "CONNECTING"
         self._reason = "Opening AISStream WebSocket."
         self._websocket_status = "CONNECTING"
         return True, self._reason
 
-    def stream(self, stop_event: threading.Event | None = None) -> Iterator[AISObservation]:
-        """Read continuously for the caller's finite collection window.
-
-        The generator reconnects with exponential backoff and jitter after a
-        transient disconnect. It never manufactures an observation on failure.
-        """
+    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
+        """Read continuously for a finite collection window with bounded reconnects."""
         ready, _ = self.connect()
         if not ready:
             return
         stop_event = stop_event or threading.Event()
+        deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
+        messages_at_start = self._messages_received
         backoff = 1.0
+        opened = False
         while not stop_event.is_set() and self._messages_received < self.max_messages:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             socket = None
             try:
                 socket = websocket.create_connection(
@@ -125,6 +152,7 @@ class AISStreamProvider(AISProvider):
                     enable_multithread=True,
                     compression="deflate",
                 )
+                opened = True
                 self._connected_at = datetime.now(timezone.utc)
                 self._state = "CONNECTING"
                 self._reason = "Subscription sent; waiting for AIS messages."
@@ -132,6 +160,8 @@ class AISStreamProvider(AISProvider):
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
                 while not stop_event.is_set() and self._messages_received < self.max_messages:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        break
                     try:
                         socket.settimeout(1.0)
                         frame = socket.recv()
@@ -149,11 +179,15 @@ class AISStreamProvider(AISProvider):
             except Exception as exc:
                 self._websocket_status = "CLOSED"
                 self._state = "DISCONNECTED"
-                self._reason = _safe_reason(exc)
+                self._reason = _safe_reason(exc, self.api_key)
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
-                if stop_event.is_set():
+                if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     break
-                time.sleep(min(backoff + random.uniform(0, 0.4), 8.0))
+                sleep_for = min(backoff + random.uniform(0, 0.4), 8.0)
+                if deadline is not None:
+                    sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
                 backoff = min(backoff * 2.0, 8.0)
             finally:
                 if socket is not None:
@@ -161,10 +195,17 @@ class AISStreamProvider(AISProvider):
                         socket.close()
                     except Exception:
                         pass
-        if self._state == "CONNECTING" and not self._last_message_at:
-            self._state = "DISCONNECTED"
-            self._reason = "No real AIS messages received during the collection window."
-            self._websocket_status = "CLOSED"
+                self._websocket_status = "CLOSED"
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+        received_this_window = self._messages_received > messages_at_start
+        self._websocket_status = "CLOSED"
+        if not received_this_window and opened:
+            self._state = "REAL AIS DATA UNAVAILABLE"
+            self._reason = "No real AIS PositionReport was received during the collection window."
+        elif received_this_window and self._state == "CONNECTING":
+            self._state = "LIVE AIS"
+            self._reason = "Real AIS PositionReports received during the collection window."
 
     def _parse_frame(self, frame: str | bytes) -> AISObservation | None:
         try:
@@ -173,42 +214,50 @@ class AISStreamProvider(AISProvider):
             payload = json.loads(frame)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
             return None
-        if payload.get("MessageType") != "PositionReport":
+        if not isinstance(payload, dict) or payload.get("MessageType") != "PositionReport":
             return None
         meta = payload.get("MetaData") or {}
         report = (payload.get("Message") or {}).get("PositionReport") or {}
+        if not isinstance(meta, dict) or not isinstance(report, dict):
+            return None
         try:
             mmsi = str(report.get("UserID") or meta.get("MMSI") or "").strip()
+            if not _valid_mmsi(mmsi):
+                return None
             latitude = float(report.get("Latitude", meta.get("Latitude")))
             longitude = float(report.get("Longitude", meta.get("Longitude")))
-            if not mmsi or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            if not (math.isfinite(latitude) and math.isfinite(longitude) and -90 <= latitude <= 90 and -180 <= longitude <= 180):
                 return None
-            timestamp_value = report.get("Timestamp")
-            timestamp = _parse_timestamp(timestamp_value)
-            if timestamp is None:
-                timestamp = datetime.now(timezone.utc)
+            timestamp_second = _parse_ais_second(report.get("Timestamp"))
+            if timestamp_second is None:
+                return None
+            valid = report.get("Valid")
+            if not isinstance(valid, bool) or not valid:
+                return None
+            received_at = datetime.now(timezone.utc)
             return AISObservation(
                 mmsi=mmsi,
                 latitude=latitude,
                 longitude=longitude,
-                timestamp=timestamp,
-                sog_knots=_number(report.get("Sog")),
-                cog_degrees=_number(report.get("Cog")),
-                heading_degrees=_number(report.get("TrueHeading")),
+                timestamp=received_at,
+                sog_knots=_sog(report.get("Sog")),
+                cog_degrees=_cog(report.get("Cog")),
+                heading_degrees=_heading(report.get("TrueHeading")),
                 vessel_name=(str(meta.get("ShipName")).strip() if meta.get("ShipName") else None),
                 message_type="PositionReport",
-                valid=bool(report.get("Valid", True)),
+                valid=True,
                 navigational_status=_integer(report.get("NavigationalStatus")),
+                ais_timestamp_second=timestamp_second,
                 raw=payload,
             )
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
 
     def _record(self, observation: AISObservation) -> None:
         now = datetime.now(timezone.utc)
         self._messages_received += 1
         self._last_message_at = now
-        self._latency_seconds = max(0.0, (now - observation.timestamp).total_seconds())
+        self._latency_seconds = _estimate_latency_seconds(now, observation.ais_timestamp_second)
         self._state = "LIVE AIS"
         self._reason = "Receiving real AIS position reports from AISStream."
         self._observations.append(observation)
@@ -251,24 +300,51 @@ class AISStreamProvider(AISProvider):
         self._websocket_status = "CLOSED"
 
 
-def _parse_timestamp(value: object) -> datetime | None:
-    if value is None:
-        return None
-    try:
-        if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value), tz=timezone.utc)
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError, OverflowError):
-        return None
+def _valid_mmsi(value: str) -> bool:
+    return value.isdigit() and len(value) == 9
 
 
-def _number(value: object) -> float | None:
+def _parse_ais_second(value: object) -> int | None:
+    """Validate AIS Timestamp, defined as second-within-minute, not an epoch."""
+    if isinstance(value, bool):
+        return None
     try:
-        number = float(value)
-        return number if number >= 0 else None
+        second = int(value)
     except (TypeError, ValueError):
         return None
+    if isinstance(value, float) and value != second:
+        return None
+    return second if 0 <= second <= 59 else None
+
+
+def _estimate_latency_seconds(now: datetime, ais_second: int | None) -> float | None:
+    if ais_second is None:
+        return None
+    return float((now.second - ais_second) % 60)
+
+
+def _sog(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and 0 <= number <= 102.2 else None
+
+
+def _cog(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and 0 <= number < 360 else None
+
+
+def _heading(value: object) -> float | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return float(number) if 0 <= number <= 359 else None
 
 
 def _integer(value: object) -> int | None:
@@ -282,6 +358,8 @@ def _is_timeout(exc: Exception) -> bool:
     return "timed out" in str(exc).lower() or "timeout" in str(exc).lower()
 
 
-def _safe_reason(exc: Exception) -> str:
+def _safe_reason(exc: Exception, secret: str = "") -> str:
     text = str(exc).strip().replace("\n", " ")
+    if secret:
+        text = text.replace(secret, "[redacted]")
     return text[:240] or exc.__class__.__name__

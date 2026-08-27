@@ -12,9 +12,9 @@ Em **App settings → Secrets**, adicione os valores reais do ambiente operacion
 
 ```toml
 AISSTREAM_API_KEY = "<chave-real-do-AISStream>"
-AIS_AREA_MIN_LAT = "25.835"
+AIS_AREA_MIN_LAT = "25.603"
 AIS_AREA_MIN_LON = "-80.208"
-AIS_AREA_MAX_LAT = "25.603"
+AIS_AREA_MAX_LAT = "25.835"
 AIS_AREA_MAX_LON = "-79.879"
 AIS_COLLECTION_SECONDS = "2.5"
 AIS_MAX_MESSAGES = "3000"
