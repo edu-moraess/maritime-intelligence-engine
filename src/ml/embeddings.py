@@ -92,6 +92,7 @@ class TrajectoryEmbeddingAdapter:
         tracks: dict[str, list[AISObservation]],
         limit: int = 5,
         region: str = "configured AIS area",
+        current_mmsi: str | None = None,
     ) -> list[SimilarTrack]:
         if self.result is None:
             return []
@@ -100,6 +101,8 @@ class TrajectoryEmbeddingAdapter:
             return []
         distances: list[tuple[float, str, int]] = []
         for mmsi, projection, cluster in zip(self.result.mmsis, self.result.projection, self.result.clusters):
+            if current_mmsi is not None and mmsi == current_mmsi:
+                continue
             if tracks.get(mmsi) is current:
                 continue
             distance = float(np.linalg.norm(query - projection))

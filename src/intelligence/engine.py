@@ -41,6 +41,8 @@ class MaritimeIntelligenceEngine:
         )
         self.store = ObservationStore(max_messages=settings.max_messages)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
+        if not settings.aisstream_api_key:
+            self.provider.connect()
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
         self.last_collection_seconds: float = 0.0

@@ -4,6 +4,7 @@ from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.ingestion.models import AISObservation
+from src.intelligence.engine import MaritimeIntelligenceEngine
 from src.ml.embeddings import TrajectoryEmbeddingAdapter
 from src.processing.quality import build_quality_report, haversine_km, validate_observation
 from src.trajectory.features import summarize_track, trajectory_vector
@@ -62,3 +63,10 @@ def test_embedding_adapter_is_explicit_about_no_pretrained_checkpoint():
     adapter = TrajectoryEmbeddingAdapter()
     assert adapter.model_checkpoint.startswith("none:")
     assert adapter.fit({}) is None
+
+
+def test_engine_without_key_starts_in_explicit_disconnected_state():
+    settings = AppSettings(aisstream_api_key="", bbox=((25.8, -80.2), (25.6, -79.8)))
+    engine = MaritimeIntelligenceEngine(settings)
+    assert engine.snapshot().status.state == "DISCONNECTED"
+    assert "not configured" in engine.snapshot().status.reason.lower()
