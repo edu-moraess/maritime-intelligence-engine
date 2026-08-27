@@ -28,6 +28,18 @@ class ReadinessSnapshot:
     anomaly_count: int
     required_tracks: int = 3
 
+    @property
+    def multitrack_status(self) -> str:
+        if self.tracks_with_history == 0:
+            return "WAITING"
+        if self.tracks_with_history < self.required_tracks:
+            return "PARTIAL"
+        return "READY"
+
+    @property
+    def trajectory_status(self) -> str:
+        return "READY" if self.trajectory_ready else "WAITING"
+
 
 @dataclass
 class EngineSnapshot:
@@ -99,7 +111,7 @@ class MaritimeIntelligenceEngine:
             tracks_with_history=tracks_with_history,
             trajectory_ready=tracks_with_history >= 1,
             embeddings_ready=self.embeddings is not None,
-            embedding_status="READY" if self.embeddings is not None else "WAITING",
+            embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"),
             anomaly_count=len(self.findings),
         )
 

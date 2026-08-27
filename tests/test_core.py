@@ -317,3 +317,21 @@ def test_region_presets_are_valid_real_monitoring_boxes():
 def test_speed_distribution_does_not_replace_missing_sog_with_zero():
     vessel = VesselSnapshot("368207620", 25.7, -80.2, datetime.now(timezone.utc), None, None, None, None, 1)
     assert speed_distribution([vessel]).empty
+
+
+@pytest.mark.parametrize(
+    ("tracks_with_history", "expected"),
+    [(0, "WAITING"), (2, "PARTIAL"), (3, "READY"), (5, "READY")],
+)
+def test_readiness_multitrack_status_is_explicit(tracks_with_history, expected):
+    from src.intelligence.engine import ReadinessSnapshot
+
+    readiness = ReadinessSnapshot(
+        distinct_vessels=tracks_with_history,
+        tracks_with_history=tracks_with_history,
+        trajectory_ready=tracks_with_history > 0,
+        embeddings_ready=tracks_with_history >= 3,
+        embedding_status="READY" if tracks_with_history >= 3 else "WAITING",
+        anomaly_count=0,
+    )
+    assert readiness.multitrack_status == expected

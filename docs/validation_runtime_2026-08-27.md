@@ -30,3 +30,26 @@ The region combobox visibly exposed six choices: Miami, Santos, Singapore, Rotte
 
 
 Follow-up inspection showed that the Santos selection did persist after the Streamlit rerun. The sidebar displayed `Santos · -24.200, -46.800 → -23.700, -46.000`, and the app showed both the in-expander message and the top notice explaining that the previous session was cleared and a new real AIS collection is required. This supersedes the earlier transient interaction note for the actual region transition.
+
+
+## P0/P1 consolidation validation
+
+A fresh Streamlit instance on port 8502 booted successfully after restarting the process, avoiding stale module state from the previous process. The compact sidebar displayed `SESSION / CONTROL`, collection duration `60 s`, `Collect Real AIS`, `Clear Session`, a collapsed `REGION` Bounding Box control, essential `CONNECTION` state `NOT CONFIGURED`, and five workspace modules: Overview, Vessels, Movement & Behavior, Anomalies & Traffic, and Data & System.
+
+The Overview rendered `DISCONNECTED`, zero real observations, `TRACKS WITH HISTORY 0/3`, and explicit `WAITING` states for trajectory and multitrack analyses. No synthetic traffic or fallback layer appeared.
+
+
+## Navigation consolidation validation
+
+The consolidated `Movement & Behavior` module exposed the subareas `Trajectory Analysis`, `Behavior` and `Similarity`. Trajectory Analysis rendered its existing no-target state, and Similarity rendered `NO REFERENCE TRACK` with guidance to collect real AIS data, without runtime errors.
+
+
+The `Anomalies & Traffic` module exposed both subareas. Anomalies rendered zero findings with its no-fabrication explanation, and Traffic rendered the existing explicit unavailable state without charts when no real observations were present.
+
+
+The `Data & System` module exposed both `Data Quality` and `System`. Data Quality rendered its full empty-session quality table, while System rendered the server-side AISStream pipeline and `DISCONNECTED` state without exceptions.
+
+
+## Sidebar collapse validation
+
+The native Streamlit sidebar control hid the sidebar, expanded the main content area, and exposed the corresponding reopen control. Reopening restored the compact sidebar and its five-module navigation. No custom JavaScript or DOM hack was used.

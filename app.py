@@ -17,6 +17,7 @@ from src.ui.pages import (
     render_behavior,
     render_data_quality,
     render_overview,
+    render_similarity,
     render_system,
     render_traffic,
     render_trajectory_analysis,
@@ -28,6 +29,15 @@ from src.ui.presentation import inject_css, notice, render_header
 load_dotenv()
 st.set_page_config(page_title="Maritime Intelligence Engine", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 inject_css()
+
+
+NAVIGATION = {
+    "Overview": ("Overview",),
+    "Vessels": ("Fleet", "Vessel Intelligence"),
+    "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
+    "Anomalies & Traffic": ("Anomalies", "Traffic"),
+    "Data & System": ("Data Quality", "System"),
+}
 
 
 def _read_settings() -> AppSettings:
@@ -78,15 +88,40 @@ def _bbox_values(bbox: tuple[tuple[float, float], tuple[float, float]]) -> tuple
     return float(min_lat), float(min_lon), float(max_lat), float(max_lon)
 
 
+def _connection_state(settings: AppSettings) -> str:
+    if not settings.aisstream_api_key:
+        return "NOT CONFIGURED"
+    existing_engine = st.session_state.get("engine")
+    if existing_engine is None or getattr(existing_engine, "settings", None).bbox != settings.bbox:
+        return "DISCONNECTED"
+    state = existing_engine.provider.status.state
+    return state if state in {"LIVE AIS", "CONNECTING", "DISCONNECTED"} else "DISCONNECTED"
+
+
 def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool, bool]:
     region_changed = False
     with st.sidebar:
         st.markdown("<div class='brand'>MIE <span style='color:#79939b'>/ OPERATIONS</span></div>", unsafe_allow_html=True)
-        st.markdown("<div class='small-note' style='margin:.35rem 0 1rem'>Real AIS intelligence workspace</div>", unsafe_allow_html=True)
-        pages = ["Overview", "Vessels", "Vessel Intelligence", "Trajectory Analysis", "Behavior", "Anomalies", "Traffic", "Data Quality", "System"]
-        page = st.radio("Workspace", pages, label_visibility="collapsed")
-        st.markdown("<hr>", unsafe_allow_html=True)
-        with st.expander("Monitoring region", expanded=False):
+        st.markdown("<div class='small-note' style='margin:.25rem 0 .9rem'>Real AIS intelligence workspace</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='data-label'>SESSION / CONTROL</div>", unsafe_allow_html=True)
+        duration_options = list(COLLECTION_DURATION_OPTIONS)
+        duration_index = min(range(len(duration_options)), key=lambda index: abs(duration_options[index] - settings.collection_seconds))
+        selected_duration = st.selectbox(
+            "Collection duration",
+            duration_options,
+            index=duration_index,
+            format_func=lambda seconds: f"Collection duration · {seconds} s",
+            key="collection_duration_seconds",
+            label_visibility="collapsed",
+        )
+        if float(selected_duration) != settings.collection_seconds:
+            settings = _with_bbox(settings, settings.bbox, settings.config_error, collection_seconds=float(selected_duration))
+        collect = st.button("Collect Real AIS", use_container_width=True, type="primary", disabled=settings.config_error is not None)
+        clear = st.button("Clear Session", use_container_width=True)
+
+        st.markdown("<div class='data-label' style='margin-top:.8rem'>REGION</div>", unsafe_allow_html=True)
+        with st.expander("Bounding Box", expanded=False):
             active_bbox = st.session_state.get("active_bbox", settings.bbox)
             current_region = region_name_for_bbox(active_bbox)
             preset_index = REGION_OPTIONS.index(current_region) if current_region in REGION_OPTIONS else REGION_OPTIONS.index("Custom")
@@ -97,11 +132,11 @@ def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool
                     st.session_state[key] = value
                 st.caption(f"{selected_region} · {format_bbox(candidate_bbox)}")
             else:
-                st.caption("Custom Bounding Box · applied to the next real AIS subscription")
-                min_lat = st.number_input("Min latitude", value=float(active_bbox[0][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key="bbox_min_lat")
-                min_lon = st.number_input("Min longitude", value=float(active_bbox[0][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key="bbox_min_lon")
-                max_lat = st.number_input("Max latitude", value=float(active_bbox[1][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key="bbox_max_lat")
-                max_lon = st.number_input("Max longitude", value=float(active_bbox[1][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key="bbox_max_lon")
+                st.caption("Custom · applied to the next real AIS subscription")
+                min_lat = st.number_input("Min Latitude", value=float(active_bbox[0][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key="bbox_min_lat")
+                min_lon = st.number_input("Min Longitude", value=float(active_bbox[0][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key="bbox_min_lon")
+                max_lat = st.number_input("Max Latitude", value=float(active_bbox[1][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key="bbox_max_lat")
+                max_lon = st.number_input("Max Longitude", value=float(active_bbox[1][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key="bbox_max_lon")
                 candidate_bbox = ((min_lat, min_lon), (max_lat, max_lon))
             region_error: str | None = None
             try:
@@ -116,33 +151,22 @@ def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool
                 if candidate_bbox != settings.bbox:
                     settings = _with_bbox(settings, candidate_bbox)
                 if region_changed:
-                    st.warning("Region changed. The previous real AIS session was cleared; run a new collection for this area.")
+                    st.warning("Region changed. Previous session cleared; run a new real AIS collection.")
             else:
                 settings = _with_bbox(settings, active_bbox, region_error)
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown("<div class='data-label'>Collection window</div>", unsafe_allow_html=True)
-        duration_options = list(COLLECTION_DURATION_OPTIONS)
-        duration_index = min(range(len(duration_options)), key=lambda index: abs(duration_options[index] - settings.collection_seconds))
-        selected_duration = st.selectbox(
-            "Collection duration",
-            duration_options,
-            index=duration_index,
-            format_func=lambda seconds: f"{seconds} seconds",
-            key="collection_duration_seconds",
-            label_visibility="collapsed",
-        )
-        if float(selected_duration) != settings.collection_seconds:
-            settings = _with_bbox(settings, settings.bbox, settings.config_error, collection_seconds=float(selected_duration))
-        st.caption("The selected window is sent to the next real AIS WebSocket collection.")
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown("<div class='data-label'>Ingestion</div>", unsafe_allow_html=True)
-        can_collect = settings.config_error is None
-        collect = st.button("Collect real AIS", use_container_width=True, type="primary", disabled=not can_collect)
-        clear = st.button("Clear session observations", use_container_width=True)
-        st.markdown("<hr>", unsafe_allow_html=True)
-        key_state = "CONFIGURED" if settings.aisstream_api_key else "NOT CONFIGURED"
-        st.markdown(f"<div class='data-label'>AISSTREAM API KEY</div><div class='data-value'>{key_state}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='small-note' style='margin-top:.8rem'>Keys are read server-side from .env or Streamlit Secrets. They are never sent to the browser.</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='data-label' style='margin-top:.8rem'>CONNECTION</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='data-value'>{_connection_state(settings)}</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='data-label' style='margin-top:.8rem'>WORKSPACE</div>", unsafe_allow_html=True)
+        modules = list(NAVIGATION)
+        module = st.radio("Workspace module", modules, label_visibility="collapsed", key="workspace_module")
+        views = NAVIGATION[module]
+        if len(views) == 1:
+            page = views[0]
+        else:
+            page = st.radio(f"{module} subarea", views, label_visibility="collapsed", key=f"workspace_subarea_{module}")
+
     return settings, page, collect, clear, region_changed
 
 
@@ -151,7 +175,7 @@ def main() -> None:
     settings, page, collect, clear, region_changed = _render_sidebar(settings)
     engine = _engine_for(settings)
     if region_changed:
-        notice("Monitoring region changed. Previous session observations were cleared. Run Collect real AIS to open the new subscription.")
+        notice("Monitoring region changed. Previous session observations were cleared. Run Collect Real AIS to open the new subscription.")
     if clear:
         engine.clear_session_data()
         st.session_state.pop("selected_mmsi", None)
@@ -169,7 +193,7 @@ def main() -> None:
         notice(snapshot.status.state + ": " + snapshot.status.reason, "red" if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"} else "")
     if page == "Overview":
         render_overview(engine, snapshot, settings)
-    elif page == "Vessels":
+    elif page == "Fleet":
         render_vessels(engine, snapshot, settings)
     elif page == "Vessel Intelligence":
         render_vessel_intelligence(engine, snapshot, settings)
@@ -177,6 +201,8 @@ def main() -> None:
         render_trajectory_analysis(engine, snapshot, settings)
     elif page == "Behavior":
         render_behavior(engine, snapshot, settings)
+    elif page == "Similarity":
+        render_similarity(engine, snapshot, settings)
     elif page == "Anomalies":
         render_anomalies(engine, snapshot, settings)
     elif page == "Traffic":

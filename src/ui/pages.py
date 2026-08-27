@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import timezone
 
 import pandas as pd
@@ -10,12 +9,11 @@ import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
 
-from src.analytics.traffic import anomaly_counts, hourly_volume, observations_frame, speed_distribution
+from src.analytics.traffic import anomaly_counts, hourly_volume, speed_distribution
 from src.config.settings import AppSettings
-from src.geospatial.map_data import selected_trail, vessel_rows
+from src.geospatial.map_data import vessel_rows
 from src.ingestion.models import AnomalyFinding, VesselSnapshot
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
-from src.processing.quality import QualityReport
 from src.trajectory.features import enrich_track, track_to_frame
 from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
 
@@ -36,7 +34,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     left, center, right = st.columns([1.35, 4.8, 1.45], gap="small")
     with left:
         panel_title("Filters", "operator")
-        vessel_type = st.selectbox("Vessel type", ["All observed AIS", "Position reports"], label_visibility="collapsed")
         min_speed = st.slider("Minimum SOG (kn)", 0.0, 40.0, 0.0, 0.5)
         only_fresh = st.checkbox("Fresh reports only", value=False)
         st.markdown("<hr style='border-color:#1b3640'>", unsafe_allow_html=True)
@@ -90,10 +87,10 @@ def _render_readiness(snapshot: EngineSnapshot) -> None:
     panel_title("Analysis readiness", f"{readiness.tracks_with_history} tracks with history")
     metric_strip(
         {
-            "TRAJECTORY": "READY" if readiness.trajectory_ready else "WAITING",
-            "BEHAVIOR": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
-            "SIMILARITY": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
-            "ML ANOMALY": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+            "TRAJECTORY": readiness.trajectory_status,
+            "BEHAVIOR": f"{readiness.multitrack_status} · {readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+            "SIMILARITY": f"{readiness.multitrack_status} · {readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+            "ML ANOMALY": f"{readiness.multitrack_status} · {readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
         }
     )
 
@@ -190,20 +187,39 @@ def render_trajectory_analysis(engine: MaritimeIntelligenceEngine, snapshot: Eng
         _render_track_chart(track, title="Current real AIS trajectory")
         _render_speed_chart(track)
     with right:
-        panel_title("Similarity search", "real AIS session")
-        if snapshot.embeddings is None:
-            empty_state(_track_readiness_reason("Similarity", snapshot.readiness.tracks_with_history), "INSUFFICIENT REAL AIS DATA")
+        _render_similarity_search(engine, snapshot, track, selected.mmsi)
+
+
+def render_similarity(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+    st.subheader("Similarity search")
+    st.caption("Compare the selected trajectory only with sufficiently represented real AIS tracks from this session.")
+    selected = _select_vessel(snapshot, "Reference vessel")
+    if selected is None:
+        reason = _no_real_data_reason(snapshot.status.reason) if not snapshot.vessels else "Select an observed vessel to run a similarity search."
+        empty_state(reason, "NO REFERENCE TRACK")
+        return
+    track = engine.store.tracks().get(selected.mmsi, [])
+    if len(track) < 2:
+        empty_state(f"Similarity search requires at least 2 real AIS position reports for the reference vessel. Current: {len(track)}/2. Collect real AIS data for longer or select a denser monitoring region.", "INSUFFICIENT REAL AIS DATA")
+        return
+    _render_similarity_search(engine, snapshot, track, selected.mmsi)
+
+
+def _render_similarity_search(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, track: list, current_mmsi: str) -> None:
+    panel_title("Similarity search", "real AIS session")
+    if snapshot.embeddings is None:
+        empty_state(_track_readiness_reason("Similarity", snapshot.readiness.tracks_with_history), "INSUFFICIENT REAL AIS DATA")
+    else:
+        similar = engine.embedding_adapter.similar_tracks(track, engine.store.tracks(), current_mmsi=current_mmsi)
+        if not similar:
+            empty_state("No comparable real AIS tracks are available in this session.", "NO REAL AIS MATCH")
         else:
-            similar = engine.embedding_adapter.similar_tracks(track, engine.store.tracks(), current_mmsi=selected.mmsi)
-            if not similar:
-                empty_state("No comparable real AIS tracks are available in this session.", "NO REAL AIS MATCH")
-            else:
-                st.dataframe(
-                    frame_for_table(pd.DataFrame([item.__dict__ for item in similar])),
-                    hide_index=True,
-                    use_container_width=True,
-                )
-        notice("Historical comparison is disabled unless a real AIS historical source is connected. Session observations are not relabeled as historical.")
+            st.dataframe(
+                frame_for_table(pd.DataFrame([item.__dict__ for item in similar])),
+                hide_index=True,
+                use_container_width=True,
+            )
+    notice("Historical comparison is disabled unless a real AIS historical source is connected. Session observations are not relabeled as historical.")
 
 
 def render_behavior(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
