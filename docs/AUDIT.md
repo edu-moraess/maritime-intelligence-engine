@@ -47,3 +47,7 @@ The first post-hotfix browser capture did not provide a reliable application vie
 ## DOM-hotfix validation
 
 A fresh local browser session now renders the complete Overview without exceptions. It shows the corrected Bounding Box values, `DISCONNECTED` plus `REAL AIS DATA UNAVAILABLE` when no key is configured, and zero observations. Navigating to Vessels triggers a Streamlit rerun and renders its empty state cleanly. No `removeChild` error or runtime exception appeared during this validation pass.
+
+## Streamlit Cloud dependency-manifest hotfix
+
+The deployment log showed `apt-get` attempting to install the words from a comment in `packages.txt` (`#`, `No`, `OS`, `packages`, and so on). The file was corrected to an empty manifest because this project requires no operating-system packages. The resulting manifest contains no apt package tokens, while `pytest -q` passes all 34 tests and Python compilation remains clean.
