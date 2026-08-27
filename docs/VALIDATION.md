@@ -14,7 +14,7 @@ Data: 2026-08-27. Repositório: `edu-moraess/maritime-intelligence-engine`.
 | Streamlit navigation rerun | Overview → Vessels rendered without runtime or DOM exception |
 | Bounding Box UI reversal | Rejected with `min_lat must be strictly less than max_lat.` |
 | Valid region edit | Displayed `Region updated. Collect again to open a new subscription.` |
-| GitHub publication | Existing repository on branch `main`; hotfix push pending in this audit |
+| GitHub publication | Completed on branch `main` |
 
 The tests cover strict Bounding Box limits, partial and invalid runtime configuration, exact AISStream subscription fields, documented PositionReport parsing, invalid JSON/UTF-8 and non-position rejection, AIS second-of-minute timestamp handling, real-record state transition, no-message unavailability, trajectory math and insufficient tracks, quality validation, duplicate counting, bounded message/vessel storage, missing credentials, unsupported providers, session configuration errors, and explicit no-pretrained-checkpoint provenance. The test suite does not provide a synthetic traffic dataset to the application.
 
@@ -32,4 +32,4 @@ The repository excludes `.env`, Streamlit secrets, local databases, caches, comp
 
 ## Remaining user action
 
-After the hotfix is pushed, the user can create or refresh the Streamlit Community Cloud app, configure `AISSTREAM_API_KEY` and the four `AIS_AREA_*` values under Secrets, and perform the online `LIVE AIS` verification described in `docs/STREAMLIT_DEPLOY.md`. The agent is not performing the deployment.
+Hotfix commit `235727355b6ffef821e31dda7e5543139e8cc584` is on `origin/main`. The user can create or refresh the Streamlit Community Cloud app, configure `AISSTREAM_API_KEY` and the four `AIS_AREA_*` values under Secrets, and perform the online `LIVE AIS` verification described in `docs/STREAMLIT_DEPLOY.md`. The agent is not performing the deployment.
