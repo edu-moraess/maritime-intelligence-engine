@@ -11,16 +11,16 @@ def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
     rows: list[dict] = []
     for vessel in vessels:
         heading = vessel.heading_degrees if vessel.heading_degrees is not None else vessel.cog_degrees
-        heading = float(heading or 0.0)
-        end_lat, end_lon = heading_endpoint(vessel.latitude, vessel.longitude, heading)
+        heading = float(heading) if heading is not None else None
+        end_lat, end_lon = heading_endpoint(vessel.latitude, vessel.longitude, heading) if heading is not None else (None, None)
         rows.append(
             {
                 "mmsi": vessel.mmsi,
                 "name": vessel.vessel_name or "UNKNOWN VESSEL",
                 "latitude": vessel.latitude,
                 "longitude": vessel.longitude,
-                "sog_knots": vessel.sog_knots or 0.0,
-                "cog_degrees": vessel.cog_degrees or 0.0,
+                "sog_knots": vessel.sog_knots,
+                "cog_degrees": vessel.cog_degrees,
                 "heading_degrees": heading,
                 "last_update": vessel.last_update,
                 "stale": vessel.stale,

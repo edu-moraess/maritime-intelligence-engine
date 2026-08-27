@@ -16,6 +16,19 @@ from src.processing.quality import QualityReport, build_quality_report
 from src.storage.memory import ObservationStore
 
 
+@dataclass(frozen=True)
+class ReadinessSnapshot:
+    """Operational readiness derived only from the current real AIS session."""
+
+    distinct_vessels: int
+    tracks_with_history: int
+    trajectory_ready: bool
+    embeddings_ready: bool
+    embedding_status: str
+    anomaly_count: int
+    required_tracks: int = 3
+
+
 @dataclass
 class EngineSnapshot:
     observations: list[AISObservation]
@@ -25,6 +38,8 @@ class EngineSnapshot:
     status: IngestionStatus
     embeddings: EmbeddingResult | None
     summary: dict[str, float | int]
+    readiness: ReadinessSnapshot
+    last_collection_seconds: float
 
 
 class MaritimeIntelligenceEngine:
@@ -56,7 +71,7 @@ class MaritimeIntelligenceEngine:
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window; returns only actual observations received."""
-        duration = seconds if seconds is not None else self.settings.collection_seconds
+        duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started = time.monotonic()
         stop_event = threading.Event()
         collected: list[AISObservation] = []
@@ -77,9 +92,21 @@ class MaritimeIntelligenceEngine:
         self.embeddings = self.embedding_adapter.fit(tracks)
         self.findings = detect_anomalies(tracks, self.embeddings)
 
+    def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
+        tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
+        return ReadinessSnapshot(
+            distinct_vessels=len(tracks),
+            tracks_with_history=tracks_with_history,
+            trajectory_ready=tracks_with_history >= 1,
+            embeddings_ready=self.embeddings is not None,
+            embedding_status="READY" if self.embeddings is not None else "WAITING",
+            anomaly_count=len(self.findings),
+        )
+
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
         vessels = self.provider.fetch_vessels()
+        tracks = self.store.tracks()
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         return EngineSnapshot(
             observations=observations,
@@ -89,6 +116,8 @@ class MaritimeIntelligenceEngine:
             status=self.provider.status,
             embeddings=self.embeddings,
             summary=traffic_summary(vessels, observations, self.findings),
+            readiness=self._readiness(tracks),
+            last_collection_seconds=self.last_collection_seconds,
         )
 
     def clear_session_data(self) -> None:
@@ -96,6 +125,7 @@ class MaritimeIntelligenceEngine:
         self.provider.reset_session()
         self.embeddings = None
         self.findings = []
+        self.last_collection_seconds = 0.0
         if self.settings.config_error or not self.settings.aisstream_api_key:
             self.provider.connect()
 

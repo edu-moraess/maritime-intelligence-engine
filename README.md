@@ -55,7 +55,7 @@ sequenceDiagram
     P-->>E: DISCONNECTED + reason, no fallback data
 ```
 
-A assinatura deve incluir uma caixa geográfica e ser enviada logo após a abertura da conexão. O AISStream documenta limite de três conexões por conta e por IP, necessidade de leitura contínua e reconexão com backoff; o cliente deste projeto usa uma janela finita por ação do operador e reconexão exponencial com jitter [1].
+A assinatura deve incluir uma caixa geográfica e ser enviada logo após a abertura da conexão. O AISStream documenta limite de três conexões por conta e por IP, necessidade de leitura contínua e reconexão com backoff; o cliente deste projeto usa uma janela finita por ação do operador e reconexão exponencial com jitter [1]. Após cada coleta, o Overview exibe a duração efetiva, mensagens reais recebidas, vessels distintos, tracks com pelo menos dois pontos, status dos embeddings e quantidade de anomalias. Behavior, Similarity e ML Anomaly permanecem condicionados a pelo menos três tracks com histórico suficiente; o sistema não reduz esses requisitos para preencher a interface.
 
 ## Estrutura do projeto
 
@@ -106,7 +106,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. A alteração feita na interface substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
+Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
 
 Execute:
 
@@ -139,7 +139,7 @@ pytest -q
 python -m compileall app.py src tests
 ```
 
-Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional.
+Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos e o tratamento explícito de SOG ausente.
 
 ## Segurança e privacidade
 
@@ -147,7 +147,7 @@ O `.gitignore` exclui `.env`, `st.secrets.toml`, bancos locais, caches de modelo
 
 ## Roadmap técnico
 
-A próxima evolução recomendada é adicionar um repositório PostgreSQL/PostGIS opcional com retenção e classificação explícita de `HISTORICAL AIS`. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. Por fim, é necessário avaliar qualquer checkpoint de séries temporais publicamente disponível antes de integrá-lo, mantendo a regra de que nenhum modelo é chamado de pré-treinado sem documentação verificável.
+A próxima evolução recomendada é adicionar um repositório PostgreSQL/PostGIS opcional com retenção e classificação explícita de `HISTORICAL AIS`. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. A camada atual mantém a separação deliberada entre o estado live do provider e o `ObservationStore` da sessão; uma fonte de verdade única só deve ser adotada com testes de regressão específicos para seleção, clear session e atualização do mapa. Deep Learning permanece fora desta versão: quando houver histórico real suficiente, a V2 deverá comparar o baseline IsolationForest com um Autoencoder/VAE em janelas temporais com train/validation/test, sem dataset sintético ou checkpoint sem justificativa verificável.
 
 ## Referências
 

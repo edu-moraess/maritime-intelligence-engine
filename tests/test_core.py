@@ -4,9 +4,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.anomaly.detector import detect_anomalies
-from src.config.settings import DEFAULT_BBOX, AppSettings, _validate_bbox
+from src.analytics.traffic import speed_distribution
+from src.config.regions import REGION_PRESETS
+from src.config.settings import COLLECTION_DURATION_OPTIONS, DEFAULT_BBOX, AppSettings, _validate_bbox
 from src.ingestion.aisstream import AISStreamProvider
-from src.ingestion.models import AISObservation
+from src.ingestion.models import AISObservation, VesselSnapshot
 from src.intelligence.engine import MaritimeIntelligenceEngine
 from src.ml.embeddings import TrajectoryEmbeddingAdapter
 from src.processing.quality import build_quality_report, haversine_km, validate_observation
@@ -256,3 +258,62 @@ def test_engine_config_error_blocks_connection_and_data():
     assert snapshot.status.reason == "invalid region"
     assert snapshot.observations == []
     assert snapshot.vessels == []
+
+
+@pytest.mark.parametrize("seconds", COLLECTION_DURATION_OPTIONS)
+def test_collection_duration_options_are_preserved(seconds):
+    settings = AppSettings.from_runtime({"AISSTREAM_API_KEY": "server-side-key", "AIS_COLLECTION_SECONDS": str(seconds)})
+    assert settings.collection_seconds == float(seconds)
+
+
+def test_collection_duration_is_bounded_to_operational_window():
+    too_short = AppSettings.from_runtime({"AIS_COLLECTION_SECONDS": "10"})
+    too_long = AppSettings.from_runtime({"AIS_COLLECTION_SECONDS": "999"})
+    assert too_short.collection_seconds == 30.0
+    assert too_long.collection_seconds == 180.0
+
+
+def test_engine_passes_selected_collection_duration_to_provider(monkeypatch):
+    engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="server-side-key", bbox=DEFAULT_BBOX))
+    durations = []
+
+    def stream(stop_event=None, duration_seconds=None):
+        durations.append(duration_seconds)
+        if False:
+            yield None
+
+    monkeypatch.setattr(engine.provider, "stream", stream)
+    assert engine.collect(seconds=120) == 0
+    assert durations == [120.0]
+
+
+def test_readiness_uses_real_tracks_and_embedding_guard():
+    engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="server-side-key", bbox=DEFAULT_BBOX))
+    base = datetime.now(timezone.utc)
+    for index in range(3):
+        mmsi = f"36820762{index}"
+        engine.store.extend(
+            [
+                AISObservation(mmsi, 25.70 + index * 0.01, -80.20, base + timedelta(seconds=index * 30), 8.0 + index, 80.0),
+                AISObservation(mmsi, 25.715 + index * 0.01, -80.18, base + timedelta(seconds=index * 30 + 10), 11.0 + index * 2, 95.0 + index * 5),
+                AISObservation(mmsi, 25.72 + index * 0.01, -80.195, base + timedelta(seconds=index * 30 + 25), 9.0 + index, 82.0 + index * 4),
+            ]
+        )
+    engine._recompute()
+    readiness = engine.snapshot().readiness
+    assert readiness.distinct_vessels == 3
+    assert readiness.tracks_with_history == 3
+    assert readiness.trajectory_ready
+    assert readiness.embeddings_ready
+    assert readiness.embedding_status == "READY"
+
+
+def test_region_presets_are_valid_real_monitoring_boxes():
+    assert {"Miami", "Santos", "Singapore", "Rotterdam", "English Channel"} <= set(REGION_PRESETS)
+    for bbox in REGION_PRESETS.values():
+        _validate_bbox(bbox)
+
+
+def test_speed_distribution_does_not_replace_missing_sog_with_zero():
+    vessel = VesselSnapshot("368207620", 25.7, -80.2, datetime.now(timezone.utc), None, None, None, None, 1)
+    assert speed_distribution([vessel]).empty

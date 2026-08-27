@@ -10,6 +10,10 @@ from typing import Any
 
 # Semantic order is (min_lat, min_lon) then (max_lat, max_lon).
 DEFAULT_BBOX = ((25.603, -80.208), (25.835, -79.879))
+DEFAULT_COLLECTION_SECONDS = 60.0
+MIN_COLLECTION_SECONDS = 30.0
+MAX_COLLECTION_SECONDS = 180.0
+COLLECTION_DURATION_OPTIONS = (30, 60, 120, 180)
 
 
 def _secret_or_env(name: str, secrets: Any | None = None) -> str:
@@ -30,7 +34,7 @@ class AppSettings:
 
     aisstream_api_key: str
     bbox: tuple[tuple[float, float], tuple[float, float]] = DEFAULT_BBOX
-    collection_seconds: float = 2.5
+    collection_seconds: float = DEFAULT_COLLECTION_SECONDS
     max_messages: int = 3000
     max_vessels: int = 1000
     stale_after_seconds: int = 180
@@ -79,7 +83,10 @@ class AppSettings:
         return cls(
             aisstream_api_key=_secret_or_env("AISSTREAM_API_KEY", secrets).strip(),
             bbox=bbox,
-            collection_seconds=min(float_setting("AIS_COLLECTION_SECONDS", 2.5), 10.0),
+            collection_seconds=min(
+                max(float_setting("AIS_COLLECTION_SECONDS", DEFAULT_COLLECTION_SECONDS), MIN_COLLECTION_SECONDS),
+                MAX_COLLECTION_SECONDS,
+            ),
             max_messages=min(int_setting("AIS_MAX_MESSAGES", 3000), 10000),
             max_vessels=min(int_setting("AIS_MAX_VESSELS", 1000), 5000),
             stale_after_seconds=int_setting("AIS_STALE_AFTER_SECONDS", 180),

@@ -31,6 +31,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
             "LAST MESSAGE": _utc(snapshot.status.last_message_at),
         }
     )
+    _render_readiness(snapshot)
     st.write("")
     left, center, right = st.columns([1.35, 4.8, 1.45], gap="small")
     with left:
@@ -52,7 +53,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
         if only_fresh:
             rows = [row for row in rows if not row["stale"]]
         if not rows:
-            empty_state(snapshot.status.reason)
+            empty_state(_no_real_data_reason(snapshot.status.reason))
         else:
             _render_vessel_map(rows, snapshot, settings, show_heading, show_trails, show_anomalies)
             st.caption("WebGL map · AISStream position reports · click a vessel row in Vessels or Vessel Intelligence to inspect it")
@@ -71,11 +72,47 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
                 notice("No behavioral anomaly detected in the available observations.", "green")
 
 
+def _render_readiness(snapshot: EngineSnapshot) -> None:
+    readiness = snapshot.readiness
+    duration = f"{snapshot.last_collection_seconds:.1f} s" if snapshot.last_collection_seconds > 0 else "—"
+    panel_title("Session telemetry", "real AIS only")
+    metric_strip(
+        {
+            "COLLECTION": duration,
+            "REAL MESSAGES": f"{snapshot.status.messages_received:,}",
+            "DISTINCT VESSELS": readiness.distinct_vessels,
+            "TRACKS WITH HISTORY": f"{readiness.tracks_with_history}/{readiness.required_tracks}",
+            "EMBEDDINGS": readiness.embedding_status,
+            "ANOMALIES": readiness.anomaly_count,
+        }
+    )
+    st.write("")
+    panel_title("Analysis readiness", f"{readiness.tracks_with_history} tracks with history")
+    metric_strip(
+        {
+            "TRAJECTORY": "READY" if readiness.trajectory_ready else "WAITING",
+            "BEHAVIOR": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+            "SIMILARITY": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+            "ML ANOMALY": f"{readiness.tracks_with_history}/{readiness.required_tracks} TRACKS",
+        }
+    )
+
+
+def _no_real_data_reason(status_reason: str) -> str:
+    if status_reason:
+        return f"{status_reason} Collect real AIS data for longer or select a denser monitoring region."
+    return "Collect real AIS data for longer or select a denser monitoring region."
+
+
+def _track_readiness_reason(module: str, current: int, required: int = 3) -> str:
+    return f"{module} analysis requires {required} distinct vessels with sufficient trajectory history. Current: {current}/{required}. Collect real AIS data for longer or select a denser monitoring region."
+
+
 def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Observed vessels")
     st.caption("Current targets derived from real AIS position reports received by this session.")
     if not snapshot.vessels:
-        empty_state(snapshot.status.reason)
+        empty_state(_no_real_data_reason(snapshot.status.reason))
         return
     search = st.text_input("Search MMSI or vessel name", placeholder="e.g. 368207620", label_visibility="collapsed")
     filtered = snapshot.vessels
@@ -111,7 +148,8 @@ def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: Eng
     st.subheader("Vessel intelligence")
     selected = _select_vessel(snapshot, "Target vessel")
     if selected is None:
-        empty_state(snapshot.status.reason if not snapshot.vessels else "Select an observed vessel to inspect its profile.", "NO TARGET SELECTED")
+        reason = _no_real_data_reason(snapshot.status.reason) if not snapshot.vessels else "Select an observed vessel to inspect its profile."
+        empty_state(reason, "NO TARGET SELECTED")
         return
     left, right = st.columns([1.1, 2.5], gap="medium")
     with left:
@@ -130,7 +168,7 @@ def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: Eng
         panel_title("Observed trajectory", "current session")
         track = engine.store.tracks().get(selected.mmsi, [])
         if len(track) < 2:
-            empty_state("At least two real AIS position reports are required for a trajectory.", "INSUFFICIENT REAL AIS DATA")
+            empty_state(f"Trajectory analysis requires at least 2 real AIS position reports for this vessel. Current: {len(track)}/2. Collect real AIS data for longer or select a denser monitoring region.", "INSUFFICIENT REAL AIS DATA")
         else:
             _render_track_chart(track, title="Current real AIS track")
             _render_speed_chart(track)
@@ -140,11 +178,12 @@ def render_trajectory_analysis(engine: MaritimeIntelligenceEngine, snapshot: Eng
     st.subheader("Trajectory analysis")
     selected = _select_vessel(snapshot, "Current AIS track")
     if selected is None:
-        empty_state(snapshot.status.reason if not snapshot.vessels else "Select an observed vessel to analyze its trajectory.", "NO TRAJECTORY SELECTED")
+        reason = _no_real_data_reason(snapshot.status.reason) if not snapshot.vessels else "Select an observed vessel to analyze its trajectory."
+        empty_state(reason, "NO TRAJECTORY SELECTED")
         return
     track = engine.store.tracks().get(selected.mmsi, [])
     if len(track) < 2:
-        empty_state("A real track needs at least two position reports before it can be analyzed.", "INSUFFICIENT REAL AIS DATA")
+        empty_state(f"Trajectory analysis requires at least 2 real AIS position reports for this vessel. Current: {len(track)}/2. Collect real AIS data for longer or select a denser monitoring region.", "INSUFFICIENT REAL AIS DATA")
         return
     left, right = st.columns([1.65, 1], gap="medium")
     with left:
@@ -153,7 +192,7 @@ def render_trajectory_analysis(engine: MaritimeIntelligenceEngine, snapshot: Eng
     with right:
         panel_title("Similarity search", "real AIS session")
         if snapshot.embeddings is None:
-            empty_state("At least three observed tracks with sufficient points are required for runtime similarity analysis.", "INSUFFICIENT REAL AIS DATA")
+            empty_state(_track_readiness_reason("Similarity", snapshot.readiness.tracks_with_history), "INSUFFICIENT REAL AIS DATA")
         else:
             similar = engine.embedding_adapter.similar_tracks(track, engine.store.tracks(), current_mmsi=selected.mmsi)
             if not similar:
@@ -171,7 +210,7 @@ def render_behavior(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     st.subheader("Behavior analysis")
     result = snapshot.embeddings
     if result is None or len(result.projection) < 3:
-        empty_state("Runtime embeddings require at least three sufficiently long real AIS tracks.", "INSUFFICIENT REAL AIS DATA")
+        empty_state(_track_readiness_reason("Behavior", snapshot.readiness.tracks_with_history), "INSUFFICIENT REAL AIS DATA")
         return
     selected_mmsi = st.session_state.get("selected_mmsi")
     selected_idx = result.mmsis.index(selected_mmsi) if selected_mmsi in result.mmsis else None
@@ -203,7 +242,7 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
     findings = snapshot.findings
     metric_strip({"FINDINGS": len(findings), "VESSELS": len({f.mmsi for f in findings}), "HIGH SCORE": f"{max((f.score for f in findings), default=0):.2f}"})
     if not findings:
-        empty_state("Anomalies are calculated only from currently observed real AIS reports. No finding is fabricated when data is insufficient.", "NO BEHAVIORAL ANOMALIES")
+        empty_state("Anomalies are calculated only from currently observed real AIS reports. No finding is fabricated when data is insufficient. Collect real AIS data for longer or select a denser monitoring region if more history is required.", "NO BEHAVIORAL ANOMALIES")
         return
     categories = ["All categories"] + sorted({finding.category for finding in findings})
     selected_category = st.selectbox("Category", categories, label_visibility="collapsed")
@@ -232,19 +271,22 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     summary = snapshot.summary
     metric_strip({"ACTIVE VESSELS": summary["active_vessels"], "MESSAGES": f"{summary['messages']:,}", "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn", "REGIONS": summary["regions"], "ANOMALIES": summary["anomalies"]})
     if not snapshot.observations:
-        empty_state(snapshot.status.reason)
+        empty_state(_no_real_data_reason(snapshot.status.reason))
         return
     left, right = st.columns(2, gap="medium")
     with left:
         volume = hourly_volume(snapshot.observations)
-        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9"))
-        fig.update_layout(**_plot_layout("Observed message volume by UTC hour", "Hour", "Messages"), height=330)
+        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9", hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>"))
+        fig.update_layout(**_plot_layout("Observed AIS message volume by UTC hour", "UTC hour", "Real AIS messages"), height=330)
         st.plotly_chart(fig, use_container_width=True)
     with right:
         speeds = speed_distribution(snapshot.vessels)
-        fig = go.Figure(go.Histogram(x=speeds["sog_knots"], nbinsx=18, marker_color="#51c79b"))
-        fig.update_layout(**_plot_layout("Current SOG distribution", "Speed over ground (knots)", "Vessels"), height=330)
-        st.plotly_chart(fig, use_container_width=True)
+        if speeds.empty:
+            empty_state("SOG distribution requires real AIS reports with a valid speed-over-ground field.", "NO REAL SOG DATA")
+        else:
+            fig = go.Figure(go.Histogram(x=speeds["sog_knots"], nbinsx=18, marker_color="#51c79b", hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>"))
+            fig.update_layout(**_plot_layout("Observed speed-over-ground distribution", "SOG (knots)", "Vessels"), height=330)
+            st.plotly_chart(fig, use_container_width=True)
     counts = anomaly_counts(snapshot.findings)
     if not counts.empty:
         fig = go.Figure(go.Bar(x=counts["category"], y=counts["events"], marker_color="#e9b857"))
@@ -312,11 +354,12 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
     (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
     bbox_path = [[min_lon, min_lat], [max_lon, min_lat], [max_lon, max_lat], [min_lon, max_lat], [min_lon, min_lat]]
     layers.append(pdk.Layer("PathLayer", data=[{"path": bbox_path}], get_path="path", get_color=[233, 184, 87, 180], get_width=2, width_min_pixels=1))
-    if show_heading:
+    heading_rows = [row for row in rows if row["end_latitude"] is not None and row["end_longitude"] is not None]
+    if show_heading and heading_rows:
         layers.append(
             pdk.Layer(
                 "LineLayer",
-                data=rows,
+                data=heading_rows,
                 get_source_position="[longitude, latitude]",
                 get_target_position="[end_longitude, end_latitude]",
                 get_color=[233, 184, 87, 180],
@@ -340,7 +383,7 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
         map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
         initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=7.5, pitch=0),
         layers=layers,
-        tooltip={"html": "<b>{name}</b><br/>MMSI {mmsi}<br/>SOG {sog_knots} kn<br/>COG {cog_degrees}°", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
+        tooltip={"html": "<b>{name}</b><br/>MMSI {mmsi}<br/>SOG {sog_knots} kn<br/>COG {cog_degrees}°<br/>Last update {last_update}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
     )
     st.pydeck_chart(deck, use_container_width=True)
 
@@ -362,7 +405,7 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
 
 def _render_track_chart(track: list, title: str) -> None:
     frame = track_to_frame(track)
-    fig = go.Figure(go.Scattergeo(lon=frame["longitude"], lat=frame["latitude"], mode="lines+markers", line={"color": "#35c2c9", "width": 2}, marker={"size": 5, "color": "#d9e6e9"}, hovertext=frame["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), hovertemplate="%{hovertext}<br>%{lat:.5f}, %{lon:.5f}<extra></extra>"))
+    fig = go.Figure(go.Scattergeo(lon=frame["longitude"], lat=frame["latitude"], mode="lines+markers", line={"color": "#35c2c9", "width": 2}, marker={"size": 5, "color": "#d9e6e9"}, text=frame["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), hovertemplate="%{text}<br>Latitude %{lat:.5f}<br>Longitude %{lon:.5f}<extra></extra>"))
     fig.update_geos(showland=True, landcolor="#10242d", showocean=True, oceancolor="#08151b", showcountries=True, countrycolor="#1b3640", coastlinecolor="#31505b", projection_type="equirectangular")
     fig.update_layout(**_plot_layout(title, "Longitude", "Latitude"), height=390)
     st.plotly_chart(fig, use_container_width=True)
@@ -371,9 +414,9 @@ def _render_track_chart(track: list, title: str) -> None:
 def _render_speed_chart(track: list) -> None:
     frame = enrich_track(track_to_frame(track))
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["sog_knots"], mode="lines+markers", name="SOG", line={"color": "#51c79b"}))
-    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2", line={"color": "#e9b857", "dash": "dot"}))
-    layout = _plot_layout("Speed and course history", "UTC", "SOG (knots)")
+    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["sog_knots"], mode="lines+markers", name="SOG", line={"color": "#51c79b"}, connectgaps=False, hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>SOG %{y:.1f} kn<extra></extra>"))
+    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2", line={"color": "#e9b857", "dash": "dot"}, connectgaps=False, hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}°<extra></extra>"))
+    layout = _plot_layout("Observed SOG and COG history", "UTC timestamp", "SOG (knots)")
     layout.update({"height": 300, "yaxis2": {"title": "COG (°)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"}, "legend": {"orientation": "h", "y": 1.12}})
     fig.update_layout(**layout)
     st.plotly_chart(fig, use_container_width=True)
@@ -387,7 +430,10 @@ def _plot_layout(title: str, x_title: str, y_title: str) -> dict:
         "font": {"family": "Inter, sans-serif", "color": "#b2c7cc", "size": 11},
         "margin": {"l": 48, "r": 22, "t": 50, "b": 42},
         "xaxis": {"title": x_title, "gridcolor": "#1b3640", "zerolinecolor": "#1b3640"},
-        "yaxis": {"title": y_title, "gridcolor": "#1b3640", "zerolinecolor": "#1b3640"},
+        "yaxis": {"title": y_title, "gridcolor": "#1b3640", "zerolinecolor": "#1b3640", "automargin": True},
+        "hovermode": "x unified",
+        "hoverlabel": {"bgcolor": "#10242d", "font": {"color": "#d9e6e9"}},
+        "legend": {"orientation": "h", "y": 1.08, "x": 0},
     }
 
 

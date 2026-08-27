@@ -51,3 +51,14 @@ A fresh local browser session now renders the complete Overview without exceptio
 ## Streamlit Cloud dependency-manifest hotfix
 
 The deployment log showed `apt-get` attempting to install the words from a comment in `packages.txt` (`#`, `No`, `OS`, `packages`, and so on). The file was corrected to an empty manifest because this project requires no operating-system packages. The resulting manifest contains no apt package tokens, while `pytest -q` passes all 34 tests and Python compilation remains clean.
+
+
+## Operational prototype extension
+
+The operational prototype now exposes 30, 60, 120 and 180 second collection windows, with 60 seconds as the default. The selected value is passed from the sidebar to `MaritimeIntelligenceEngine.collect()` and then to the AISStream WebSocket finite window; the previous 10-second configuration clamp was removed and replaced with explicit 30–180 second bounds.
+
+The Overview now reports effective collection duration, real messages received, distinct vessels, tracks with at least two real PositionReports, embedding status and anomaly count. Behavior, Similarity and ML Anomaly readiness remains gated at three sufficiently long tracks. Empty states explain the scientific requirement and suggest longer real collection or a denser real monitoring region; they do not suggest simulated data.
+
+The sidebar provides real-region Bounding Box presets for Miami, Santos, Singapore, Rotterdam and English Channel, plus Custom. A valid region change creates a fresh provider/store session and tells the operator to collect again. Missing SOG values are no longer rendered as zero in traffic distributions or map rows, and heading vectors are omitted when no real heading or COG exists.
+
+The provider/store dual state was not forcibly refactored. The provider remains the source for live vessel/status snapshots while `ObservationStore` remains the source for bounded session observations and tracks. This is documented as a deliberate compatibility decision until regression coverage exists for all selection, clear-session and map-update paths. PostgreSQL/PostGIS and Deep Learning were not added; future DL work remains conditional on a real historical dataset and train/validation/test protocol.
