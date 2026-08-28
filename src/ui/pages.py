@@ -1,19 +1,31 @@
 """Streamlit page renderers. All pages consume the engine snapshot and never create data."""
 
-from __future__ import annotations
+from src.ui.pages_helpers import _vessel_label  # noqa: F401
+from src.ui.pages_a import (  # noqa: F401
+    render_behavior,
+    render_overview,
+    render_trajectory_analysis,
+    render_vessel_intelligence,
+    render_vessels,
+)
+from src.ui.pages_b import (  # noqa: F401
+    render_anomalies,
+    render_data_quality,
+    render_similarity,
+    render_system,
+    render_traffic,
+)
 
-import pandas as pd
-import plotly.graph_objects as go
-import pydeck as pdk
-import streamlit as st
-
-from src.analytics.traffic import anomaly_counts, hourly_volume, speed_distribution
-from src.config.regions import region_timezone_for_bbox
-from src.config.settings import AppSettings
-from src.geospatial.map_data import vessel_rows
-from src.ingestion.models import AnomalyFinding, VesselSnapshot
-from src.historical.writer import diagnose_database
-from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
-from src.trajectory.features import enrich_track, track_to_frame
-from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
-from src.ui.temporal import format_ais_second, format_observation_time, format_received, format_region_or_operator
+__all__ = [
+    "_vessel_label",
+    "render_anomalies",
+    "render_behavior",
+    "render_data_quality",
+    "render_overview",
+    "render_similarity",
+    "render_system",
+    "render_traffic",
+    "render_trajectory_analysis",
+    "render_vessel_intelligence",
+    "render_vessels",
+]
