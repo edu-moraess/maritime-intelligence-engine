@@ -135,7 +135,14 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         panel_title("Pipeline", "real AIS")
         st.markdown("`AISStream WebSocket`  →  `Validation`  →  `Trajectory features`  →  `Runtime PCA`  →  `IsolationForest / rules`  →  `Streamlit`")
         st.write("")
-        st.write("Storage mode: bounded in-memory session store. PostgreSQL/PostGIS is an explicit future adapter, not required for the deployed disconnected state.")
+        st.write(f"**Historical persistence:** `{snapshot.historical_status}`")
+        if snapshot.historical_result is not None:
+            result = snapshot.historical_result
+            st.write(f"**Persisted observations:** `{result.persisted_observations}`")
+            if result.duplicate_observations:
+                st.write(f"**Duplicate observations skipped:** `{result.duplicate_observations}`")
+            if result.reason:
+                st.write(f"**Persist detail:** {result.reason}")
         st.write("Model checkpoint: none. The current representation is fitted only on real observations received in this session.")
     if status.state == "LIVE AIS":
         notice("The application is receiving real AIS position reports from AISStream.", "green")
