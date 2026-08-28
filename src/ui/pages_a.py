@@ -54,7 +54,10 @@ def render_overview(
 
     st.write("")
 
-    left, center, right = st.columns([1.35, 4.8, 1.45], gap="small")
+    left, center, right = st.columns(
+        [1.35, 4.8, 1.45],
+        gap="small",
+    )
 
     with left:
         panel_title("Filters", "operator")
@@ -467,12 +470,9 @@ def render_behavior(
             ),
             "INSUFFICIENT REAL AIS DATA",
         )
-
         return
 
-    selected_mmsi = st.session_state.get(
-        "selected_mmsi"
-    )
+    selected_mmsi = st.session_state.get("selected_mmsi")
 
     selected_idx = (
         result.mmsis.index(selected_mmsi)
@@ -481,10 +481,23 @@ def render_behavior(
     )
 
     # ---------------------------------------------------------------
-    # Visualization-only validation.
+    # Runtime Isolation Forest scores.
     #
-    # The underlying ML result is NOT modified.
-    # Invalid MMSI values are simply not displayed as vessel labels.
+    # These are session-relative ranking signals, not probabilities.
+    # ---------------------------------------------------------------
+    behavioral_scores = {
+        str(mmsi): float(score)
+        for mmsi, score in zip(
+            result.mmsis,
+            result.anomaly_scores,
+        )
+        if score is not None
+    }
+
+    # ---------------------------------------------------------------
+    # Validate MMSIs for visualization only.
+    #
+    # The underlying ML result remains untouched.
     # ---------------------------------------------------------------
     valid_indices = [
         i
@@ -493,10 +506,10 @@ def render_behavior(
         and len(str(mmsi)) == 9
     ]
 
-    if len(valid_indices) < 3:
+    if not valid_indices:
         empty_state(
-            "The behavior projection does not contain at least "
-            "3 valid 9-digit MMSI identifiers for visualization.",
+            "No valid 9-digit MMSI identifiers are available "
+            "for the behavior visualization.",
             "INVALID AIS IDENTIFIERS",
         )
         return
@@ -504,37 +517,35 @@ def render_behavior(
     # ---------------------------------------------------------------
     # Selective labeling.
     #
-    # Every valid point remains available through hover.
-    # Permanent labels are reserved for higher anomaly scores.
+    # All points retain hover information. Only the strongest signals
+    # and the selected target receive permanent labels.
     # ---------------------------------------------------------------
-    score_threshold = 0.75
-
     ranked_indices = sorted(
         valid_indices,
-        key=lambda i: float(result.anomaly_scores[i]),
+        key=lambda i: behavioral_scores.get(
+            str(result.mmsis[i]),
+            0.0,
+        ),
         reverse=True,
     )
 
-    top_n = max(
-        3,
-        len(valid_indices) // 10,
+    label_count = min(
+        len(ranked_indices),
+        max(
+            3,
+            len(ranked_indices) // 10,
+        ),
     )
 
-    highlighted_indices = {
-        i
-        for i in valid_indices
-        if float(result.anomaly_scores[i]) >= score_threshold
-    }
-
-    highlighted_indices.update(
-        ranked_indices[:top_n]
+    highlighted_indices = set(
+        ranked_indices[:label_count]
     )
+
+    if selected_idx is not None and selected_idx in valid_indices:
+        highlighted_indices.add(selected_idx)
 
     fig = go.Figure()
 
-    # ---------------------------------------------------------------
-    # Cluster visualization.
-    # ---------------------------------------------------------------
     valid_clusters = sorted(
         {
             int(result.clusters[i])
@@ -560,7 +571,10 @@ def render_behavior(
             [
                 str(result.mmsis[i]),
                 int(result.clusters[i]),
-                float(result.anomaly_scores[i]),
+                behavioral_scores.get(
+                    str(result.mmsis[i]),
+                    0.0,
+                ),
             ]
             for i in cluster_indices
         ]
@@ -584,26 +598,30 @@ def render_behavior(
                 name=f"Cluster {cluster}",
                 marker={
                     "size": 9,
-                    "opacity": 0.8,
+                    "opacity": 0.82,
                 },
                 customdata=customdata,
                 hovertemplate=(
-                    "MMSI: %{customdata[0]}"
-                    "<br>Cluster: %{customdata[1]}"
-                    "<br>Isolation Forest: %{customdata[2]:.3f}"
-                    "<br>PC1: %{x:.3f}"
-                    "<br>PC2: %{y:.3f}"
+                    "<b>MMSI</b>: %{customdata[0]}"
+                    "<br><b>Cluster</b>: %{customdata[1]}"
+                    "<br><b>Isolation Forest score</b>: "
+                    "%{customdata[2]:.3f}"
+                    "<br><b>PC1</b>: %{x:.3f}"
+                    "<br><b>PC2</b>: %{y:.3f}"
                     "<extra></extra>"
                 ),
             )
         )
 
     # ---------------------------------------------------------------
-    # Current selected vessel.
+    # Selected target.
     # ---------------------------------------------------------------
     if selected_idx is not None and selected_idx in valid_indices:
-        current_score = float(
-            result.anomaly_scores[selected_idx]
+        current_mmsi = str(result.mmsis[selected_idx])
+
+        current_score = behavioral_scores.get(
+            current_mmsi,
+            0.0,
         )
 
         fig.add_trace(
@@ -623,7 +641,7 @@ def render_behavior(
                 mode="markers",
                 name="CURRENT",
                 marker={
-                    "size": 16,
+                    "size": 17,
                     "symbol": "diamond",
                     "color": "#ef6b73",
                     "line": {
@@ -631,21 +649,20 @@ def render_behavior(
                     },
                 },
                 hovertemplate=(
-                    f"MMSI: {result.mmsis[selected_idx]}"
-                    f"<br>Cluster: "
+                    f"<b>MMSI</b>: {current_mmsi}"
+                    "<br><b>Cluster</b>: "
                     f"{int(result.clusters[selected_idx])}"
-                    f"<br>Isolation Forest: "
+                    "<br><b>Isolation Forest score</b>: "
                     f"{current_score:.3f}"
-                    "<br>Status: CURRENT TARGET"
+                    "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),
+                showlegend=True,
             )
         )
 
     # ---------------------------------------------------------------
     # Layout.
-    #
-    # Build the dictionary first so legend is not passed twice.
     # ---------------------------------------------------------------
     layout = _plot_layout(
         "PCA projection of real AIS trajectory representations",
@@ -653,11 +670,24 @@ def render_behavior(
         "PC2",
     )
 
-    layout["height"] = 460
-    layout["legend"] = {
-        "orientation": "h",
-        "y": 1.08,
-    }
+    layout.update(
+        {
+            "height": 500,
+            "legend": {
+                "orientation": "h",
+                "y": 1.04,
+                "x": 0,
+                "xanchor": "left",
+                "yanchor": "bottom",
+            },
+            "margin": {
+                "l": 55,
+                "r": 30,
+                "t": 85,
+                "b": 55,
+            },
+        }
+    )
 
     fig.update_layout(**layout)
 
@@ -666,24 +696,40 @@ def render_behavior(
         width="stretch",
     )
 
-    metric_strip(
-        {
-            "METHOD": "Runtime PCA",
-            "CLUSTERS": len(valid_clusters),
-            "TRACKS": len(result.mmsis),
-            "VALID MMSI": len(valid_indices),
-            "CHECKPOINT": "NONE",
-        }
-    )
+    # ---------------------------------------------------------------
+    # Metrics.
+    # ---------------------------------------------------------------
+    metric_values = {
+        "METHOD": "Runtime PCA + Isolation Forest",
+        "CLUSTERS": len(valid_clusters),
+        "TRACKS": len(result.mmsis),
+        "VALID MMSI": len(valid_indices),
+        "CHECKPOINT": "NONE",
+    }
+
+    current_score = None
+
+    if selected_idx is not None and selected_idx in valid_indices:
+        current_score = behavioral_scores.get(
+            str(result.mmsis[selected_idx])
+        )
+
+    if current_score is not None:
+        metric_values["CURRENT SCORE"] = f"{current_score:.3f}"
+
+    metric_strip(metric_values)
 
     notice(
         f"Representation provenance: {result.model_checkpoint}. "
+        "Runtime PCA and Isolation Forest are fitted from real AIS "
+        "trajectory observations available in the current session. "
         "No pretrained trajectory checkpoint is claimed or used."
     )
 
     st.caption(
-        "Labels are shown selectively for trajectories with higher "
-        "Isolation Forest scores. Hover remains available for every "
-        "valid real AIS trajectory. Malformed MMSI values are excluded "
-        "from visualization only and do not modify the underlying ML result."
+        "Isolation Forest scores are session-relative ranking signals, "
+        "not probabilities or calibrated confidence values. "
+        "All valid trajectories remain available through hover; "
+        "permanent labels are limited to the strongest signals and "
+        "the currently selected target."
     )
