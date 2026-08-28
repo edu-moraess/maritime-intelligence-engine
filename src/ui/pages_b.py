@@ -49,7 +49,10 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
     left, right = st.columns([1.2, 1.8], gap="medium")
     with left:
         for finding in filtered:
-            st.markdown(f"<div class='finding-card'><div style='display:flex;justify-content:space-between'><strong>{finding.mmsi}</strong><span>{finding.score:.2f}</span></div><div class='small-note'>{finding.category}</div><div style='margin-top:.45rem'>{finding.detail}</div><div class='small-note' style='margin-top:.35rem'>{_utc(finding.observed_at)}</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='finding-card'><div style='display:flex;justify-content:space-between'><strong>{finding.mmsi}</strong><span>{finding.score:.2f}</span></div><div class='small-note'>{finding.category}</div><div style='margin-top:.45rem'>{finding.detail}</div><div class='small-note' style='margin-top:.35rem'>{_utc(finding.observed_at)}</div></div>",
+                unsafe_allow_html=True,
+            )
     with right:
         _render_anomaly_map(filtered, settings)
     notice("Anomaly scores are session-local and derived only from currently observed real AIS tracks.")
@@ -63,7 +66,13 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     hourly = hourly_volume(snapshot.observations)
     speeds = speed_distribution(snapshot.vessels)
     categories = anomaly_counts(snapshot.findings)
-    metric_strip({"OBSERVATIONS": len(snapshot.observations), "PEAK HOUR": int(hourly.max()) if not hourly.empty else 0, "MEAN SOG": f"{speeds.mean():.1f} kn" if not speeds.empty else "—"})
+    metric_strip(
+        {
+            "OBSERVATIONS": len(snapshot.observations),
+            "PEAK HOUR": int(hourly.max()) if not hourly.empty else 0,
+            "MEAN SOG": f"{speeds.mean():.1f} kn" if not speeds.empty else "—",
+        }
+    )
     left, right = st.columns(2, gap="medium")
     with left:
         fig = go.Figure(go.Bar(x=hourly.index.astype(str), y=hourly.values, marker_color="#35c2c9"))
@@ -76,13 +85,24 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     if categories:
         st.write("")
         panel_title("Finding categories", "session")
-        st.dataframe(frame_for_table(pd.DataFrame({"category": list(categories.keys()), "count": list(categories.values())})), hide_index=True, width="stretch")
+        st.dataframe(
+            frame_for_table(pd.DataFrame({"category": list(categories.keys()), "count": list(categories.values())})),
+            hide_index=True,
+            width="stretch",
+        )
 
 
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Data quality")
     report = snapshot.quality
-    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "PROCESSED": report.messages_processed, "REJECTED": report.rejected_messages, "DUPLICATES": report.duplicate_messages})
+    metric_strip(
+        {
+            "QUALITY": f"{report.quality_percent:.1f}%",
+            "PROCESSED": report.messages_processed,
+            "REJECTED": report.rejected_messages,
+            "DUPLICATES": report.duplicate_messages,
+        }
+    )
     left, right = st.columns([1.4, 1], gap="medium")
     with left:
         rows = pd.DataFrame(
@@ -105,7 +125,15 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
 def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("System and pipeline status")
     status = snapshot.status
-    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES": f"{status.messages_received:,}", "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—"})
+    metric_strip(
+        {
+            "PROVIDER": "AISStream.io",
+            "STATE": status.state,
+            "WEBSOCKET": status.websocket_status,
+            "MESSAGES": f"{status.messages_received:,}",
+            "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—",
+        }
+    )
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
