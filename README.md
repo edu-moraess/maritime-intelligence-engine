@@ -71,14 +71,14 @@ MIE transforms sequential AIS observations into vessel movement histories and an
 
 Examples include:
 
-- displacement;
-- elapsed time;
-- computed speed;
-- heading changes;
-- course changes;
-- track duration;
-- movement continuity;
-- signal gaps.
+- displacement
+- elapsed time
+- computed speed
+- heading changes
+- course changes
+- track duration
+- movement continuity
+- signal gaps
 
 🤖 Behavioral Analytics
 
@@ -99,9 +99,9 @@ Behavioral Signals
 
 Current analytical components include:
 
-- PCA for dimensionality reduction;
-- KMeans for behavioral grouping;
-- Isolation Forest for anomaly detection.
+- PCA for dimensionality reduction
+- KMeans for behavioral grouping
+- Isolation Forest for anomaly detection
 
 🔎 Explainable Findings
 
@@ -109,11 +109,11 @@ Machine-learning outputs are complemented by interpretable behavioral rules.
 
 Potential signals include:
 
-- unusual speed;
-- prolonged stops;
-- signal gaps;
-- significant heading changes;
-- unusual trajectory characteristics.
+- unusual speed
+- prolonged stops
+- signal gaps
+- significant heading changes
+- unusual trajectory characteristics
 
 An anomaly is treated as a signal for investigation, not as proof of malicious intent.
 
@@ -121,14 +121,14 @@ An anomaly is treated as a signal for investigation, not as proof of malicious i
 
 The operational workspace provides:
 
-- live vessel positions;
-- trajectory visualization;
-- geographic filtering;
-- Bounding Box control;
-- vessel selection;
-- behavioral visualization;
-- heading visualization;
-- operational status.
+- live vessel positions
+- trajectory visualization
+- geographic filtering
+- Bounding Box control
+- vessel selection
+- behavioral visualization
+- heading visualization
+- operational status
 
 📊 Data Quality
 
@@ -136,14 +136,14 @@ Data quality is part of the intelligence pipeline.
 
 The system validates conditions including:
 
-- MMSI validity;
-- geographic bounds;
-- speed plausibility;
-- temporal consistency;
-- duplicate observations;
-- geographic jumps;
-- stale observations;
-- insufficient analytical data.
+- MMSI validity
+- geographic bounds
+- speed plausibility
+- temporal consistency
+- duplicate observations
+- geographic jumps
+- stale observations
+- insufficient analytical data
 
 When real AIS data is unavailable, MIE does not fabricate vessels or trajectories.
 
@@ -151,7 +151,11 @@ When real AIS data is unavailable, MIE does not fabricate vessels or trajectorie
 
 Architecture
 
-MIE follows a layered architecture:
+MIE follows a layered architecture.
+
+"MIE Architecture" (docs/architecture-diagram.png)
+
+For the complete technical design, see ""docs/architecture.md"" (docs/architecture.md).
 
                          AISStream
                             │
@@ -187,19 +191,15 @@ MIE follows a layered architecture:
 
 The architecture intentionally separates:
 
-- data acquisition;
-- validation;
-- domain representation;
-- session state;
-- trajectory processing;
-- machine learning;
-- intelligence;
-- persistence;
-- visualization.
-
-Detailed Architecture
-
-For the complete technical architecture, see ""docs/architecture.md"" (docs/architecture.md).
+- data acquisition
+- validation
+- domain representation
+- session state
+- trajectory processing
+- machine learning
+- intelligence
+- persistence
+- visualization
 
 ---
 
@@ -229,8 +229,6 @@ Operational State
 
 MIE explicitly distinguishes between data availability, infrastructure state, and analytical sufficiency.
 
-Examples:
-
 AIS disconnected
       ≠
 No vessels exist
@@ -257,17 +255,9 @@ MIE uses UTC as its canonical temporal reference.
 
 The architecture distinguishes between:
 
-Receive Time
-    ↓
-Freshness / Ordering / Trajectory Analysis
-
-AIS Timestamp
-    ↓
-AIS Protocol Information
-
-Trusted Absolute Observation Time
-    ↓
-Used only when actually established
+- Receive Time
+- AIS Timestamp
+- Trusted Absolute Observation Time
 
 The system does not fabricate absolute observation timestamps or network latency when the available AIS data does not support those conclusions.
 
@@ -307,17 +297,15 @@ PostgreSQL/PostGIS provides an optional historical persistence layer.
                                 ▼
                              PostGIS
 
-Historical persistence is intentionally decoupled from live ingestion.
-
-This means that a historical database failure does not need to terminate live AIS analysis.
+Historical persistence is intentionally decoupled from live ingestion so that a historical database failure does not need to terminate live AIS analysis.
 
 Historical storage provides the foundation for future capabilities such as:
 
-- long-term vessel history;
-- behavioral baselines;
-- route analysis;
-- recurring behavior detection;
-- historical anomaly comparison.
+- long-term vessel history
+- behavioral baselines
+- route analysis
+- recurring behavior detection
+- historical anomaly comparison
 
 ---
 
@@ -381,15 +369,15 @@ MIE includes automated and runtime validation covering core system behavior.
 
 Examples include:
 
-- AIS parsing;
-- configuration validation;
-- geographic bounds;
-- temporal semantics;
-- trajectory logic;
-- data-quality checks;
-- bounded session storage;
-- system diagnostics;
-- application compilation.
+- AIS parsing
+- configuration validation
+- geographic bounds
+- temporal semantics
+- trajectory logic
+- data-quality checks
+- bounded session storage
+- system diagnostics
+- application compilation
 
 Run:
 
@@ -452,10 +440,10 @@ Behavioral anomalies are analytical signals.
 
 They do not establish:
 
-- malicious intent;
-- criminal activity;
-- hostile behavior;
-- vessel identity beyond available AIS information.
+- malicious intent
+- criminal activity
+- hostile behavior
+- vessel identity beyond available AIS information
 
 No Synthetic Fallback
 
@@ -528,8 +516,6 @@ Operational Intelligence
 ---
 
 Design Philosophy
-
-MIE follows a simple principle:
 
 «Observe → Validate → Analyze → Explain → Investigate»
 
