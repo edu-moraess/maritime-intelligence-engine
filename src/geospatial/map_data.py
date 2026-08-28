@@ -22,7 +22,9 @@ def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
                 "sog_knots": vessel.sog_knots,
                 "cog_degrees": vessel.cog_degrees,
                 "heading_degrees": heading,
-                "last_update": vessel.last_update,
+                "last_received": vessel.last_received,
+                "ais_timestamp_second": vessel.ais_timestamp_second,
+                "observed_at": vessel.observed_at,
                 "stale": vessel.stale,
                 "end_latitude": end_lat,
                 "end_longitude": end_lon,
@@ -50,6 +52,6 @@ def filter_viewport(rows: list[dict], min_lat: float, min_lon: float, max_lat: f
 
 def selected_trail(observations: list[AISObservation]) -> list[dict]:
     return [
-        {"latitude": obs.latitude, "longitude": obs.longitude, "timestamp": obs.timestamp, "mmsi": obs.mmsi}
-        for obs in sorted(observations, key=lambda item: item.timestamp)
+        {"latitude": obs.latitude, "longitude": obs.longitude, "received_at": obs.received_at, "mmsi": obs.mmsi}
+        for obs in sorted(observations, key=lambda item: item.received_at)
     ]

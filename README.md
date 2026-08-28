@@ -76,7 +76,8 @@ maritime-intelligence-engine/
 │   ├── trajectory/features.py
 │   └── ui/
 │       ├── pages.py
-│       └── presentation.py
+│       ├── presentation.py
+│       └── temporal.py
 ├── tests/test_core.py
 ├── .streamlit/config.toml
 ├── .env.example
@@ -92,6 +93,14 @@ As áreas de trabalho disponíveis são Overview, Vessels, Vessel Intelligence, 
 ## Inteligência e limitações do modelo
 
 Não há um checkpoint público pré-treinado de trajetória incluído ou alegado neste repositório. O sistema informa explicitamente `none: runtime PCA/IsolationForest trained only on real AIS observations`. A representação é construída a partir de latitude, longitude, SOG, COG, heading change, delta temporal, distância percorrida e velocidade calculada; depois, o PCA e o detector são ajustados somente quando há observações reais suficientes.
+
+### Semântica temporal
+
+O modelo canônico mantém `received_at` como um `datetime` timezone-aware em UTC: é o instante em que o MIE recebe ou processa o frame. `ais_timestamp_second` preserva somente o segundo UTC informado pelo `PositionReport.Timestamp`; valores normais são 0–59 e os estados especiais 60–63 são mantidos como estados AIS, nunca convertidos em uma data/hora completa. `observed_at` permanece `None` porque o envelope atualmente utilizado não fornece uma fonte absoluta comprovada do instante em que o navio gerou o relatório. `MetaData.time_utc` também não é promovido para observation time sem evidência semântica suficiente.
+
+Freshness, ordenação, trajetórias e agrupamentos de Traffic usam `received_at` e são rotulados como tempo de recebimento. A UI usa `Last received`, `Received`, `AIS UTC second` e `Observation time: UNAVAILABLE` para evitar confusão. Latency permanece `UNAVAILABLE`: o MIE não interpreta a diferença modular entre o relógio do servidor e o segundo AIS como latência de rede.
+
+O armazenamento permanece em UTC. Conversões para horário regional ou do operador ocorrem apenas na apresentação com `zoneinfo`. Miami usa `America/New_York`, Santos usa `America/Sao_Paulo`, Singapore usa `Asia/Singapore` e Rotterdam usa `Europe/Amsterdam`. English Channel usa UTC por abranger múltiplos contextos locais; Custom também usa UTC por padrão. O operador pode selecionar UTC, `America/Sao_Paulo`, `America/New_York`, `Europe/London`, `Europe/Amsterdam` ou `Asia/Singapore`, sem alterar o timestamp armazenado.
 
 A detecção combina limiares explicáveis para velocidade, gaps, mudanças bruscas de curso e permanência, com o score do Isolation Forest sobre a projeção. Esses scores são heurísticos e exploratórios, não uma validação científica ou uma classificação operacional de risco. O resultado deve ser interpretado como **behavioral anomaly detected**, não como ameaça, intenção ou atividade hostil. Sem histórico AIS real conectado, a busca de similaridade usa somente a sessão real atual e não é rotulada como histórica. O campo `Timestamp` do PositionReport é tratado como segundo dentro do minuto UTC; para frescor, ordenação e stale state, o sistema usa o instante de recepção do frame e preserva o segundo AIS separadamente.
 

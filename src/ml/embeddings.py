@@ -111,7 +111,7 @@ class TrajectoryEmbeddingAdapter:
         return [
             SimilarTrack(
                 mmsi=mmsi,
-                date=_track_date(tracks.get(mmsi, [])),
+                first_received_at=_track_first_received_at(tracks.get(mmsi, [])),
                 region=region,
                 cluster=cluster,
                 similarity=float(1.0 / (1.0 + distance)),
@@ -128,5 +128,5 @@ def _normalize(values: np.ndarray) -> np.ndarray:
     return (values - minimum) / (maximum - minimum)
 
 
-def _track_date(track: list[AISObservation]) -> datetime:
-    return track[0].timestamp if track else datetime.now(timezone.utc)
+def _track_first_received_at(track: list[AISObservation]) -> datetime | None:
+    return track[0].received_at if track else None

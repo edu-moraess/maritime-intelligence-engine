@@ -15,7 +15,7 @@ class QualityReport:
     invalid_records: int
     duplicate_records: int
     missing_values: int
-    timestamp_gaps: int
+    receive_time_gaps: int
     invalid_mmsi: int
     impossible_speeds: int
     impossible_jumps: int
@@ -55,15 +55,15 @@ def build_quality_report(observations: list[AISObservation], stale_after_seconds
         invalid_mmsi += int("invalid_mmsi" in errors)
         impossible_speeds += int("impossible_speed" in errors)
         missing += int(obs.sog_knots is None or obs.cog_degrees is None)
-        key = (obs.mmsi, obs.timestamp, obs.latitude, obs.longitude)
+        key = (obs.mmsi, obs.received_at, obs.latitude, obs.longitude)
         duplicate += int(key in seen)
         seen.add(key)
-        stale += int((now - obs.timestamp).total_seconds() > stale_after_seconds)
+        stale += int((now - obs.received_at).total_seconds() > stale_after_seconds)
         by_mmsi.setdefault(obs.mmsi, []).append(obs)
     for track in by_mmsi.values():
-        ordered = sorted(track, key=lambda item: item.timestamp)
+        ordered = sorted(track, key=lambda item: item.received_at)
         for previous, current in zip(ordered, ordered[1:]):
-            delta_seconds = (current.timestamp - previous.timestamp).total_seconds()
+            delta_seconds = (current.received_at - previous.received_at).total_seconds()
             if delta_seconds > 900:
                 gaps += 1
             distance_km = haversine_km(previous.latitude, previous.longitude, current.latitude, current.longitude)
@@ -78,7 +78,7 @@ def build_quality_report(observations: list[AISObservation], stale_after_seconds
         invalid_records=invalid,
         duplicate_records=duplicate,
         missing_values=missing,
-        timestamp_gaps=gaps,
+        receive_time_gaps=gaps,
         invalid_mmsi=invalid_mmsi,
         impossible_speeds=impossible_speeds,
         impossible_jumps=impossible_jumps,

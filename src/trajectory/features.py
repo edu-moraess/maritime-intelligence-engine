@@ -28,17 +28,17 @@ class TrajectorySummary:
 def track_to_frame(observations: Iterable[AISObservation]) -> pd.DataFrame:
     rows = [obs.as_dict() for obs in observations]
     if not rows:
-        return pd.DataFrame(columns=["mmsi", "timestamp", "latitude", "longitude", "sog_knots", "cog_degrees", "heading_degrees"])
+        return pd.DataFrame(columns=["mmsi", "received_at", "latitude", "longitude", "sog_knots", "cog_degrees", "heading_degrees"])
     frame = pd.DataFrame(rows)
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
-    return frame.sort_values("timestamp").reset_index(drop=True)
+    frame["received_at"] = pd.to_datetime(frame["received_at"], utc=True)
+    return frame.sort_values("received_at").reset_index(drop=True)
 
 
 def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame.copy()
-    result = frame.sort_values("timestamp").reset_index(drop=True).copy()
-    result["time_delta_seconds"] = result["timestamp"].diff().dt.total_seconds().fillna(0).clip(lower=0)
+    result = frame.sort_values("received_at").reset_index(drop=True).copy()
+    result["time_delta_seconds"] = result["received_at"].diff().dt.total_seconds().fillna(0).clip(lower=0)
     result["distance_km"] = [
         0.0,
         *[
@@ -65,7 +65,7 @@ def summarize_track(observations: Iterable[AISObservation]) -> TrajectorySummary
     frame = enrich_track(track_to_frame(observations))
     if frame.empty:
         return None
-    duration = max(0.0, (frame["timestamp"].iloc[-1] - frame["timestamp"].iloc[0]).total_seconds() / 60)
+    duration = max(0.0, (frame["received_at"].iloc[-1] - frame["received_at"].iloc[0]).total_seconds() / 60)
     speeds = frame["sog_knots"].dropna()
     return TrajectorySummary(
         mmsi=str(frame["mmsi"].iloc[0]),

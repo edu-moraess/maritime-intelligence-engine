@@ -60,7 +60,7 @@ class ObservationStore:
         vessels = {item.mmsi for item in self._items}
         while len(vessels) > self.max_vessels:
             latest_by_vessel = {
-                mmsi: max(item.timestamp for item in self._items if item.mmsi == mmsi)
+                mmsi: max(item.received_at for item in self._items if item.mmsi == mmsi)
                 for mmsi in vessels
             }
             oldest_mmsi = min(latest_by_vessel, key=latest_by_vessel.get)

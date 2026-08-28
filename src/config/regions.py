@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Final
 
 from .settings import _validate_bbox
@@ -18,6 +16,21 @@ REGION_PRESETS: Final[dict[str, RegionBBox]] = {
 }
 REGION_OPTIONS: Final[tuple[str, ...]] = (*REGION_PRESETS.keys(), "Custom")
 
+# Timezones are presentation metadata only. The English Channel spans several
+# local zones, so UTC is the explicit non-misleading default. Custom is UTC.
+REGION_TIMEZONES: Final[dict[str, str]] = {
+    "Miami": "America/New_York",
+    "Santos": "America/Sao_Paulo",
+    "Singapore": "Asia/Singapore",
+    "Rotterdam": "Europe/Amsterdam",
+    "English Channel": "UTC",
+    "Custom": "UTC",
+}
+REGION_TIMEZONE_POLICIES: Final[dict[str, str]] = {
+    "English Channel": "UTC policy: the box spans international waters and multiple local time zones.",
+    "Custom": "UTC policy: custom regions do not silently assume an operator or geographic timezone.",
+}
+
 for _bbox in REGION_PRESETS.values():
     _validate_bbox(_bbox)
 
@@ -27,6 +40,10 @@ def region_name_for_bbox(bbox: RegionBBox) -> str | None:
         if bbox == preset_bbox:
             return name
     return None
+
+
+def region_timezone_for_bbox(bbox: RegionBBox) -> str:
+    return REGION_TIMEZONES.get(region_name_for_bbox(bbox) or "Custom", "UTC")
 
 
 def format_bbox(bbox: RegionBBox) -> str:

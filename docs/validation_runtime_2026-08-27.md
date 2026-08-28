@@ -81,3 +81,37 @@ The clean instance exposed `Data Quality` and `System` under `Data & System`. Da
 
 
 A verificação final do console do navegador não registrou saída ou erros após a navegação completa pelas áreas principais e subáreas na instância limpa.
+
+
+## Temporal semantics validation — clean instance
+
+A fresh Streamlit instance on port 8504 booted successfully after stopping the previous process; its health endpoint returned `ok`. The Overview displayed `LAST RECEIVED = UNAVAILABLE` with no AIS key, `NOT CONFIGURED`, `DISCONNECTED`, zero observations, `WAITING` readiness, and no synthetic traffic. The sidebar exposed `DISPLAY` with operator timezone default `UTC`, while Collection duration remained 60 s and the five consolidated modules remained available.
+
+
+The clean Overview timezone selector exposed exactly six controlled presentation options: UTC, America/Sao_Paulo, America/New_York, Europe/London, Europe/Amsterdam and Asia/Singapore. UTC was the default; the selector is presentation-only and does not alter canonical AIS data.
+
+
+The operator timezone combobox exposed all six controlled IANA options. Native option selection was not persisted by the ARIA wrapper, but direct combobox input successfully applied and persisted `America/New_York`; the Overview remained in the safe no-AIS state with no data changes.
+
+
+The temporal-clean instance loaded `Data Quality` under `Data & System` with `LAST RECEIVED = UNAVAILABLE`, zero messages, the full quality table and `NO REAL AIS OBSERVATIONS`; no traceback occurred. The operator timezone selection remained `America/New_York` without changing canonical data.
+
+
+The clean instance loaded `System` with `MESSAGES RECEIVED`, `LAST RECEIVED = UNAVAILABLE`, `AIS UTC SECOND = UNAVAILABLE`, `Observation time = UNAVAILABLE` and `Latency = UNAVAILABLE`. AISStream remained server-side, `DISCONNECTED`, with zero messages and no fabricated traffic.
+
+
+The clean temporal instance loaded `Fleet` and `Vessel Intelligence` under `Vessels` without traceback. Both displayed the expected real-AIS empty states with no fabricated vessel rows; the new vessel time fields were not exercised in the UI because no API key was configured.
+
+
+The temporal-clean instance loaded `Trajectory Analysis` and `Behavior` under `Movement & Behavior` without traceback. Behavior showed `INSUFFICIENT REAL AIS DATA` with `Current: 0/3`, preserving the existing multitrack gate and no-data policy.
+
+
+The clean temporal instance loaded `Similarity` with `NO REFERENCE TRACK` and `Anomalies` with `NO BEHAVIORAL ANOMALIES`; both preserved real-AIS gates and rendered no fabricated values.
+
+
+The clean temporal instance loaded `Traffic` with `REAL AIS DATA UNAVAILABLE`, zero metrics and no charts in the no-key state. Final browser console inspection produced no errors after the complete navigation pass.
+
+
+## Final temporal clean boot
+
+After the final code changes, all prior Streamlit processes were stopped and a new instance was started on port 8505. The health endpoint returned `ok`; the Overview loaded without traceback or ImportError. It displayed `LAST RECEIVED = UNAVAILABLE`, operator timezone `UTC`, `NOT CONFIGURED`, `DISCONNECTED`, zero real messages, `WAITING` readiness and the explicit no-fabrication empty state.

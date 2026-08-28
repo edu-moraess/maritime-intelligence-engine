@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from src.config.regions import REGION_OPTIONS, REGION_PRESETS, format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, COLLECTION_DURATION_OPTIONS, _validate_bbox
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
+from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 from src.ui.pages import (
     render_anomalies,
     render_behavior,
@@ -157,6 +158,16 @@ def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool
 
         st.markdown("<div class='data-label' style='margin-top:.8rem'>CONNECTION</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='data-value'>{_connection_state(settings)}</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='data-label' style='margin-top:.8rem'>DISPLAY</div>", unsafe_allow_html=True)
+        st.selectbox(
+            "Operator timezone",
+            OPERATOR_TIMEZONE_OPTIONS,
+            index=0,
+            key="operator_timezone",
+            format_func=lambda value: f"Operator time · {value}",
+            label_visibility="collapsed",
+        )
 
         st.markdown("<div class='data-label' style='margin-top:.8rem'>WORKSPACE</div>", unsafe_allow_html=True)
         modules = list(NAVIGATION)

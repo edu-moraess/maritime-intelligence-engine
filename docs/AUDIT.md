@@ -62,3 +62,10 @@ The Overview now reports effective collection duration, real messages received, 
 The sidebar provides real-region Bounding Box presets for Miami, Santos, Singapore, Rotterdam and English Channel, plus Custom. A valid region change creates a fresh provider/store session and tells the operator to collect again. Missing SOG values are no longer rendered as zero in traffic distributions or map rows, and heading vectors are omitted when no real heading or COG exists.
 
 The provider/store dual state was not forcibly refactored. The provider remains the source for live vessel/status snapshots while `ObservationStore` remains the source for bounded session observations and tracks. This is documented as a deliberate compatibility decision until regression coverage exists for all selection, clear-session and map-update paths. PostgreSQL/PostGIS and Deep Learning were not added; future DL work remains conditional on a real historical dataset and train/validation/test protocol.
+
+
+## Temporal integrity update — 2026-08-28
+
+`AISObservation.received_at` is the timezone-aware UTC instant when the MIE receives/processes a frame. `ais_timestamp_second` retains the AIS `PositionReport.Timestamp` as the reported UTC second within the minute; normal values are 0–59 and 60–63 remain AIS special states without datetime reconstruction. `observed_at` remains `None` because the current AISStream envelope does not establish a trusted absolute observation datetime. `MetaData.time_utc` is retained only inside the raw payload and is not promoted to observation time.
+
+Freshness, ordering, trajectories and Traffic grouping use `received_at` and are labeled as receive time. Network latency is `UNAVAILABLE`; the previous modulo-60 pseudo-latency is removed. UTC remains canonical storage. Region and operator conversions use standard-library `zoneinfo` only at presentation time. English Channel and Custom use an explicit UTC policy, while regional presets carry IANA metadata. No AIS data, position, finding, trajectory or embedding is fabricated.

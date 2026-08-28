@@ -1,4 +1,4 @@
-"""Canonical models for observations received from real AIS providers."""
+"""Domain models for real AIS observations and derived session state."""
 
 from __future__ import annotations
 
@@ -13,11 +13,18 @@ VALID_INGESTION_STATES = {"DISCONNECTED", "CONNECTING", "LIVE AIS", "REAL AIS DA
 
 @dataclass(frozen=True)
 class AISObservation:
+    """A validated real AIS PositionReport with explicit temporal semantics.
+
+    ``received_at`` is when the MIE received/processed the frame. The AIS
+    ``Timestamp`` is retained separately as ``ais_timestamp_second`` and is
+    never promoted to an absolute datetime. ``observed_at`` remains ``None``
+    unless a trusted absolute observation-time source is added in the future.
+    """
+
     mmsi: str
     latitude: float
     longitude: float
-    # Timestamp when the server ingested the frame; AIS Timestamp is only the UTC second within a minute.
-    timestamp: datetime
+    received_at: datetime
     sog_knots: float | None = None
     cog_degrees: float | None = None
     heading_degrees: float | None = None
@@ -27,14 +34,25 @@ class AISObservation:
     navigational_status: int | None = None
     ais_timestamp_second: int | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    observed_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.received_at.tzinfo is None or self.received_at.utcoffset() is None:
+            raise ValueError("received_at must be timezone-aware")
+        object.__setattr__(self, "received_at", self.received_at.astimezone(timezone.utc))
+        if self.observed_at is not None:
+            if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+                raise ValueError("observed_at must be timezone-aware when provided")
+            object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "mmsi": self.mmsi,
             "latitude": self.latitude,
             "longitude": self.longitude,
-            "timestamp": self.timestamp.astimezone(timezone.utc).isoformat(),
+            "received_at": self.received_at.astimezone(timezone.utc).isoformat(),
             "ais_timestamp_second": self.ais_timestamp_second,
+            "observed_at": self.observed_at.astimezone(timezone.utc).isoformat() if self.observed_at is not None else None,
             "sog_knots": self.sog_knots,
             "cog_degrees": self.cog_degrees,
             "heading_degrees": self.heading_degrees,
@@ -50,13 +68,15 @@ class VesselSnapshot:
     mmsi: str
     latitude: float
     longitude: float
-    last_update: datetime
+    last_received: datetime
     sog_knots: float | None
     cog_degrees: float | None
     heading_degrees: float | None
     vessel_name: str | None
     message_count: int
     stale: bool = False
+    ais_timestamp_second: int | None = None
+    observed_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -64,29 +84,31 @@ class IngestionStatus:
     state: IngestionState
     reason: str
     connected_at: datetime | None
-    last_message_at: datetime | None
+    last_received_at: datetime | None
     messages_received: int
     active_vessels: int
     latency_seconds: float | None
     websocket_status: str
+    ais_timestamp_second: int | None = None
 
 
 @dataclass(frozen=True)
 class AnomalyFinding:
     mmsi: str
-    timestamp: datetime
+    received_at: datetime
     latitude: float
     longitude: float
     score: float
     category: str
     confidence: float
     explanation: str
+    ais_timestamp_second: int | None = None
 
 
 @dataclass(frozen=True)
 class SimilarTrack:
     mmsi: str
-    date: datetime
+    first_received_at: datetime | None
     region: str
     cluster: int
     similarity: float

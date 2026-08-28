@@ -5,7 +5,7 @@ import pytest
 
 from src.anomaly.detector import detect_anomalies
 from src.analytics.traffic import speed_distribution
-from src.config.regions import REGION_PRESETS
+from src.config.regions import REGION_PRESETS, REGION_TIMEZONES, region_timezone_for_bbox
 from src.config.settings import COLLECTION_DURATION_OPTIONS, DEFAULT_BBOX, AppSettings, _validate_bbox
 from src.ingestion.aisstream import AISStreamProvider
 from src.ingestion.models import AISObservation, VesselSnapshot
@@ -15,6 +15,7 @@ from src.processing.quality import build_quality_report, haversine_km, validate_
 from src.storage.memory import ObservationStore
 from src.trajectory.features import summarize_track, trajectory_vector
 from src.ui.pages import _vessel_label
+from src.ui.temporal import format_ais_second, format_observation_time, format_received, format_region_or_operator
 
 
 def position_payload(*, mmsi: int = 368207620, timestamp_second: int = 42, latitude: float = 25.7617, longitude: float = -80.1918) -> str:
@@ -120,8 +121,10 @@ def test_aisstream_provider_parses_documented_position_payload():
     assert observation.latitude == 25.7617
     assert observation.sog_knots == 12.4
     assert observation.ais_timestamp_second == 42
-    assert before <= observation.timestamp <= after
-    assert observation.timestamp >= before
+    assert before <= observation.received_at <= after
+    assert observation.received_at >= before
+    assert observation.received_at.tzinfo is timezone.utc
+    assert observation.observed_at is None
 
 
 
@@ -143,7 +146,6 @@ def test_non_position_messages_are_ignored():
         position_payload(mmsi=0),
         position_payload(latitude=91.0),
         position_payload(longitude=-181.0),
-        position_payload(timestamp_second=60),
         json.dumps({"MessageType": "PositionReport", "Message": {"PositionReport": {"UserID": 368207620, "Timestamp": 42}}}),
     ],
 )
@@ -160,6 +162,8 @@ def test_real_position_record_transitions_provider_to_live_ais():
     assert provider.status.state == "LIVE AIS"
     assert provider.status.messages_received == 1
     assert provider.status.active_vessels == 1
+    assert provider.status.last_received_at is not None
+    assert provider.status.latency_seconds is None
 
 
 def test_no_messages_after_open_are_real_data_unavailable(monkeypatch):
@@ -349,7 +353,7 @@ def test_vessel_label_handles_missing_or_blank_name_without_mutating_snapshot(ve
         mmsi="368207620",
         latitude=25.7617,
         longitude=-80.1918,
-        last_update=datetime.now(timezone.utc),
+        last_received=datetime.now(timezone.utc),
         sog_knots=12.4,
         cog_degrees=86.7,
         heading_degrees=87.0,
@@ -362,3 +366,79 @@ def test_vessel_label_handles_missing_or_blank_name_without_mutating_snapshot(ve
 
     assert label == f"368207620 · {expected_name}"
     assert vessel.vessel_name == original_name
+
+
+@pytest.mark.parametrize("timestamp_second", [0, 59, 60, 61, 62, 63])
+def test_ais_timestamp_second_is_preserved_without_absolute_observation_time(timestamp_second):
+    provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
+
+    observation = provider._parse_frame(position_payload(timestamp_second=timestamp_second))
+
+    assert observation is not None
+    assert observation.ais_timestamp_second == timestamp_second
+    assert observation.observed_at is None
+
+
+def test_metadata_time_utc_is_not_promoted_to_observation_time():
+    payload = json.loads(position_payload(timestamp_second=31))
+    payload["MetaData"]["time_utc"] = "2026-08-28T00:04:31Z"
+    provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
+
+    observation = provider._parse_frame(json.dumps(payload))
+
+    assert observation is not None
+    assert observation.observed_at is None
+    assert observation.received_at.tzinfo is timezone.utc
+    assert observation.raw["MetaData"]["time_utc"] == "2026-08-28T00:04:31Z"
+
+
+
+def test_region_timezone_catalog_and_policies_are_explicit():
+    assert REGION_TIMEZONES == {
+        "Miami": "America/New_York",
+        "Santos": "America/Sao_Paulo",
+        "Singapore": "Asia/Singapore",
+        "Rotterdam": "Europe/Amsterdam",
+        "English Channel": "UTC",
+        "Custom": "UTC",
+    }
+    assert region_timezone_for_bbox(REGION_PRESETS["Miami"]) == "America/New_York"
+    assert region_timezone_for_bbox(REGION_PRESETS["Rotterdam"]) == "Europe/Amsterdam"
+    assert region_timezone_for_bbox(((0.0, 0.0), (1.0, 1.0))) == "UTC"
+
+
+@pytest.mark.parametrize(
+    ("ais_second", "expected"),
+    [(None, "UNAVAILABLE"), (0, "00"), (59, "59"), (60, "60 (AIS special state)"), (63, "63 (AIS special state)")],
+)
+def test_ais_second_display_never_infers_absolute_time(ais_second, expected):
+    assert format_ais_second(ais_second) == expected
+    assert format_observation_time(None) == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    ("timezone_name", "expected_summer", "expected_winter"),
+    [
+        ("America/New_York", "EDT", "EST"),
+        ("Europe/Amsterdam", "CEST", "CET"),
+        ("Asia/Singapore", "+08" , "+08"),
+        ("America/Sao_Paulo", "-03", "-03"),
+    ],
+)
+def test_region_and_operator_timezones_use_zoneinfo_without_mutating_utc(timezone_name, expected_summer, expected_winter):
+    summer = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
+    winter = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    summer_local = format_region_or_operator(summer, timezone_name)
+    winter_local = format_region_or_operator(winter, timezone_name)
+
+    assert expected_summer in summer_local
+    assert expected_winter in winter_local
+    assert summer == datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
+    assert winter == datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+
+def test_received_format_is_explicitly_utc_and_observation_is_unavailable():
+    received_at = datetime(2026, 8, 28, 0, 4, 31, tzinfo=timezone.utc)
+    assert format_received(received_at) == "2026-08-28 00:04:31 UTC"
+    assert format_observation_time(None) == "UNAVAILABLE"

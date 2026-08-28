@@ -46,7 +46,8 @@ def detect_anomalies(
                 findings.append(
                     AnomalyFinding(
                         mmsi=mmsi,
-                        timestamp=row.timestamp.to_pydatetime(),
+                        received_at=row.received_at.to_pydatetime(),
+                        ais_timestamp_second=_ais_second(getattr(row, "ais_timestamp_second", None)),
                         latitude=float(row.latitude),
                         longitude=float(row.longitude),
                         score=round(min(0.99, confidence), 3),
@@ -56,14 +57,15 @@ def detect_anomalies(
                     )
                 )
         if len(frame) >= 2:
-            duration = (frame["timestamp"].iloc[-1] - frame["timestamp"].iloc[0]).total_seconds() / 60
+            duration = (frame["received_at"].iloc[-1] - frame["received_at"].iloc[0]).total_seconds() / 60
             dwell_ratio = float(frame["is_dwell"].mean())
             if duration >= config.dwell_minutes and dwell_ratio >= 0.8:
                 latest = frame.iloc[-1]
                 findings.append(
                     AnomalyFinding(
                         mmsi=mmsi,
-                        timestamp=latest["timestamp"].to_pydatetime(),
+                        received_at=latest["received_at"].to_pydatetime(),
+                        ais_timestamp_second=_ais_second(latest.get("ais_timestamp_second")),
                         latitude=float(latest["latitude"]),
                         longitude=float(latest["longitude"]),
                         score=0.72,
@@ -78,7 +80,8 @@ def detect_anomalies(
             findings.append(
                 AnomalyFinding(
                     mmsi=mmsi,
-                    timestamp=latest["timestamp"].to_pydatetime(),
+                    received_at=latest["received_at"].to_pydatetime(),
+                    ais_timestamp_second=_ais_second(latest.get("ais_timestamp_second")),
                     latitude=float(latest["latitude"]),
                     longitude=float(latest["longitude"]),
                     score=round(score, 3),
@@ -88,6 +91,14 @@ def detect_anomalies(
                 )
             )
     return sorted(findings, key=lambda item: item.score, reverse=True)
+
+
+def _ais_second(value: object) -> int | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(number) if np.isfinite(number) and number.is_integer() else None
 
 
 def vessel_normality_score(findings: list[AnomalyFinding], mmsi: str) -> float:

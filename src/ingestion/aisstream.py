@@ -51,7 +51,12 @@ class AISProvider(ABC):
 
 
 class AISStreamProvider(AISProvider):
-    """Finite-window consumer for the AISStream real-time WebSocket."""
+    """Finite-window real AIS consumer with explicit receive-time semantics.
+
+    PositionReport.Timestamp is retained as the AIS UTC second within the
+    minute. It is never combined with server date/time to fabricate an
+    absolute observation datetime; ``received_at`` is the MIE receive time.
+    """
 
     def __init__(
         self,
@@ -71,12 +76,13 @@ class AISStreamProvider(AISProvider):
         self._observations: list[AISObservation] = []
         self._tracks: dict[str, list[AISObservation]] = defaultdict(list)
         self._connected_at: datetime | None = None
-        self._last_message_at: datetime | None = None
+        self._last_received_at: datetime | None = None
+        self._last_ais_timestamp_second: int | None = None
         self._messages_received = 0
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
-        self._latency_seconds: float | None = None
+        # Network latency remains unavailable without two comparable absolute timestamps.
 
     @property
     def status(self) -> IngestionStatus:
@@ -84,11 +90,12 @@ class AISStreamProvider(AISProvider):
             state=self._state,
             reason=self._reason,
             connected_at=self._connected_at,
-            last_message_at=self._last_message_at,
+            last_received_at=self._last_received_at,
             messages_received=self._messages_received,
             active_vessels=len(self._tracks),
-            latency_seconds=self._latency_seconds,
+            latency_seconds=None,
             websocket_status=self._websocket_status,
+            ais_timestamp_second=self._last_ais_timestamp_second,
         )
 
     def reset_session(self) -> None:
@@ -96,12 +103,12 @@ class AISStreamProvider(AISProvider):
         self._observations.clear()
         self._tracks.clear()
         self._connected_at = None
-        self._last_message_at = None
+        self._last_received_at = None
+        self._last_ais_timestamp_second = None
         self._messages_received = 0
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
-        self._latency_seconds = None
 
     def _subscription(self) -> dict:
         return {
@@ -228,8 +235,8 @@ class AISStreamProvider(AISProvider):
             longitude = float(report.get("Longitude", meta.get("Longitude")))
             if not (math.isfinite(latitude) and math.isfinite(longitude) and -90 <= latitude <= 90 and -180 <= longitude <= 180):
                 return None
-            timestamp_second = _parse_ais_second(report.get("Timestamp"))
-            if timestamp_second is None:
+            ais_timestamp_second = _parse_ais_second(report.get("Timestamp"))
+            if ais_timestamp_second is None:
                 return None
             valid = report.get("Valid")
             if not isinstance(valid, bool) or not valid:
@@ -239,7 +246,7 @@ class AISStreamProvider(AISProvider):
                 mmsi=mmsi,
                 latitude=latitude,
                 longitude=longitude,
-                timestamp=received_at,
+                received_at=received_at,
                 sog_knots=_sog(report.get("Sog")),
                 cog_degrees=_cog(report.get("Cog")),
                 heading_degrees=_heading(report.get("TrueHeading")),
@@ -247,17 +254,16 @@ class AISStreamProvider(AISProvider):
                 message_type="PositionReport",
                 valid=True,
                 navigational_status=_integer(report.get("NavigationalStatus")),
-                ais_timestamp_second=timestamp_second,
+                ais_timestamp_second=ais_timestamp_second,
                 raw=payload,
             )
         except (TypeError, ValueError, OverflowError):
             return None
 
     def _record(self, observation: AISObservation) -> None:
-        now = datetime.now(timezone.utc)
         self._messages_received += 1
-        self._last_message_at = now
-        self._latency_seconds = _estimate_latency_seconds(now, observation.ais_timestamp_second)
+        self._last_received_at = observation.received_at
+        self._last_ais_timestamp_second = observation.ais_timestamp_second
         self._state = "LIVE AIS"
         self._reason = "Receiving real AIS position reports from AISStream."
         self._observations.append(observation)
@@ -265,7 +271,7 @@ class AISStreamProvider(AISProvider):
         if len(self._observations) > self.max_messages:
             self._observations = self._observations[-self.max_messages :]
         if len(self._tracks) > self.max_vessels:
-            oldest_mmsi = min(self._tracks, key=lambda key: self._tracks[key][-1].timestamp)
+            oldest_mmsi = min(self._tracks, key=lambda key: self._tracks[key][-1].received_at)
             del self._tracks[oldest_mmsi]
 
     def fetch_vessels(self) -> list[VesselSnapshot]:
@@ -280,16 +286,18 @@ class AISStreamProvider(AISProvider):
                     mmsi=mmsi,
                     latitude=latest.latitude,
                     longitude=latest.longitude,
-                    last_update=latest.timestamp,
+                    last_received=latest.received_at,
                     sog_knots=latest.sog_knots,
                     cog_degrees=latest.cog_degrees,
                     heading_degrees=latest.heading_degrees,
                     vessel_name=latest.vessel_name,
                     message_count=len(track),
-                    stale=(now - latest.timestamp).total_seconds() > self.stale_after_seconds,
+                    ais_timestamp_second=latest.ais_timestamp_second,
+                    observed_at=latest.observed_at,
+                    stale=(now - latest.received_at).total_seconds() > self.stale_after_seconds,
                 )
             )
-        return sorted(result, key=lambda vessel: vessel.last_update, reverse=True)
+        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)
 
     def fetch_tracks(self) -> dict[str, list[AISObservation]]:
         return {mmsi: list(track) for mmsi, track in self._tracks.items()}
@@ -305,7 +313,11 @@ def _valid_mmsi(value: str) -> bool:
 
 
 def _parse_ais_second(value: object) -> int | None:
-    """Validate AIS Timestamp, defined as second-within-minute, not an epoch."""
+    """Validate AIS Timestamp as second-within-minute, not an epoch.
+
+    0–59 are ordinary seconds; 60–63 are protocol special states and remain
+    integers so the UI can report them without inventing an absolute datetime.
+    """
     if isinstance(value, bool):
         return None
     try:
@@ -314,13 +326,7 @@ def _parse_ais_second(value: object) -> int | None:
         return None
     if isinstance(value, float) and value != second:
         return None
-    return second if 0 <= second <= 59 else None
-
-
-def _estimate_latency_seconds(now: datetime, ais_second: int | None) -> float | None:
-    if ais_second is None:
-        return None
-    return float((now.second - ais_second) % 60)
+    return second if 0 <= second <= 63 else None
 
 
 def _sog(value: object) -> float | None:

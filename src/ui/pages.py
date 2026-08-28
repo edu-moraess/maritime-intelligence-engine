@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import timezone
-
 import pandas as pd
 import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
 
 from src.analytics.traffic import anomaly_counts, hourly_volume, speed_distribution
+from src.config.regions import region_timezone_for_bbox
 from src.config.settings import AppSettings
 from src.geospatial.map_data import vessel_rows
 from src.ingestion.models import AnomalyFinding, VesselSnapshot
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.trajectory.features import enrich_track, track_to_frame
 from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
+from src.ui.temporal import format_ais_second, format_observation_time, format_received, format_region_or_operator
 
 
 def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
@@ -26,7 +26,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
             "MESSAGES": f"{summary['messages']:,}",
             "ANOMALIES": summary["anomalies"],
             "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
-            "LAST MESSAGE": _utc(snapshot.status.last_message_at),
+            "LAST RECEIVED": format_received(snapshot.status.last_received_at),
         }
     )
     _render_readiness(snapshot)
@@ -60,7 +60,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
         if selected is None:
             empty_state("Select a vessel from the Vessels page to populate this panel.", "NO TARGET SELECTED")
         else:
-            _vessel_compact(selected)
+            _vessel_compact(selected, settings)
             findings = [finding for finding in snapshot.findings if finding.mmsi == selected.mmsi]
             if findings:
                 top = findings[0]
@@ -126,7 +126,7 @@ def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
                 "SOG kn": f"{vessel.sog_knots:.1f}" if vessel.sog_knots is not None else "—",
                 "COG °": f"{vessel.cog_degrees:.1f}" if vessel.cog_degrees is not None else "—",
                 "Reports": vessel.message_count,
-                "Last update": _utc(vessel.last_update),
+                "Last received": format_received(vessel.last_received),
                 "State": "STALE" if vessel.stale else "ACTIVE",
             }
             for vessel in filtered
@@ -138,7 +138,7 @@ def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
         selected = st.selectbox("Inspect vessel", options, format_func=lambda value: _vessel_label(value, snapshot.vessels))
         st.session_state.selected_mmsi = selected
         selected_vessel = next(v for v in snapshot.vessels if v.mmsi == selected)
-        _vessel_compact(selected_vessel)
+        _vessel_compact(selected_vessel, settings)
 
 
 def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
@@ -151,7 +151,7 @@ def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: Eng
     left, right = st.columns([1.1, 2.5], gap="medium")
     with left:
         panel_title("Identity and telemetry", "AIS")
-        _vessel_compact(selected)
+        _vessel_compact(selected, settings)
         findings = [finding for finding in snapshot.findings if finding.mmsi == selected.mmsi]
         normality = max(0.0, 1.0 - max((f.score for f in findings), default=0.0))
         metric_strip({"NORMALITY": f"{normality:.2f}", "ANOMALY": f"{max((f.score for f in findings), default=0.0):.2f}", "REPORTS": selected.message_count})
@@ -266,7 +266,9 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
     table = pd.DataFrame(
         [
             {
-                "Timestamp": _utc(f.timestamp),
+                "Received": format_received(f.received_at),
+                "AIS UTC second": format_ais_second(f.ais_timestamp_second),
+                "Observation time": format_observation_time(None),
                 "MMSI": f.mmsi,
                 "Location": f"{f.latitude:.4f}, {f.longitude:.4f}",
                 "Score": f"{f.score:.2f}",
@@ -292,8 +294,8 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     left, right = st.columns(2, gap="medium")
     with left:
         volume = hourly_volume(snapshot.observations)
-        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9", hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>"))
-        fig.update_layout(**_plot_layout("Observed AIS message volume by UTC hour", "UTC hour", "Real AIS messages"), height=330)
+        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9", hovertemplate="UTC receive hour %{x}: %{y} real messages<extra></extra>"))
+        fig.update_layout(**_plot_layout("AIS messages received by UTC hour", "UTC receive hour", "Real AIS messages"), height=330)
         st.plotly_chart(fig, width="stretch")
     with right:
         speeds = speed_distribution(snapshot.vessels)
@@ -313,14 +315,14 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Data quality")
     report = snapshot.quality
-    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}", "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}", "LAST UPDATE": _utc(snapshot.status.last_message_at)})
+    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}", "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}", "LAST RECEIVED": format_received(snapshot.status.last_received_at), "OBSERVATION TIME": "UNAVAILABLE"})
     st.write("")
     left, right = st.columns([1.2, 1], gap="medium")
     with left:
         rows = pd.DataFrame(
             {
-                "Check": ["Invalid coordinates / records", "Duplicate messages", "Missing values", "Timestamp gaps", "Invalid MMSI", "Impossible speeds", "Impossible geographic jumps", "Stale reports"],
-                "Count": [report.invalid_records, report.duplicate_records, report.missing_values, report.timestamp_gaps, report.invalid_mmsi, report.impossible_speeds, report.impossible_jumps, report.stale_records],
+                "Check": ["Invalid coordinates / records", "Duplicate messages", "Missing values", "Receive-time gaps", "Invalid MMSI", "Impossible speeds", "Impossible geographic jumps", "Stale reports"],
+                "Count": [report.invalid_records, report.duplicate_records, report.missing_values, report.receive_time_gaps, report.invalid_mmsi, report.impossible_speeds, report.impossible_jumps, report.stale_records],
             }
         )
         st.dataframe(rows, hide_index=True, width="stretch")
@@ -337,7 +339,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
 def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("System and pipeline status")
     status = snapshot.status
-    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES": f"{status.messages_received:,}", "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—"})
+    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES RECEIVED": f"{status.messages_received:,}", "LAST RECEIVED": format_received(status.last_received_at), "AIS UTC SECOND": format_ais_second(status.ais_timestamp_second), "LATENCY": "UNAVAILABLE"})
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
@@ -346,7 +348,10 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         st.write(f"**Reason:** {status.reason}")
         st.write(f"**Messages received:** `{status.messages_received:,}`")
         st.write(f"**Active vessels:** `{status.active_vessels:,}`")
-        st.write(f"**Last ingestion:** `{_utc(status.last_message_at)}`")
+        st.write(f"**Last received:** `{format_received(status.last_received_at)}`")
+        st.write(f"**AIS UTC second:** `{format_ais_second(status.ais_timestamp_second)}`")
+        st.write("**Observation time:** `UNAVAILABLE`")
+        st.write("**Latency:** `UNAVAILABLE`")
         st.write(f"**Monitoring box:** `{settings.bbox[0]} → {settings.bbox[1]}`")
     with right:
         panel_title("Pipeline", "real AIS")
@@ -387,7 +392,7 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
         paths = []
         for mmsi, track in engine_tracks(snapshot):
             if len(track) >= 2:
-                paths.append({"path": [[o.longitude, o.latitude] for o in sorted(track, key=lambda item: item.timestamp)], "mmsi": mmsi})
+                paths.append({"path": [[o.longitude, o.latitude] for o in sorted(track, key=lambda item: item.received_at)], "mmsi": mmsi})
         if paths:
             layers.append(pdk.Layer("PathLayer", data=paths, get_path="path", get_color=[53, 194, 201, 90], width_min_pixels=1, get_width=1))
     if show_anomalies and snapshot.findings:
@@ -399,7 +404,7 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
         map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
         initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=7.5, pitch=0),
         layers=layers,
-        tooltip={"html": "<b>{name}</b><br/>MMSI {mmsi}<br/>SOG {sog_knots} kn<br/>COG {cog_degrees}°<br/>Last update {last_update}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
+        tooltip={"html": "<b>{name}</b><br/>MMSI {mmsi}<br/>SOG {sog_knots} kn<br/>COG {cog_degrees}°<br/>Last received {last_received}<br/>AIS UTC second {ais_timestamp_second}<br/>Observation time UNAVAILABLE", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
     )
     st.pydeck_chart(deck, width="stretch")
 
@@ -421,18 +426,19 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
 
 def _render_track_chart(track: list, title: str) -> None:
     frame = track_to_frame(track)
-    fig = go.Figure(go.Scattergeo(lon=frame["longitude"], lat=frame["latitude"], mode="lines+markers", line={"color": "#35c2c9", "width": 2}, marker={"size": 5, "color": "#d9e6e9"}, text=frame["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), hovertemplate="%{text}<br>Latitude %{lat:.5f}<br>Longitude %{lon:.5f}<extra></extra>"))
+    fig = go.Figure(go.Scattergeo(lon=frame["longitude"], lat=frame["latitude"], mode="lines+markers", line={"color": "#35c2c9", "width": 2}, marker={"size": 5, "color": "#d9e6e9"}, text=frame["received_at"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), hovertemplate="Received %{text}<br>Latitude %{lat:.5f}<br>Longitude %{lon:.5f}<extra></extra>"))
     fig.update_geos(showland=True, landcolor="#10242d", showocean=True, oceancolor="#08151b", showcountries=True, countrycolor="#1b3640", coastlinecolor="#31505b", projection_type="equirectangular")
     fig.update_layout(**_plot_layout(title, "Longitude", "Latitude"), height=390)
     st.plotly_chart(fig, width="stretch")
+    st.caption("Trajectory timeline: message receive time. Observation time: UNAVAILABLE.")
 
 
 def _render_speed_chart(track: list) -> None:
     frame = enrich_track(track_to_frame(track))
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["sog_knots"], mode="lines+markers", name="SOG", line={"color": "#51c79b"}, connectgaps=False, hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>SOG %{y:.1f} kn<extra></extra>"))
-    fig.add_trace(go.Scatter(x=frame["timestamp"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2", line={"color": "#e9b857", "dash": "dot"}, connectgaps=False, hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}°<extra></extra>"))
-    layout = _plot_layout("Observed SOG and COG history", "UTC timestamp", "SOG (knots)")
+    fig.add_trace(go.Scatter(x=frame["received_at"], y=frame["sog_knots"], mode="lines+markers", name="SOG", line={"color": "#51c79b"}, connectgaps=False, hovertemplate="Received %{x|%Y-%m-%d %H:%M:%S} UTC<br>SOG %{y:.1f} kn<extra></extra>"))
+    fig.add_trace(go.Scatter(x=frame["received_at"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2", line={"color": "#e9b857", "dash": "dot"}, connectgaps=False, hovertemplate="Received %{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}°<extra></extra>"))
+    layout = _plot_layout("SOG and COG by message receive time", "Message receive time (UTC)", "SOG (knots)")
     layout.update({"height": 300, "yaxis2": {"title": "COG (°)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"}, "legend": {"orientation": "h", "y": 1.12}})
     fig.update_layout(**layout)
     st.plotly_chart(fig, width="stretch")
@@ -475,7 +481,9 @@ def _vessel_label(mmsi: str, vessels: list[VesselSnapshot]) -> str:
     return f"{mmsi} · {display_name}"
 
 
-def _vessel_compact(vessel: VesselSnapshot) -> None:
+def _vessel_compact(vessel: VesselSnapshot, settings: AppSettings) -> None:
+    region_timezone = region_timezone_for_bbox(settings.bbox)
+    operator_timezone = st.session_state.get("operator_timezone", "UTC")
     st.markdown(f"<div class='data-label'>MMSI</div><div class='data-value'>{vessel.mmsi}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='margin:.45rem 0 .8rem;color:#d9e6e9;font-weight:600'>{vessel.vessel_name or 'UNKNOWN VESSEL'}</div>", unsafe_allow_html=True)
     rows = [
@@ -483,21 +491,15 @@ def _vessel_compact(vessel: VesselSnapshot) -> None:
         ("SOG", f"{vessel.sog_knots:.1f} kn" if vessel.sog_knots is not None else "—"),
         ("COG", f"{vessel.cog_degrees:.1f}°" if vessel.cog_degrees is not None else "—"),
         ("Heading", f"{vessel.heading_degrees:.0f}°" if vessel.heading_degrees is not None else "—"),
-        ("Last update", _utc(vessel.last_update)),
+        ("Last received", format_received(vessel.last_received)),
+        ("AIS UTC second", format_ais_second(vessel.ais_timestamp_second)),
+        ("Observation time", format_observation_time(vessel.observed_at)),
+        ("Region local", format_region_or_operator(vessel.last_received, region_timezone)),
+        ("Operator local", format_region_or_operator(vessel.last_received, operator_timezone)),
         ("State", "STALE" if vessel.stale else "ACTIVE"),
     ]
     for label, value in rows:
         st.markdown(f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #1b3640;padding:.28rem 0'><span class='data-label'>{label}</span><span class='data-value'>{value}</span></div>", unsafe_allow_html=True)
-
-
-def _utc(value) -> str:
-    if value is None:
-        return "—"
-    if hasattr(value, "to_pydatetime"):
-        value = value.to_pydatetime()
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
 
 
 def engine_tracks(snapshot: EngineSnapshot):
