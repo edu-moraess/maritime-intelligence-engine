@@ -1,6 +1,10 @@
-"""Streamlit page renderers. All pages consume the engine snapshot and never create data."""
+"""Streamlit page renderers.
+
+All pages consume the engine snapshot and never create data.
+"""
 
 from src.ui.pages_helpers import _vessel_label  # noqa: F401
+
 from src.ui.pages_a import (  # noqa: F401
     render_behavior,
     render_overview,
@@ -8,6 +12,7 @@ from src.ui.pages_a import (  # noqa: F401
     render_vessel_intelligence,
     render_vessels,
 )
+
 from src.ui.pages_b import (  # noqa: F401
     render_anomalies,
     render_data_quality,
@@ -19,7 +24,6 @@ from src.ui.pages_b import (  # noqa: F401
 __all__ = [
     "_vessel_label",
     "render_anomalies",
-    "render_behavior",
     "render_data_quality",
     "render_overview",
     "render_similarity",
