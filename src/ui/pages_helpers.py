@@ -369,10 +369,9 @@ def _render_vessel_map(
     show_speed_field: bool = False,
     show_anomaly_hotspots: bool = False,
 ) -> None:
-    """Render the operational AIS map and optional intelligence layers.
+    """Render the operational AIS map and intelligence layers.
 
-    All layers originate exclusively from current real AIS observations
-    or anomaly findings derived from those observations.
+    Operational intelligence derived from live AIS observations.
 
     The renderer intentionally avoids JavaScript expressions and
     HeatmapLayer so the Streamlit Cloud deck.gl renderer receives
