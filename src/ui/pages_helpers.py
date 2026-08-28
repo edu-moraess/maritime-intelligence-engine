@@ -1052,7 +1052,7 @@ def _render_speed_chart(
             connectgaps=False,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M:%S} UTC"
-                "<br>COG %{y:.1f}°"
+                "<br/>COG %{y:.1f}°"
                 "<extra></extra>"
             ),
         )
