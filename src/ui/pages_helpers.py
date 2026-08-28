@@ -96,13 +96,13 @@ def _no_real_data_reason(
     if status_reason:
         return (
             f"{status_reason} "
-            "Collect real AIS data for longer or select "
-            "a denser monitoring region."
+            "Awaiting live AIS observations "
+            "for operational analysis."
         )
 
     return (
-        "Collect real AIS data for longer or select "
-        "a denser monitoring region."
+        "Awaiting live AIS observations "
+        "for operational analysis."
     )
 
 
@@ -1052,7 +1052,7 @@ def _render_speed_chart(
             connectgaps=False,
             hovertemplate=(
                 "%{x|%Y-%m-%d %H:%M:%S} UTC"
-                "<br/>COG %{y:.1f}°"
+                "<br>COG %{y:.1f}°"
                 "<extra></extra>"
             ),
         )
