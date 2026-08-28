@@ -9,6 +9,7 @@ import streamlit as st
 from src.config.settings import AppSettings
 from src.geospatial.map_data import vessel_rows
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
+
 from src.ui.pages_helpers import (
     _no_real_data_reason,
     _plot_layout,
@@ -24,6 +25,7 @@ from src.ui.pages_helpers import (
     _vessel_compact,
     _vessel_label,
 )
+
 from src.ui.presentation import (
     empty_state,
     frame_for_table,
@@ -59,6 +61,9 @@ def render_overview(
         gap="small",
     )
 
+    # ------------------------------------------------------------------
+    # LEFT — MAP CONTROLS
+    # ------------------------------------------------------------------
     with left:
         panel_title("Filters", "operator")
 
@@ -98,6 +103,36 @@ def render_overview(
         )
 
         st.markdown(
+            "<hr style='border-color:#1b3640'>",
+            unsafe_allow_html=True,
+        )
+
+        panel_title(
+            "Traffic intelligence",
+            "spatial",
+        )
+
+        show_density = st.checkbox(
+            "Traffic density",
+            value=False,
+        )
+
+        show_hexbin = st.checkbox(
+            "Traffic hexbin",
+            value=False,
+        )
+
+        show_speed_field = st.checkbox(
+            "Speed field",
+            value=False,
+        )
+
+        show_anomaly_hotspots = st.checkbox(
+            "Anomaly hotspots",
+            value=False,
+        )
+
+        st.markdown(
             "<p class='small-note'>"
             "All layers originate from current real AIS observations. "
             "No synthetic vessel or fallback layer is rendered."
@@ -105,6 +140,9 @@ def render_overview(
             unsafe_allow_html=True,
         )
 
+    # ------------------------------------------------------------------
+    # CENTER — OPERATIONAL MAP
+    # ------------------------------------------------------------------
     with center:
         panel_title(
             "Operational map",
@@ -117,7 +155,8 @@ def render_overview(
             rows = [
                 row
                 for row in rows
-                if row["sog_knots"] >= min_speed
+                if row["sog_knots"] is not None
+                and row["sog_knots"] >= min_speed
             ]
 
         if only_fresh:
@@ -133,27 +172,35 @@ def render_overview(
             )
         else:
             _render_vessel_map(
-                rows,
-                snapshot,
-                settings,
-                show_heading,
-                show_trails,
-                show_anomalies,
+                rows=rows,
+                snapshot=snapshot,
+                settings=settings,
+                show_heading=show_heading,
+                show_trails=show_trails,
+                show_anomalies=show_anomalies,
+                show_density=show_density,
+                show_hexbin=show_hexbin,
+                show_speed_field=show_speed_field,
+                show_anomaly_hotspots=show_anomaly_hotspots,
             )
 
             st.caption(
-                "WebGL map · AISStream position reports · "
-                "click a vessel row in Vessels or Vessel Intelligence "
-                "to inspect it"
+                "WebGL operational map · real AIS position reports · "
+                "spatial intelligence layers derived from the current session"
             )
 
+    # ------------------------------------------------------------------
+    # RIGHT — INTELLIGENCE PANEL
+    # ------------------------------------------------------------------
     with right:
         panel_title(
             "Intel panel",
             "selected",
         )
 
-        selected = _selected_vessel(snapshot.vessels)
+        selected = _selected_vessel(
+            snapshot.vessels
+        )
 
         if selected is None:
             empty_state(
@@ -325,7 +372,10 @@ def render_vessel_intelligence(
             0.0,
             1.0
             - max(
-                (finding.score for finding in findings),
+                (
+                    finding.score
+                    for finding in findings
+                ),
                 default=0.0,
             ),
         )
@@ -333,7 +383,9 @@ def render_vessel_intelligence(
         metric_strip(
             {
                 "NORMALITY": f"{normality:.2f}",
-                "ANOMALY": f"{max((finding.score for finding in findings), default=0.0):.2f}",
+                "ANOMALY": (
+                    f"{max((finding.score for finding in findings), default=0.0):.2f}"
+                ),
                 "REPORTS": selected.message_count,
             }
         )
@@ -349,7 +401,10 @@ def render_vessel_intelligence(
             st.dataframe(
                 frame_for_table(
                     pd.DataFrame(
-                        [finding.__dict__ for finding in findings]
+                        [
+                            finding.__dict__
+                            for finding in findings
+                        ]
                     )
                 ),
                 hide_index=True,
@@ -472,7 +527,9 @@ def render_behavior(
         )
         return
 
-    selected_mmsi = st.session_state.get("selected_mmsi")
+    selected_mmsi = st.session_state.get(
+        "selected_mmsi"
+    )
 
     selected_idx = (
         result.mmsis.index(selected_mmsi)
@@ -480,11 +537,6 @@ def render_behavior(
         else None
     )
 
-    # ---------------------------------------------------------------
-    # Runtime Isolation Forest scores.
-    #
-    # These are session-relative ranking signals, not probabilities.
-    # ---------------------------------------------------------------
     behavioral_scores = {
         str(mmsi): float(score)
         for mmsi, score in zip(
@@ -494,11 +546,6 @@ def render_behavior(
         if score is not None
     }
 
-    # ---------------------------------------------------------------
-    # Validate MMSIs for visualization only.
-    #
-    # The underlying ML result remains untouched.
-    # ---------------------------------------------------------------
     valid_indices = [
         i
         for i, mmsi in enumerate(result.mmsis)
@@ -514,12 +561,6 @@ def render_behavior(
         )
         return
 
-    # ---------------------------------------------------------------
-    # Selective labeling.
-    #
-    # All points retain hover information. Only the strongest signals
-    # and the selected target receive permanent labels.
-    # ---------------------------------------------------------------
     ranked_indices = sorted(
         valid_indices,
         key=lambda i: behavioral_scores.get(
@@ -541,8 +582,13 @@ def render_behavior(
         ranked_indices[:label_count]
     )
 
-    if selected_idx is not None and selected_idx in valid_indices:
-        highlighted_indices.add(selected_idx)
+    if (
+        selected_idx is not None
+        and selected_idx in valid_indices
+    ):
+        highlighted_indices.add(
+            selected_idx
+        )
 
     fig = go.Figure()
 
@@ -613,11 +659,13 @@ def render_behavior(
             )
         )
 
-    # ---------------------------------------------------------------
-    # Selected target.
-    # ---------------------------------------------------------------
-    if selected_idx is not None and selected_idx in valid_indices:
-        current_mmsi = str(result.mmsis[selected_idx])
+    if (
+        selected_idx is not None
+        and selected_idx in valid_indices
+    ):
+        current_mmsi = str(
+            result.mmsis[selected_idx]
+        )
 
         current_score = behavioral_scores.get(
             current_mmsi,
@@ -661,9 +709,6 @@ def render_behavior(
             )
         )
 
-    # ---------------------------------------------------------------
-    # Layout.
-    # ---------------------------------------------------------------
     layout = _plot_layout(
         "PCA projection of real AIS trajectory representations",
         "PC1",
@@ -689,16 +734,15 @@ def render_behavior(
         }
     )
 
-    fig.update_layout(**layout)
+    fig.update_layout(
+        **layout
+    )
 
     st.plotly_chart(
         fig,
         width="stretch",
     )
 
-    # ---------------------------------------------------------------
-    # Metrics.
-    # ---------------------------------------------------------------
     metric_values = {
         "METHOD": "Runtime PCA + Isolation Forest",
         "CLUSTERS": len(valid_clusters),
@@ -709,13 +753,18 @@ def render_behavior(
 
     current_score = None
 
-    if selected_idx is not None and selected_idx in valid_indices:
+    if (
+        selected_idx is not None
+        and selected_idx in valid_indices
+    ):
         current_score = behavioral_scores.get(
             str(result.mmsis[selected_idx])
         )
 
     if current_score is not None:
-        metric_values["CURRENT SCORE"] = f"{current_score:.3f}"
+        metric_values[
+            "CURRENT SCORE"
+        ] = f"{current_score:.3f}"
 
     metric_strip(metric_values)
 
