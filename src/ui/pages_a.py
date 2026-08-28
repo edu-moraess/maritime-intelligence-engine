@@ -39,6 +39,11 @@ from src.ui.presentation import (
 )
 
 
+# ----------------------------------------------------------------------
+# OVERVIEW
+# ----------------------------------------------------------------------
+
+
 def render_overview(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -52,7 +57,9 @@ def render_overview(
             "MESSAGES": f"{summary['messages']:,}",
             "ANOMALIES": summary["anomalies"],
             "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
-            "LAST MESSAGE": _utc(snapshot.status.last_received_at),
+            "LAST MESSAGE": _utc(
+                snapshot.status.last_received_at
+            ),
         }
     )
 
@@ -68,8 +75,12 @@ def render_overview(
     # ------------------------------------------------------------------
     # LEFT — MAP FILTERS
     # ------------------------------------------------------------------
+
     with left:
-        panel_title("Filters", "operator")
+        panel_title(
+            "Filters",
+            "operator",
+        )
 
         min_speed = st.slider(
             "Minimum SOG (kn)",
@@ -87,15 +98,13 @@ def render_overview(
     # ------------------------------------------------------------------
     # CENTER — OPERATIONAL MAP
     # ------------------------------------------------------------------
+
     with center:
         panel_title(
             "Operational map",
             f"{len(snapshot.vessels)} targets",
         )
 
-        # --------------------------------------------------------------
-        # COLLAPSIBLE MAP CONFIGURATION
-        # --------------------------------------------------------------
         with st.expander(
             "MAP CONFIGURATION",
             expanded=False,
@@ -107,8 +116,8 @@ def render_overview(
                     "Dark Matter"
                 ),
                 help=(
-                    "Select the basemap used by the "
-                    "operational map."
+                    "Select the basemap used by "
+                    "the operational map."
                 ),
             )
 
@@ -175,13 +184,15 @@ def render_overview(
 
             st.markdown(
                 "<p class='small-note'>"
-                "Spatial intelligence layers are computed "
-                "from the current AIS observation stream."
+                "Spatial intelligence layers are computed from the "
+                "current AIS observation stream."
                 "</p>",
                 unsafe_allow_html=True,
             )
 
-        rows = vessel_rows(snapshot.vessels)
+        rows = vessel_rows(
+            snapshot.vessels
+        )
 
         if min_speed > 0:
             rows = [
@@ -220,13 +231,14 @@ def render_overview(
             )
 
             st.caption(
-                "Operational intelligence derived from "
-                "live AIS observations."
+                "Operational intelligence derived from live "
+                "AIS observations."
             )
 
     # ------------------------------------------------------------------
     # RIGHT — INTELLIGENCE PANEL
     # ------------------------------------------------------------------
+
     with right:
         panel_title(
             "Intel panel",
@@ -256,16 +268,22 @@ def render_overview(
                 top = findings[0]
 
                 notice(
-                    f"Behavioral anomaly detected · "
-                    f"{top.category} · score {top.score:.2f}",
+                    "Behavioral anomaly detected · "
+                    f"{top.category} · "
+                    f"score {top.score:.2f}",
                     "red",
                 )
             else:
                 notice(
-                    "No behavioral anomaly detected in "
-                    "the available observations.",
+                    "No behavioral anomaly detected in the "
+                    "available observations.",
                     "green",
                 )
+
+
+# ----------------------------------------------------------------------
+# VESSELS
+# ----------------------------------------------------------------------
 
 
 def render_vessels(
@@ -273,7 +291,9 @@ def render_vessels(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("Observed vessels")
+    st.subheader(
+        "Observed vessels"
+    )
 
     st.caption(
         "Current targets derived from real AIS position "
@@ -380,12 +400,19 @@ def render_vessels(
         )
 
 
+# ----------------------------------------------------------------------
+# VESSEL INTELLIGENCE
+# ----------------------------------------------------------------------
+
+
 def render_vessel_intelligence(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("Vessel intelligence")
+    st.subheader(
+        "Vessel intelligence"
+    )
 
     selected = _select_vessel(
         snapshot,
@@ -399,8 +426,8 @@ def render_vessel_intelligence(
             )
             if not snapshot.vessels
             else (
-                "Select an observed vessel to "
-                "inspect its profile."
+                "Select an observed vessel "
+                "to inspect its profile."
             )
         )
 
@@ -422,7 +449,9 @@ def render_vessel_intelligence(
             "AIS",
         )
 
-        _vessel_compact(selected)
+        _vessel_compact(
+            selected
+        )
 
         findings = [
             finding
@@ -430,27 +459,23 @@ def render_vessel_intelligence(
             if finding.mmsi == selected.mmsi
         ]
 
+        max_anomaly = max(
+            (
+                finding.score
+                for finding in findings
+            ),
+            default=0.0,
+        )
+
         normality = max(
             0.0,
-            1.0
-            - max(
-                (
-                    finding.score
-                    for finding in findings
-                ),
-                default=0.0,
-            ),
+            1.0 - max_anomaly,
         )
 
         metric_strip(
             {
                 "NORMALITY": f"{normality:.2f}",
-                "ANOMALY": (
-                    f"{max("
-                    f"(finding.score "
-                    f"for finding in findings), "
-                    f"default=0.0):.2f}"
-                ),
+                "ANOMALY": f"{max_anomaly:.2f}",
                 "REPORTS": selected.message_count,
             }
         )
@@ -477,8 +502,8 @@ def render_vessel_intelligence(
             )
         else:
             notice(
-                "No behavioral anomaly detected in "
-                "the available real AIS observations.",
+                "No behavioral anomaly detected in the "
+                "available real AIS observations.",
                 "green",
             )
 
@@ -495,11 +520,11 @@ def render_vessel_intelligence(
 
         if len(track) < 2:
             empty_state(
-                f"Trajectory analysis requires at least "
-                f"2 real AIS position reports for this "
+                "Trajectory analysis requires at least "
+                "2 real AIS position reports for this "
                 f"vessel. Current: {len(track)}/2. "
-                f"Collect real AIS data for longer or "
-                f"select a denser monitoring region.",
+                "Collect real AIS data for longer or "
+                "select a denser monitoring region.",
                 "INSUFFICIENT REAL AIS DATA",
             )
         else:
@@ -508,7 +533,14 @@ def render_vessel_intelligence(
                 title="Current real AIS track",
             )
 
-            _render_speed_chart(track)
+            _render_speed_chart(
+                track
+            )
+
+
+# ----------------------------------------------------------------------
+# TRAJECTORY ANALYSIS
+# ----------------------------------------------------------------------
 
 
 def render_trajectory_analysis(
@@ -516,7 +548,9 @@ def render_trajectory_analysis(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("Trajectory analysis")
+    st.subheader(
+        "Trajectory analysis"
+    )
 
     selected = _select_vessel(
         snapshot,
@@ -530,8 +564,8 @@ def render_trajectory_analysis(
             )
             if not snapshot.vessels
             else (
-                "Select an observed vessel to "
-                "analyze its trajectory."
+                "Select an observed vessel "
+                "to analyze its trajectory."
             )
         )
 
@@ -549,11 +583,11 @@ def render_trajectory_analysis(
 
     if len(track) < 2:
         empty_state(
-            f"Trajectory analysis requires at least "
-            f"2 real AIS position reports for this "
+            "Trajectory analysis requires at least "
+            "2 real AIS position reports for this "
             f"vessel. Current: {len(track)}/2. "
-            f"Collect real AIS data for longer or "
-            f"select a denser monitoring region.",
+            "Collect real AIS data for longer or "
+            "select a denser monitoring region.",
             "INSUFFICIENT REAL AIS DATA",
         )
 
@@ -570,7 +604,9 @@ def render_trajectory_analysis(
             title="Current real AIS trajectory",
         )
 
-        _render_speed_chart(track)
+        _render_speed_chart(
+            track
+        )
 
     with right:
         _render_similarity_search(
@@ -581,16 +617,26 @@ def render_trajectory_analysis(
         )
 
 
+# ----------------------------------------------------------------------
+# BEHAVIOR
+# ----------------------------------------------------------------------
+
+
 def render_behavior(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("Behavior analysis")
+    st.subheader(
+        "Behavior analysis"
+    )
 
     result = snapshot.embeddings
 
-    if result is None or len(result.projection) < 3:
+    if (
+        result is None
+        or len(result.projection) < 3
+    ):
         empty_state(
             _track_readiness_reason(
                 "Behavior",
@@ -605,7 +651,9 @@ def render_behavior(
     )
 
     selected_idx = (
-        result.mmsis.index(selected_mmsi)
+        result.mmsis.index(
+            selected_mmsi
+        )
         if selected_mmsi in result.mmsis
         else None
     )
@@ -724,8 +772,7 @@ def render_behavior(
                 customdata=customdata,
                 hovertemplate=(
                     "<b>MMSI</b>: %{customdata[0]}"
-                    "<br><b>Cluster</b>: "
-                    "%{customdata[1]}"
+                    "<br><b>Cluster</b>: %{customdata[1]}"
                     "<br><b>Isolation Forest score</b>: "
                     "%{customdata[2]:.3f}"
                     "<br><b>PC1</b>: %{x:.3f}"
@@ -734,6 +781,10 @@ def render_behavior(
                 ),
             )
         )
+
+    # ------------------------------------------------------------------
+    # CURRENT TARGET
+    # ------------------------------------------------------------------
 
     if (
         selected_idx is not None
@@ -748,20 +799,24 @@ def render_behavior(
             0.0,
         )
 
+        current_cluster = int(
+            result.clusters[selected_idx]
+        )
+
+        current_pc1 = result.projection[
+            selected_idx,
+            0,
+        ]
+
+        current_pc2 = result.projection[
+            selected_idx,
+            1,
+        ]
+
         fig.add_trace(
             go.Scatter(
-                x=[
-                    result.projection[
-                        selected_idx,
-                        0,
-                    ]
-                ],
-                y=[
-                    result.projection[
-                        selected_idx,
-                        1,
-                    ]
-                ],
+                x=[current_pc1],
+                y=[current_pc2],
                 mode="markers",
                 name="CURRENT",
                 marker={
@@ -774,9 +829,9 @@ def render_behavior(
                 },
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
-                    "<br><b>Cluster</b>: "
-                    f"{int(result.clusters[selected_idx])}"
-                    "<br><b>Isolation Forest score</b>: "
+                    f"<br><b>Cluster</b>: "
+                    f"{current_cluster}"
+                    f"<br><b>Isolation Forest score</b>: "
                     f"{current_score:.3f}"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
@@ -820,7 +875,9 @@ def render_behavior(
     )
 
     metric_values = {
-        "METHOD": "Runtime PCA + Isolation Forest",
+        "METHOD": (
+            "Runtime PCA + Isolation Forest"
+        ),
         "CLUSTERS": len(valid_clusters),
         "TRACKS": len(result.mmsis),
         "VALID MMSI": len(valid_indices),
@@ -842,6 +899,10 @@ def render_behavior(
             "CURRENT SCORE"
         ] = f"{current_score:.3f}"
 
+    metric_strip(
+        metric_values
+    )
+
     notice(
         f"Representation provenance: "
         f"{result.model_checkpoint}. "
@@ -856,6 +917,6 @@ def render_behavior(
         "ranking signals, not probabilities or calibrated "
         "confidence values. All valid trajectories remain "
         "available through hover; permanent labels are "
-        "limited to the strongest signals and the currently "
-        "selected target."
+        "limited to the strongest signals and the "
+        "currently selected target."
     )
