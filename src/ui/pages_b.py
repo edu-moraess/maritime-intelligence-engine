@@ -44,71 +44,66 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
         empty_state("Anomalies are calculated only from currently observed real AIS reports. No finding is fabricated when data is insufficient. Collect real AIS data for longer or select a denser monitoring region if more history is required.", "NO BEHAVIORAL ANOMALIES")
         return
     categories = ["All categories"] + sorted({finding.category for finding in findings})
-    selected_category = st.selectbox("Category", categories)
-    filtered = findings if selected_category == "All categories" else [finding for finding in findings if finding.category == selected_category]
-    left, right = st.columns([1.2, 1.8], gap="medium")
-    with left:
-        for finding in filtered:
-            st.markdown(
-                f"<div class='finding-card'><div style='display:flex;justify-content:space-between'><strong>{finding.mmsi}</strong><span>{finding.score:.2f}</span></div><div class='small-note'>{finding.category}</div><div style='margin-top:.45rem'>{finding.detail}</div><div class='small-note' style='margin-top:.35rem'>{_utc(finding.observed_at)}</div></div>",
-                unsafe_allow_html=True,
-            )
-    with right:
-        _render_anomaly_map(filtered, settings)
-    notice("Anomaly scores are session-local and derived only from currently observed real AIS tracks.")
+    selected_category = st.selectbox("Category", categories, label_visibility="collapsed")
+    filtered = findings if selected_category == "All categories" else [f for f in findings if f.category == selected_category]
+    table = pd.DataFrame(
+        [
+            {
+                "Timestamp": _utc(f.received_at),
+                "MMSI": f.mmsi,
+                "Location": f"{f.latitude:.4f}, {f.longitude:.4f}",
+                "Score": f"{f.score:.2f}",
+                "Category": f.category,
+                "Confidence": f"{f.confidence:.2f}",
+                "Explanation": f.explanation,
+            }
+            for f in filtered
+        ]
+    )
+    st.dataframe(table, hide_index=True, width="stretch")
+    _render_anomaly_map(filtered, settings)
+    notice("Interpretation guardrail: these are behavioral anomalies in observed movement data, not determinations of hostile intent.")
 
 
 def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
-    st.subheader("Traffic intensity")
+    st.subheader("Traffic analytics")
+    summary = snapshot.summary
+    metric_strip({"ACTIVE VESSELS": summary["active_vessels"], "MESSAGES": f"{summary['messages']:,}", "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn", "REGIONS": summary["regions"], "ANOMALIES": summary["anomalies"]})
     if not snapshot.observations:
-        empty_state(_no_real_data_reason(snapshot.status.reason), "NO TRAFFIC OBSERVATIONS")
+        empty_state(_no_real_data_reason(snapshot.status.reason))
         return
-    hourly = hourly_volume(snapshot.observations)
-    speeds = speed_distribution(snapshot.vessels)
-    categories = anomaly_counts(snapshot.findings)
-    metric_strip(
-        {
-            "OBSERVATIONS": len(snapshot.observations),
-            "PEAK HOUR": int(hourly.max()) if not hourly.empty else 0,
-            "MEAN SOG": f"{speeds.mean():.1f} kn" if not speeds.empty else "—",
-        }
-    )
     left, right = st.columns(2, gap="medium")
     with left:
-        fig = go.Figure(go.Bar(x=hourly.index.astype(str), y=hourly.values, marker_color="#35c2c9"))
-        fig.update_layout(**_plot_layout("Hourly observed volume", "UTC hour", "Messages"), height=320)
+        volume = hourly_volume(snapshot.observations)
+        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9", hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>"))
+        fig.update_layout(**_plot_layout("Observed AIS message volume by UTC hour", "UTC hour", "Real AIS messages"), height=330)
         st.plotly_chart(fig, width="stretch")
     with right:
-        fig = go.Figure(go.Histogram(x=speeds, nbinsx=20, marker_color="#7dd3a7"))
-        fig.update_layout(**_plot_layout("Speed distribution", "SOG (knots)", "Vessels"), height=320)
+        speeds = speed_distribution(snapshot.vessels)
+        if speeds.empty:
+            empty_state("SOG distribution requires real AIS reports with a valid speed-over-ground field.", "NO REAL SOG DATA")
+        else:
+            fig = go.Figure(go.Histogram(x=speeds["sog_knots"], nbinsx=18, marker_color="#51c79b", hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>"))
+            fig.update_layout(**_plot_layout("Observed speed-over-ground distribution", "SOG (knots)", "Vessels"), height=330)
+            st.plotly_chart(fig, width="stretch")
+    counts = anomaly_counts(snapshot.findings)
+    if not counts.empty:
+        fig = go.Figure(go.Bar(x=counts["category"], y=counts["events"], marker_color="#e9b857"))
+        fig.update_layout(**_plot_layout("Behavioral findings by category", "Category", "Events"), height=300)
         st.plotly_chart(fig, width="stretch")
-    if categories:
-        st.write("")
-        panel_title("Finding categories", "session")
-        st.dataframe(
-            frame_for_table(pd.DataFrame({"category": list(categories.keys()), "count": list(categories.values())})),
-            hide_index=True,
-            width="stretch",
-        )
 
 
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Data quality")
     report = snapshot.quality
-    metric_strip(
-        {
-            "QUALITY": f"{report.quality_percent:.1f}%",
-            "PROCESSED": report.messages_processed,
-            "REJECTED": report.rejected_messages,
-            "DUPLICATES": report.duplicate_messages,
-        }
-    )
-    left, right = st.columns([1.4, 1], gap="medium")
+    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}", "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}", "LAST UPDATE": _utc(snapshot.status.last_message_at)})
+    st.write("")
+    left, right = st.columns([1.2, 1], gap="medium")
     with left:
         rows = pd.DataFrame(
             {
-                "metric": ["Invalid coordinates", "Impossible speeds", "Impossible jumps", "Stale records"],
-                "count": [report.invalid_coordinates, report.impossible_speeds, report.impossible_jumps, report.stale_records],
+                "Check": ["Invalid coordinates / records", "Duplicate messages", "Missing values", "Timestamp gaps", "Invalid MMSI", "Impossible speeds", "Impossible geographic jumps", "Stale reports"],
+                "Count": [report.invalid_records, report.duplicate_records, report.missing_values, report.receive_time_gaps, report.invalid_mmsi, report.impossible_speeds, report.impossible_jumps, report.stale_records],
             }
         )
         st.dataframe(rows, hide_index=True, width="stretch")
@@ -125,15 +120,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
 def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("System and pipeline status")
     status = snapshot.status
-    metric_strip(
-        {
-            "PROVIDER": "AISStream.io",
-            "STATE": status.state,
-            "WEBSOCKET": status.websocket_status,
-            "MESSAGES": f"{status.messages_received:,}",
-            "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—",
-        }
-    )
+    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES": f"{status.messages_received:,}", "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—"})
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
