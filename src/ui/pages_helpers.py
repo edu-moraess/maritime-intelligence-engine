@@ -31,6 +31,30 @@ from src.ui.presentation import (
 )
 
 
+# ----------------------------------------------------------------------
+# MAP STYLES
+# ----------------------------------------------------------------------
+
+MAP_STYLES = {
+    "Dark Matter": (
+        "https://basemaps.cartocdn.com/"
+        "gl/dark-matter-gl-style/style.json"
+    ),
+    "Positron": (
+        "https://basemaps.cartocdn.com/"
+        "gl/positron-gl-style/style.json"
+    ),
+    "Voyager": (
+        "https://basemaps.cartocdn.com/"
+        "gl/voyager-gl-style/style.json"
+    ),
+    "Light": (
+        "https://basemaps.cartocdn.com/"
+        "gl/positron-gl-style/style.json"
+    ),
+}
+
+
 def _render_readiness(
     snapshot: EngineSnapshot,
 ) -> None:
@@ -96,13 +120,13 @@ def _no_real_data_reason(
     if status_reason:
         return (
             f"{status_reason} "
-            "Awaiting live AIS observations "
-            "for operational analysis."
+            "Collect real AIS data for longer or select "
+            "a denser monitoring region."
         )
 
     return (
-        "Awaiting live AIS observations "
-        "for operational analysis."
+        "Collect real AIS data for longer or select "
+        "a denser monitoring region."
     )
 
 
@@ -368,6 +392,7 @@ def _render_vessel_map(
     show_hexbin: bool = False,
     show_speed_field: bool = False,
     show_anomaly_hotspots: bool = False,
+    map_style: str = "Dark Matter",
 ) -> None:
     """Render the operational AIS map and intelligence layers.
 
@@ -807,14 +832,20 @@ def _render_vessel_map(
     )
 
     # ------------------------------------------------------------------
+    # MAP STYLE
+    # ------------------------------------------------------------------
+
+    selected_map_style = MAP_STYLES.get(
+        map_style,
+        MAP_STYLES["Dark Matter"],
+    )
+
+    # ------------------------------------------------------------------
     # DECK
     # ------------------------------------------------------------------
 
     deck = pdk.Deck(
-        map_style=(
-            "https://basemaps.cartocdn.com/"
-            "gl/dark-matter-gl-style/style.json"
-        ),
+        map_style=selected_map_style,
         initial_view_state=pdk.ViewState(
             latitude=center_lat,
             longitude=center_lon,
