@@ -134,8 +134,8 @@ def render_overview(
 
         st.markdown(
             "<p class='small-note'>"
-            "All layers originate from current real AIS observations. "
-            "No synthetic vessel or fallback layer is rendered."
+            "Spatial intelligence layers are computed from the current "
+            "AIS observation stream."
             "</p>",
             unsafe_allow_html=True,
         )
