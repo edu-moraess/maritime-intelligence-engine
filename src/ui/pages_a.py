@@ -35,7 +35,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
             "MESSAGES": f"{summary['messages']:,}",
             "ANOMALIES": summary["anomalies"],
             "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
-            "LAST MESSAGE": _utc(snapshot.status.last_message_at),
+            "LAST MESSAGE": _utc(snapshot.status.last_received_at),
         }
     )
     _render_readiness(snapshot)

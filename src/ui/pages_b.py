@@ -96,7 +96,7 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Data quality")
     report = snapshot.quality
-    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}", "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}", "LAST UPDATE": _utc(snapshot.status.last_message_at)})
+    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}", "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}", "LAST UPDATE": _utc(snapshot.status.last_received_at)})
     st.write("")
     left, right = st.columns([1.2, 1], gap="medium")
     with left:
@@ -129,7 +129,7 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         st.write(f"**Reason:** {status.reason}")
         st.write(f"**Messages received:** `{status.messages_received:,}`")
         st.write(f"**Active vessels:** `{status.active_vessels:,}`")
-        st.write(f"**Last ingestion:** `{_utc(status.last_message_at)}`")
+        st.write(f"**Last ingestion:** `{_utc(status.last_received_at)}`")
         st.write(f"**Monitoring box:** `{settings.bbox[0]} → {settings.bbox[1]}`")
     with right:
         panel_title("Pipeline", "real AIS")
