@@ -2,7 +2,7 @@ Maritime Intelligence Engine (MIE)
 
 Real-Time Maritime Behavioral Intelligence
 
-Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest real AIS data in real time, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
+Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest real AIS telemetry, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
 
 «Real AIS. Real trajectories. No synthetic vessels. No fabricated results.»
 
@@ -10,14 +10,15 @@ Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platfo
 
 Overview
 
-Raw AIS data tells us where vessels are and how they are moving.
-MIE is designed to go one step further: transforming vessel telemetry into behavioral context.
+AIS provides information about where vessels are and how they are moving.
+
+MIE is designed to go further by transforming vessel telemetry into behavioral context and analytical signals.
 
 Real AIS
    ↓
-WebSocket Ingestion
+Ingestion
    ↓
-Validation & Data Quality
+Validation
    ↓
 Session Store
    ↓
@@ -25,15 +26,11 @@ Trajectory Reconstruction
    ↓
 Feature Engineering
    ↓
-PCA / Clustering
+Behavioral Analytics
    ↓
-Isolation Forest
-   +
-Explainable Rules
+Explainable Findings
    ↓
-Behavioral Intelligence
-   ↓
-Operational Visualization
+Operational Intelligence
 
 The central question is not only:
 
@@ -41,7 +38,7 @@ The central question is not only:
 
 but also:
 
-«How is it moving, how does its behavior compare with other observed vessels, and which patterns deserve further investigation?»
+«How is it moving, how does its behavior compare with the observed traffic, and which patterns deserve further investigation?»
 
 ---
 
@@ -53,65 +50,70 @@ Core Capabilities
 - Real vessel telemetry
 - Server-side Bounding Box filtering
 - Configurable collection windows
-- Explicit connection and data states
+- Explicit connection and collection states
 - Session-based collection
 
 🚢 Vessel Tracking
 
-- MMSI-based tracking
-- Individual vessel trajectories
+- MMSI-based vessel tracking
 - Position history
 - Speed over ground
 - Course over ground
 - Heading
 - Vessel-level investigation
+- Trajectory reconstruction
 
 🧭 Trajectory Intelligence
 
-MIE converts raw position reports into behavioral features such as:
+MIE transforms sequential AIS observations into vessel movement histories and analytical features.
 
-- position;
-- speed;
-- course;
-- heading;
-- distance traveled;
-- time delta;
+Examples include:
+
+- displacement;
+- elapsed time;
 - computed speed;
 - heading changes;
+- course changes;
 - track duration;
+- movement continuity;
 - signal gaps.
 
-These features form the foundation of the behavioral intelligence layer.
+🤖 Behavioral Analytics
 
-🤖 Behavioral Anomaly Detection
-
-MIE combines unsupervised machine learning with interpretable rules.
+The current analytical pipeline uses unsupervised methods to explore behavioral structure in observed maritime traffic.
 
 Trajectory Features
         ↓
 Standardization
         ↓
 PCA
-        ↓
-KMeans
-        +
-Isolation Forest
-        ↓
-Behavioral Findings
+   ┌────┴────┐
+   ▼         ▼
+KMeans   Isolation Forest
+   │         │
+   └────┬────┘
+        ▼
+Behavioral Signals
 
-The objective is to identify unusual behavioral patterns, not automatically classify vessels as threats.
+The current analytical components include:
+
+- PCA for dimensionality reduction;
+- KMeans for behavioral grouping;
+- Isolation Forest for anomaly detection.
 
 🔎 Explainable Findings
 
-Machine-learning outputs are complemented by deterministic rules covering patterns such as:
+Machine-learning outputs are complemented by interpretable behavioral rules.
+
+Potential signals include:
 
 - unusual speed;
 - prolonged stops;
 - signal gaps;
 - significant heading changes;
-- unusual movement behavior.
+- unusual trajectory characteristics.
 
-The system is designed to provide analytical signals with context, rather than unexplained anomaly scores.
+An anomaly is treated as a signal for investigation, not as proof of malicious intent.
 
 🗺️ Geospatial Intelligence
 
@@ -122,24 +124,24 @@ The operational workspace provides:
 - geographic filtering;
 - Bounding Box control;
 - vessel selection;
-- behavioral overlays;
+- behavioral visualization;
 - heading visualization;
-- interactive maps.
+- operational status.
 
 📊 Data Quality
 
-Data quality is treated as part of the intelligence pipeline.
+Data quality is part of the intelligence pipeline.
 
-The system monitors conditions including:
+The system validates conditions including:
 
-- invalid MMSI;
-- invalid coordinates;
-- impossible speeds;
-- impossible geographic jumps;
+- MMSI validity;
+- geographic bounds;
+- speed plausibility;
+- temporal consistency;
 - duplicate observations;
-- missing data;
-- signal gaps;
-- stale observations.
+- geographic jumps;
+- stale observations;
+- insufficient analytical data.
 
 When real AIS data is unavailable, MIE does not fabricate vessels or trajectories.
 
@@ -147,140 +149,175 @@ When real AIS data is unavailable, MIE does not fabricate vessels or trajectorie
 
 Architecture
 
-                         ┌─────────────────────┐
-                         │      AISStream      │
-                         │     Real AIS Data   │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │      Ingestion      │
-                         │ WebSocket + BBox    │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │     Validation      │
-                         │  Quality / Integrity│
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │    Session Store    │
-                         │ Tracks / Observations│
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │  Trajectory Engine  │
-                         │ Features / Tracks   │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │    ML Pipeline      │
-                         │ PCA / KMeans / IF    │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │ Intelligence Layer  │
-                         │ Rules + Findings    │
-                         └──────────┬──────────┘
-                                    │
-                         ┌──────────┴──────────┐
-                         ▼                     ▼
-                ┌─────────────────┐   ┌──────────────────┐
-                │ Operational UI  │   │ Historical Store │
-                │ Streamlit / Map │   │ PostgreSQL/PostGIS│
-                └─────────────────┘   └──────────────────┘
+MIE follows a layered architecture:
+
+                         AISStream
+                            │
+                            ▼
+                     AIS Ingestion
+                            │
+                            ▼
+                  Validation & Integrity
+                            │
+                            ▼
+                     AISObservation
+                            │
+                            ▼
+                      Session Store
+                            │
+                            ▼
+                    Trajectory Engine
+                            │
+                            ▼
+                   Feature Engineering
+                            │
+                            ▼
+                  Behavioral Analytics
+                            │
+                            ▼
+                   Intelligence Layer
+                       /          \
+                      ▼            ▼
+                Streamlit      PostgreSQL
+                   / Maps         │
+                                 ▼
+                              PostGIS
+
+The architecture intentionally separates:
+
+- data acquisition;
+- validation;
+- domain representation;
+- session state;
+- trajectory processing;
+- machine learning;
+- intelligence;
+- persistence;
+- visualization.
+
+Detailed Architecture
+
+For the complete technical architecture, see:
+
+""docs/architecture.md"" (docs/architecture.md)
 
 ---
 
-System Design Principles
+Real Data Principle
 
-Real Data First
+MIE is designed around real AIS observations.
 
-MIE is built around real AIS observations.
+The system does not generate synthetic vessels or artificial trajectories to make the operational interface appear populated.
 
-The platform does not generate synthetic vessels or artificial trajectories to make the operational interface appear populated.
+Real AIS
+   ↓
+Validated Observation
+   ↓
+Real Track
+   ↓
+Real Features
+   ↓
+Analytical Signal
 
-No Real AIS
-     ↓
-No Artificial Vessels
-     ↓
-No Fabricated Intelligence
+If the required data is unavailable, the system exposes that limitation instead.
 
 This principle is fundamental to the project.
 
 ---
 
-Explicit System States
+Operational State
 
-The platform distinguishes between operational states such as:
+MIE explicitly distinguishes between data availability, infrastructure state, and analytical sufficiency.
 
-- "LIVE"
-- "DISCONNECTED"
-- "STALE"
-- "WAITING FOR DATA"
-- "INSUFFICIENT DATA"
-- "HISTORICAL DATABASE UNAVAILABLE"
+Examples:
 
-This prevents infrastructure failures or missing observations from being mistaken for analytical results.
+AIS disconnected
+      ≠
+No vessels exist
+
+Historical database unavailable
+      ≠
+Live AIS unavailable
+
+Insufficient observations
+      ≠
+No anomaly exists
+
+Anomaly score
+      ≠
+Threat classification
+
+This prevents infrastructure or data limitations from being misinterpreted as intelligence findings.
 
 ---
 
-Live and Historical Data
+Temporal Integrity
 
-Live operational analysis and historical persistence are intentionally separated.
+MIE uses UTC as its canonical temporal reference.
 
-                    Real AIS
-                       │
-                       ▼
-                 Session Store
-                  /         \
-                 /           \
-                ▼             ▼
-        Live Analysis     PostgreSQL
-                              │
-                              ▼
-                           PostGIS
+The architecture distinguishes between:
 
-The historical layer is optional and decoupled from the live ingestion pipeline.
+Receive Time
+    ↓
+Freshness / Ordering / Trajectory Analysis
+
+AIS Timestamp
+    ↓
+AIS Protocol Information
+
+Trusted Absolute Observation Time
+    ↓
+Used only when actually established
+
+The system does not fabricate absolute observation timestamps or network latency when the available AIS data does not support those conclusions.
 
 ---
 
 Vessel Intelligence
 
-The vessel-level workspace combines:
+The Vessel Intelligence layer combines:
 
 Vessel Identity
-      +
+       +
 Telemetry
-      +
+       +
 Trajectory
-      +
-Behavior
-      +
-Anomaly Findings
+       +
+Behavioral Features
+       +
+Analytical Findings
 
-This allows an operator to move from a global maritime picture to the detailed analysis of an individual MMSI.
+This allows the operator to move from the global maritime operating picture toward an individual vessel investigation.
 
 ---
 
-Behavioral Intelligence
+Historical Persistence
 
-The current MIE architecture focuses on session-relative behavioral analysis.
+PostgreSQL/PostGIS provides an optional historical persistence layer.
 
-The machine-learning pipeline learns the structure of the real trajectories available during the analytical session.
+                     Real AIS
+                        │
+                        ▼
+                  Session Store
+                   /          \
+                  /            \
+                 ▼              ▼
+          Live Analysis    PostgreSQL
+                                │
+                                ▼
+                             PostGIS
 
-Therefore, the current system should be understood as:
+Historical persistence is intentionally decoupled from live ingestion.
 
-«Real-time exploratory behavioral intelligence»
+This means that a historical database failure does not need to terminate live AIS analysis.
 
-rather than a universal pre-trained maritime behavior model.
+Historical storage provides the foundation for future capabilities such as:
 
-This distinction is intentional and keeps analytical interpretation technically honest.
+- long-term vessel history;
+- behavioral baselines;
+- route analysis;
+- recurring behavior detection;
+- historical anomaly comparison.
 
 ---
 
@@ -336,6 +373,13 @@ src/
     ├── pages/
     └── components/
 
+docs/
+├── architecture.md
+├── AUDIT.md
+├── VALIDATION.md
+├── STREAMLIT_DEPLOY.md
+└── ...
+
 ---
 
 Installation
@@ -363,9 +407,9 @@ pip install -r requirements.txt
 
 Configure AIS credentials
 
-Configure the required AISStream credentials using the application's supported secrets/environment configuration.
+Configure the required AISStream credentials using the supported environment or Streamlit Secrets configuration.
 
-Never commit API keys or credentials to the repository.
+Never commit API keys or database credentials to the repository.
 
 Run
 
@@ -373,49 +417,49 @@ streamlit run app.py
 
 ---
 
-Historical Persistence
+Validation
 
-PostgreSQL/PostGIS can be used for historical maritime data persistence.
+MIE includes automated and runtime validation covering core system behavior.
 
-The architecture supports:
-
-- session storage;
-- observation persistence;
-- geospatial data;
-- historical vessel observations;
-- database health diagnostics.
-
-Historical persistence remains decoupled from the real-time collection pipeline.
-
----
-
-Testing
-
-The project includes automated tests covering core components including:
+Examples include:
 
 - AIS parsing;
-- validation;
-- session behavior;
-- trajectory processing;
-- feature generation;
-- anomaly logic;
-- storage behavior;
-- system diagnostics.
+- configuration validation;
+- geographic bounds;
+- temporal semantics;
+- trajectory logic;
+- data-quality checks;
+- bounded session storage;
+- system diagnostics;
+- application compilation.
 
 Run:
 
 pytest -q
 
+For detailed validation evidence, see:
+
+""docs/VALIDATION.md"" (docs/VALIDATION.md)
+
+For technical audit information, see:
+
+""docs/AUDIT.md"" (docs/AUDIT.md)
+
+For deployment instructions, see:
+
+""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md)
+
 ---
 
 Current Scope
 
-Available
+Implemented
 
 - Real-time AIS ingestion
-- Real vessel tracking
+- AISStream WebSocket integration
 - Bounding Box filtering
-- Session-based analysis
+- Vessel tracking
+- Session-based collection
 - Trajectory reconstruction
 - Behavioral feature engineering
 - PCA
@@ -424,6 +468,7 @@ Available
 - Explainable behavioral rules
 - Vessel Intelligence
 - Data Quality monitoring
+- Temporal integrity controls
 - Interactive geospatial visualization
 - Optional PostgreSQL/PostGIS persistence
 
@@ -431,142 +476,112 @@ In Development
 
 - AIS "ShipStaticData" enrichment
 - Vessel metadata enrichment
-- Improved vessel identity intelligence
-- Historical behavioral analysis
+- Expanded vessel identity intelligence
+- Historical behavioral baselines
+- Long-term behavioral analysis
+
+---
+
+Limitations
+
+AIS Dependency
+
+An AIS-only system cannot automatically detect vessels that are not transmitting usable AIS information.
+
+Session-Relative Analysis
+
+Current behavioral models operate relative to the observed analytical session.
+
+They should not be interpreted as a universal maritime behavior classifier.
+
+No Intent Inference
+
+Behavioral anomalies are analytical signals.
+
+They do not establish:
+
+- malicious intent;
+- criminal activity;
+- hostile behavior;
+- vessel identity beyond available AIS information.
+
+No Synthetic Fallback
+
+When real AIS data is unavailable, MIE does not replace it with simulated vessel traffic.
 
 ---
 
 Roadmap
 
-                 ┌─────────────────────┐
-                 │    Real-Time AIS    │
-                 └──────────┬──────────┘
-                            ↓
-                 ┌─────────────────────┐
-                 │   AIS Static Data   │
-                 └──────────┬──────────┘
-                            ↓
-                 ┌─────────────────────┐
-                 │ Historical Behavior │
-                 │     Baselines       │
-                 └──────────┬──────────┘
-                            ↓
-                 ┌─────────────────────┐
-                 │ Advanced Geospatial │
-                 │    Intelligence     │
-                 └──────────┬──────────┘
-                            ↓
-                 ┌─────────────────────┐
-                 │ Multimodal Maritime │
-                 │    Intelligence     │
-                 └──────────┬──────────┘
-                            ↓
-                 ┌─────────────────────┐
-                 │ AIS + Visual + SAR  │
-                 │   + External Data   │
-                 └─────────────────────┘
+Real-Time AIS
+      │
+      ▼
+Ship Static Data
+      │
+      ▼
+Historical Behavioral Baselines
+      │
+      ▼
+Context-Aware Behavioral Intelligence
+      │
+      ▼
+Advanced Geospatial Intelligence
+      │
+      ▼
+Multimodal Maritime Intelligence
+      │
+      ├── AIS
+      ├── Computer Vision
+      ├── SAR
+      ├── Weather
+      └── External Geospatial Data
+
+The long-term direction is to evolve from AIS-focused behavioral analysis toward a multimodal maritime intelligence architecture.
+
+Future data sources shown above are architectural directions and are not represented as current capabilities unless implemented.
 
 ---
 
-Future Vision
+Why MIE?
 
-The long-term direction is to evolve from AIS-focused behavioral intelligence toward multimodal maritime perception and intelligence.
+MIE is not simply an AIS map.
 
-                     MARITIME ENVIRONMENT
-                              │
-            ┌─────────────────┼─────────────────┐
-            ▼                 ▼                 ▼
-           AIS              VIDEO              SAR
-            │                 │                 │
-            ▼                 ▼                 ▼
-       Vessel Data        Computer Vision    Remote Sensing
-            │                 │                 │
-            └─────────────────┼─────────────────┘
-                              ▼
-                        Sensor Fusion
-                              │
-                              ▼
-                     Behavioral Analysis
-                              │
-                              ▼
-                    Maritime Intelligence
-                              │
-                              ▼
-                        Human Analyst
+It combines several engineering disciplines into a single end-to-end system:
 
-The goal is not to replace human analysis.
+- Real-Time Data Engineering
+- WebSocket Streaming
+- Geospatial Computing
+- Trajectory Reconstruction
+- Feature Engineering
+- Unsupervised Machine Learning
+- Anomaly Detection
+- Data Quality Engineering
+- Database Engineering
+- Operational Visualization
+- System Diagnostics
+- Explainable Intelligence
 
-The goal is to provide:
+The objective is to transform:
 
-«Better data. Better context. Better signals. Better explanations.»
-
----
-
-What MIE Is — and Is Not
-
-MIE is
-
-- a real-time AIS intelligence platform;
-- a vessel trajectory analysis system;
-- a behavioral anomaly detection engine;
-- a geospatial operational workspace;
-- an experimental foundation for maritime intelligence.
-
-MIE is not
-
-- a physical radar;
-- a sonar system;
-- a universal threat detector;
-- a pre-trained universal maritime behavior model;
-- a guarantee of vessel intent.
-
-AIS also has an important limitation:
-
-«An AIS-only system cannot automatically detect a vessel that is not transmitting usable AIS data.»
-
-This limitation is one of the reasons the long-term architecture is designed to evolve toward multiple data sources.
+Raw Maritime Telemetry
+          ↓
+Structured Movement Data
+          ↓
+Behavioral Representation
+          ↓
+Analytical Signals
+          ↓
+Operational Intelligence
 
 ---
 
 Design Philosophy
 
-MIE deliberately separates:
+MIE follows a simple principle:
 
-Observation
-     ↓
-Validation
-     ↓
-Representation
-     ↓
-Analysis
-     ↓
-Finding
-     ↓
-Human Investigation
+«Observe → Validate → Analyze → Explain → Investigate»
 
-An anomaly is therefore treated as a signal for investigation, not proof of malicious intent.
-
-This distinction is central to responsible maritime intelligence.
-
----
-
-Why This Project?
-
-MIE combines multiple areas of modern engineering into one end-to-end system:
-
-- Data Engineering
-- Real-Time Streaming
-- Geospatial Computing
-- Machine Learning
-- Unsupervised Learning
-- Anomaly Detection
-- Data Quality Engineering
-- Backend Architecture
-- Database Engineering
-- Visualization
-- Operational UI
-
-Rather than treating these as isolated experiments, MIE connects them into a single operational pipeline.
+The platform is designed to help an analyst understand maritime movement, not to replace human judgment.
 
 ---
 
