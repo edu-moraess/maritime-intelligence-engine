@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from src.analytics.traffic import traffic_summary
@@ -80,7 +80,12 @@ class MaritimeIntelligenceEngine:
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
         self.last_collection_seconds: float = 0.0
-        self.historical_writer = create_historical_writer(settings.database_url)
+        self._historical_database_url = settings.database_url
+        self._historical_persistence_enabled = settings.historical_persistence_enabled
+        self.historical_writer = create_historical_writer(
+            settings.database_url,
+            settings.historical_persistence_enabled,
+        )
         self.historical_result: HistoricalWriteResult | None = None
 
     @property
@@ -115,6 +120,24 @@ class MaritimeIntelligenceEngine:
         self.last_collection_seconds = time.monotonic() - started
         self._recompute()
         return len(collected)
+
+    def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
+        """Switch only the optional historical sink; preserve all live state."""
+        if (
+            database_url == self._historical_database_url
+            and persistence_enabled == self._historical_persistence_enabled
+        ):
+            return
+        self.historical_writer.close()
+        self._historical_database_url = database_url
+        self._historical_persistence_enabled = persistence_enabled
+        self.historical_writer = create_historical_writer(database_url, persistence_enabled)
+        self.historical_result = None
+        self.settings = replace(
+            self.settings,
+            database_url=database_url,
+            historical_persistence_enabled=persistence_enabled,
+        )
 
     def _recompute(self) -> None:
         tracks = self.store.tracks()

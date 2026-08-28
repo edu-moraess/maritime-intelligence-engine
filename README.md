@@ -28,14 +28,14 @@ flowchart LR
 
 O frontend Streamlit atua somente como camada de apresentação e orquestração da sessão. O contrato `AISProvider` permite a substituição futura por outro provedor real, sem criar um provedor sintético. O `ObservationStore` continua sendo a fonte do estado live; o `HistoricalWriter` é um sink opcional executado após uma coleta real e nunca substitui o estado live.
 
-Quando `DATABASE_URL` não existe, o sistema permanece **LIVE-ONLY** e mostra `HISTORICAL DATABASE NOT CONFIGURED`. Quando o banco externo está configurado, o writer aplica as migrations versionadas e persiste somente observações AIS válidas recebidas pelo provider. Se o banco falhar, o live permanece em memória e o sistema mostra `HISTORICAL DATABASE UNAVAILABLE` sem vazar a URL ou interromper o Streamlit.
+Quando `DATABASE_URL` não existe, o sistema permanece **LIVE-ONLY** e mostra `HISTORICAL DATABASE NOT CONFIGURED`. Quando o banco externo está configurado, a gravação histórica continua desligada por padrão e só é habilitada por `HISTORICAL_PERSISTENCE_ENABLED=true` ou pelo controle equivalente da sidebar. Nesse caso, o writer aplica as migrations versionadas e persiste somente observações AIS válidas recebidas pelo provider. Se o banco falhar, o live permanece em memória e o sistema mostra `HISTORICAL DATABASE UNAVAILABLE` sem vazar a URL ou interromper o Streamlit.
 
 | Camada | Implementação atual | Garantia de integridade |
 | --- | --- | --- |
 | Ingestão | `AISStreamProvider` com `websocket-client` | Decodifica frames binários UTF-8 e aceita somente mensagens `PositionReport` válidas |
 | Processamento | `processing.quality` e `trajectory.features` | Valida MMSI, coordenadas, velocidade, curso, duplicidades, gaps e saltos impossíveis |
 | Armazenamento live | `ObservationStore` em memória por sessão | Limite de mensagens; nenhuma dependência de banco e nenhum dado inventado |
-| Histórico opcional | `HistoricalWriter` → PostgreSQL/PostGIS externo | Escreve apenas AIS real válido, usa `payload_hash` idempotente e não é fonte obrigatória do live |
+| Histórico opcional | `HistoricalWriter` → PostgreSQL/PostGIS externo | Somente com opt-in explícito; escreve AIS real válido e usa `UNIQUE (session_id, payload_hash)` |
 | Representação | Vetor de características + `StandardScaler` + PCA | Ajustado somente sobre tracks reais recebidos nesta sessão |
 | Anomalias | `IsolationForest` e regras explicáveis | Sinaliza anomalias comportamentais; nunca infere intenção hostil |
 | Interface | Streamlit + Plotly + PyDeck | Estados de conexão e indisponibilidade transparentes |
@@ -102,7 +102,7 @@ Não há um checkpoint público pré-treinado de trajetória incluído ou alegad
 
 ### Semântica temporal
 
-O modelo canônico mantém `received_at` como um `datetime` timezone-aware em UTC: é o instante em que o MIE recebe ou processa o frame. `ais_timestamp_second` preserva somente o segundo UTC informado pelo `PositionReport.Timestamp`; valores normais são 0–59 e os estados especiais 60–63 são mantidos como estados AIS, nunca convertidos em uma data/hora completa. `observed_at` permanece `None` porque o envelope atualmente utilizado não fornece uma fonte absoluta comprovada do instante em que o navio gerou o relatório. `MetaData.time_utc` também não é promovido para observation time sem evidência semântica suficiente.
+O modelo canônico mantém `received_at` como um `datetime` timezone-aware em UTC: é o instante em que o MIE recebe ou processa o frame. `ais_timestamp_second` preserva somente o segundo UTC normal informado pelo `PositionReport.Timestamp` (0–59). Os valores especiais 60–63 são mantidos apenas no payload bruto de auditoria e o campo normal fica `None`; nunca são convertidos em uma data/hora completa. `observed_at` permanece `None` porque o envelope atualmente utilizado não fornece uma fonte absoluta comprovada do instante em que o navio gerou o relatório. `MetaData.time_utc` também não é promovido para observation time sem evidência semântica suficiente.
 
 Freshness, ordenação, trajetórias e agrupamentos de Traffic usam `received_at` e são rotulados como tempo de recebimento. A UI usa `Last received`, `Received`, `AIS UTC second` e `Observation time: UNAVAILABLE` para evitar confusão. Latency permanece `UNAVAILABLE`: o MIE não interpreta a diferença modular entre o relógio do servidor e o segundo AIS como latência de rede.
 
@@ -121,9 +121,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. `DATABASE_URL` é opcional e deve apontar para um PostgreSQL externo com PostGIS; deixe-o vazio para manter o modo LIVE-ONLY. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. Nenhuma chave deve ser colocada no código, no README, no frontend, em logs ou no Git.
+Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. `DATABASE_URL` é opcional e deve apontar para um PostgreSQL externo com PostGIS; deixe-o vazio para manter o modo LIVE-ONLY. Mesmo com URL configurada, `HISTORICAL_PERSISTENCE_ENABLED` tem default `false` e precisa ser explicitamente `true` para permitir gravação histórica. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. Nenhuma chave deve ser colocada no código, no README, no frontend, em logs ou no Git.
 
-Com `DATABASE_URL`, a primeira coleta real após o boot aplica `migrations/001_initial_historical.sql` de forma lazy e cria/atualiza uma `collection_session` somente quando observações AIS válidas forem recebidas. As tabelas usam `timestamptz`; a geometria é armazenada em PostGIS SRID 4326; `observed_at` permanece NULL; nomes AIS ausentes permanecem NULL no banco; e `Clear Session` limpa apenas live, nunca histórico.
+Com `DATABASE_URL` e `HISTORICAL_PERSISTENCE_ENABLED=true`, a primeira coleta real após o boot aplica de forma lazy `migrations/001_initial_historical.sql` e `migrations/002_fix_historical_constraints.sql`, criando/atualizando uma `collection_session` somente quando observações AIS válidas forem recebidas. A migration 002 corrige o legado da 001: valores especiais temporais são anulados e a idempotência passa a ser `UNIQUE (session_id, payload_hash)`, permitindo o mesmo payload em sessões distintas. As tabelas usam `timestamptz`; a geometria é armazenada em PostGIS SRID 4326; `observed_at` permanece NULL; nomes AIS ausentes permanecem NULL no banco; e `Clear Session` limpa apenas live, nunca histórico.
 
 Execute:
 
@@ -131,7 +131,7 @@ Execute:
 streamlit run app.py
 ```
 
-Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas. Sem `DATABASE_URL`, o histórico permanece indisponível de forma explícita e a aplicação continua LIVE-ONLY. O Streamlit Community Cloud não executa PostgreSQL localmente: quando usado, o banco deve ser um serviço PostgreSQL/PostGIS externo.
+Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas. Sem `DATABASE_URL`, o histórico permanece indisponível de forma explícita e a aplicação continua LIVE-ONLY. Com URL configurada e opt-in desligado, o System mostra `HISTORICAL PERSISTENCE OFF` e não há INSERT. O Streamlit Community Cloud não executa PostgreSQL localmente: quando usado, o banco deve ser um serviço PostgreSQL/PostGIS externo.
 
 ## Streamlit Community Cloud
 
@@ -145,6 +145,8 @@ AIS_AREA_MAX_LAT = "25.835"
 AIS_AREA_MAX_LON = "-79.879"
 # Optional external PostgreSQL/PostGIS; omit or leave empty for LIVE-ONLY.
 # DATABASE_URL = "<external-postgresql-url>"
+# Explicit opt-in; DATABASE_URL alone never enables historical INSERTs.
+HISTORICAL_PERSISTENCE_ENABLED = "false"
 ```
 
 Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A alteração da caixa na interface é aplicada à próxima assinatura WebSocket e produz a indicação `Region updated. Collect again to open a new subscription.`. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
@@ -158,7 +160,7 @@ pytest -q
 python -m compileall app.py src tests
 ```
 
-Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos, o tratamento explícito de SOG ausente, o no-op sem `DATABASE_URL`, a falha de banco sem queda do live, a rejeição de observações inválidas e a idempotência por `payload_hash`. A migration e o writer foram validados por contrato e conexão fake apenas nos testes; uma validação contra PostgreSQL/PostGIS real exige infraestrutura externa disponível.
+Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos, o tratamento explícito de SOG ausente, os segundos AIS normais e especiais, o no-op sem `DATABASE_URL`, o modo `DATABASE_URL` + persistence OFF sem INSERT, a falha de banco sem queda do live, a rejeição de observações inválidas e a idempotência por sessão com `payload_hash`. A migration e o writer foram validados por contrato e conexão fake apenas nos testes; uma validação contra PostgreSQL/PostGIS real exige infraestrutura externa disponível.
 
 ## Segurança e privacidade
 

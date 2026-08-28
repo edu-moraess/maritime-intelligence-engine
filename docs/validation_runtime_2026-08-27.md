@@ -127,3 +127,38 @@ System explicitly showed `HISTORICAL DATABASE NOT CONFIGURED`, while the live pr
 
 
 A final clean-process check on port 8507 was performed after the UI/storage wording fixes. Health returned `ok` and a traceback scan of the process log returned none. Overview showed the unchanged no-key real-AIS-only state with default `60 s`, `DISCONNECTED`, zero observations, `WAITING` gates and no fabricated layer. Data Quality showed `NO REAL AIS OBSERVATIONS`; System showed `HISTORICAL DATABASE NOT CONFIGURED`, `Observation time: UNAVAILABLE`, and the corrected statement that the in-memory session store is the live source of truth while optional PostgreSQL/PostGIS persistence runs only after valid received observations and never blocks live AIS.
+
+
+## Post-audit correction clean boot
+
+A clean Streamlit process on port 8508 booted with health `ok` and no traceback in its log. With no `AISSTREAM_API_KEY` and no `DATABASE_URL`, Overview retained the default `60 s`, `DISCONNECTED`, zero real observations, `WAITING` gates, and the no-fabrication empty state. The new sidebar control `Historical Persistence` was visible but disabled, and the sidebar reported `HISTORICAL DATABASE NOT CONFIGURED`.
+
+
+The post-audit navigation pass also loaded Fleet, Vessel Intelligence, Trajectory Analysis and Behavior on port 8508. They showed the expected real-AIS-only empty states (`REAL AIS DATA UNAVAILABLE`, `NO TARGET SELECTED`, `NO TRAJECTORY SELECTED`, and `INSUFFICIENT REAL AIS DATA` with `Current: 0/3`) without runtime exceptions. The new Historical Persistence control remained disabled with `HISTORICAL DATABASE NOT CONFIGURED` throughout.
+
+
+Similarity and Anomalies also loaded successfully in the post-audit navigation pass. Similarity showed `NO REFERENCE TRACK`; Anomalies showed zero findings with the existing no-fabrication explanation. The optional historical control remained visibly separate from all live analysis.
+
+
+Traffic rendered `REAL AIS DATA UNAVAILABLE` with zero metrics and no charts. Data Quality rendered the full empty-session table with `100.0%`, zero messages/invalid/duplicates, `LAST RECEIVED = UNAVAILABLE`, `OBSERVATION TIME = UNAVAILABLE`, and `NO REAL AIS OBSERVATIONS`.
+
+
+System completed the post-audit navigation pass with `HISTORICAL DATABASE NOT CONFIGURED`, live state `DISCONNECTED`, `WEBSOCKET CLOSED`, zero received messages, `AIS UTC SECOND = UNAVAILABLE`, `Observation time = UNAVAILABLE`, and the explicit live-source-of-truth storage statement. No runtime traceback was visible across the full module/subarea navigation.
+
+
+Browser console inspection after the complete post-audit navigation pass returned no console output/errors.
+
+
+## Final E1/E2 correction validation
+
+The post-audit correction suite finished with `102 passed` on 2026-08-28 UTC. `python -m compileall -q app.py src tests` and `git diff --check` also passed. Automated contracts cover normal AIS seconds 0–59, special values 60–63 mapped to `ais_timestamp_second=None` with raw payload retained and `observed_at=None`, migration 002, per-session payload idempotency, DATABASE_URL without opt-in, explicit opt-in, fail-safe database errors, live-store preservation and Clear Session safety.
+
+No PostgreSQL/PostGIS service, AISStream API key or published Cloud URL/logs was available in this environment. Those integrations remain `NOT VALIDATED`, rather than being inferred from local tests or disconnected Streamlit boot.
+
+
+## Final clean boot after in-place writer reconfiguration
+
+After the in-place writer reconfiguration was added, a brand-new Streamlit process on port 8509 returned health `ok`; its startup log had no traceback. The Overview showed the default `60 s`, `NOT CONFIGURED`, `DISCONNECTED`, zero observations, `WAITING` gates and `REAL AIS DATA UNAVAILABLE`. The `Historical Persistence` checkbox was visible but disabled without `DATABASE_URL`, with `HISTORICAL DATABASE NOT CONFIGURED` shown in the sidebar. No synthetic or fallback layer appeared.
+
+
+A controlled local UI check used a non-credentialed `DATABASE_URL` value with `HISTORICAL_PERSISTENCE_ENABLED=false`, without clicking collection. The clean Overview rendered `HISTORICAL PERSISTENCE OFF` in the sidebar, retained `60 s`, `DISCONNECTED`, zero real observations and no synthetic layer. No historical connection was attempted; this validates the configuration/UI state only, not database availability.

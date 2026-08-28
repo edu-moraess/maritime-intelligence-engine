@@ -10,7 +10,7 @@ from src.config.regions import REGION_PRESETS, REGION_TIMEZONES, region_timezone
 from src.config.settings import COLLECTION_DURATION_OPTIONS, DEFAULT_BBOX, AppSettings, _validate_bbox
 from src.ingestion.aisstream import AISStreamProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
-from src.historical.writer import PostgresHistoricalWriter, _database_url_for_connection, observation_payload_hash
+from src.historical.writer import NullHistoricalWriter, PostgresHistoricalWriter, _database_url_for_connection, observation_payload_hash
 from src.ingestion.models import AISObservation, VesselSnapshot
 from src.intelligence.engine import MaritimeIntelligenceEngine
 from src.ml.embeddings import TrajectoryEmbeddingAdapter
@@ -371,7 +371,7 @@ def test_vessel_label_handles_missing_or_blank_name_without_mutating_snapshot(ve
     assert vessel.vessel_name == original_name
 
 
-@pytest.mark.parametrize("timestamp_second", [0, 59, 60, 61, 62, 63])
+@pytest.mark.parametrize("timestamp_second", [0, 59])
 def test_ais_timestamp_second_is_preserved_without_absolute_observation_time(timestamp_second):
     provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
 
@@ -380,6 +380,18 @@ def test_ais_timestamp_second_is_preserved_without_absolute_observation_time(tim
     assert observation is not None
     assert observation.ais_timestamp_second == timestamp_second
     assert observation.observed_at is None
+
+
+@pytest.mark.parametrize("timestamp_second", [60, 61, 62, 63])
+def test_ais_special_timestamp_is_not_preserved_as_normal_second(timestamp_second):
+    provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
+
+    observation = provider._parse_frame(position_payload(timestamp_second=timestamp_second))
+
+    assert observation is not None
+    assert observation.ais_timestamp_second is None
+    assert observation.observed_at is None
+    assert observation.raw["Message"]["PositionReport"]["Timestamp"] == timestamp_second
 
 
 def test_metadata_time_utc_is_not_promoted_to_observation_time():
@@ -471,12 +483,14 @@ class _FakeCursor:
         elif "SELECT REGION_ID FROM REGIONS" in normalized:
             self.result = (7,)
         elif "INSERT INTO AIS_OBSERVATIONS" in normalized:
+            session_id = str(params[0])
             payload_hash = str(params[-1])
-            if payload_hash in self.connection.payload_hashes:
+            key = (session_id, payload_hash)
+            if key in self.connection.payload_keys:
                 self.result = None
             else:
-                self.connection.payload_hashes.add(payload_hash)
-                self.result = (len(self.connection.payload_hashes),)
+                self.connection.payload_keys.add(key)
+                self.result = (len(self.connection.payload_keys),)
 
     def fetchone(self):
         result, self.result = self.result, None
@@ -486,7 +500,7 @@ class _FakeCursor:
 class _FakeConnection:
     def __init__(self):
         self.migrations = set()
-        self.payload_hashes = set()
+        self.payload_keys = set()
         self.closed = False
         self.commits = 0
         self.rollbacks = 0
@@ -557,20 +571,20 @@ def test_database_failure_does_not_raise_or_change_live_sink():
     assert "secret" not in result.reason
 
 
-def test_valid_observation_persists_and_duplicate_is_idempotent():
+def test_valid_observation_is_idempotent_within_session_and_allowed_in_new_session():
     connection = _FakeConnection()
     writer = PostgresHistoricalWriter("postgresql://localhost/mie", connect_fn=lambda _url: connection)
     started = datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc)
     ended = datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc)
 
-    first = writer.persist_collection([_historical_observation()], REGION_PRESETS["Miami"], 60, started, ended)
+    first = writer.persist_collection([_historical_observation(), _historical_observation()], REGION_PRESETS["Miami"], 60, started, ended)
     second = writer.persist_collection([_historical_observation()], REGION_PRESETS["Miami"], 60, started, ended)
 
     assert first.persisted_observations == 1
-    assert first.duplicate_observations == 0
-    assert second.persisted_observations == 0
-    assert second.duplicate_observations == 1
-    assert len(connection.payload_hashes) == 1
+    assert first.duplicate_observations == 1
+    assert second.persisted_observations == 1
+    assert second.duplicate_observations == 0
+    assert len(connection.payload_keys) == 2
     assert connection.commits >= 2
     collection_insert = next(params for query, params in connection.last_cursor.executed if "INSERT INTO collection_sessions" in query)
     vessel_insert = next(params for query, params in connection.last_cursor.executed if "INSERT INTO vessels" in query)
@@ -583,6 +597,7 @@ def test_valid_observation_persists_and_duplicate_is_idempotent():
     assert observation_insert[5] == 42
     assert observation_insert[6] is None
     assert observation_insert[9] is None
+    assert "ON CONFLICT (session_id, payload_hash) DO NOTHING" in next(query for query, _params in connection.last_cursor.executed if "INSERT INTO ais_observations" in query)
 
 
 def test_invalid_observation_is_not_persisted_or_connected():
@@ -600,17 +615,22 @@ def test_invalid_observation_is_not_persisted_or_connected():
     assert result.persisted_observations == 0
     assert result.skipped_invalid == 1
     assert connect_calls == []
-    assert connection.payload_hashes == set()
+    assert connection.payload_keys == set()
 
 
 
 def test_database_url_is_optional_runtime_setting(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("HISTORICAL_PERSISTENCE_ENABLED", raising=False)
     without_database = AppSettings.from_runtime({})
     with_database = AppSettings.from_runtime({"DATABASE_URL": "postgresql://user:password@db.example/mie"})
 
     assert without_database.database_url is None
+    assert without_database.historical_persistence_enabled is False
     assert with_database.database_url == "postgresql://user:password@db.example/mie"
+    assert with_database.historical_persistence_enabled is False
+    explicitly_enabled = AppSettings.from_runtime({"DATABASE_URL": "postgresql://user:password@db.example/mie", "HISTORICAL_PERSISTENCE_ENABLED": "true"})
+    assert explicitly_enabled.historical_persistence_enabled is True
 
 
 def test_initial_migration_declares_postgis_schema_and_required_indexes():
@@ -622,6 +642,10 @@ def test_initial_migration_declares_postgis_schema_and_required_indexes():
     assert "received_at TIMESTAMPTZ NOT NULL" in migration
     assert "observed_at TIMESTAMPTZ NULL" in migration
     assert "payload_hash TEXT NOT NULL UNIQUE" in migration
+    corrective_migration = Path(__file__).parents[1].joinpath("migrations", "002_fix_historical_constraints.sql").read_text(encoding="utf-8")
+    assert "DROP CONSTRAINT IF EXISTS ais_observations_payload_hash_key" in corrective_migration
+    assert "UNIQUE (session_id, payload_hash)" in corrective_migration
+    assert "CHECK (ais_timestamp_second BETWEEN 0 AND 59)" in corrective_migration
     assert "idx_ais_observations_mmsi_received_at" in migration
     assert "idx_ais_observations_geom_gist" in migration
     assert "idx_ais_observations_session_id" in migration
@@ -679,3 +703,122 @@ def test_engine_persists_only_after_real_collection_and_clear_keeps_writer_histo
     assert len(writer.calls) == 1
     assert engine.snapshot().observations == []
     assert engine.snapshot().historical_result is None
+
+
+@pytest.mark.parametrize("timestamp_second", [0, 30, 59])
+def test_normal_ais_seconds_are_preserved(timestamp_second):
+    provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
+    observation = provider._parse_frame(position_payload(timestamp_second=timestamp_second))
+
+    assert observation is not None
+    assert observation.ais_timestamp_second == timestamp_second
+    assert observation.observed_at is None
+
+
+@pytest.mark.parametrize("special_timestamp", [60, 61, 62, 63])
+def test_special_ais_seconds_are_not_normalized_or_used_as_timestamps(special_timestamp):
+    provider = AISStreamProvider("server-side-key", [[[10.0, -20.0], [11.0, -19.0]]])
+    before = datetime.now(timezone.utc)
+    observation = provider._parse_frame(position_payload(timestamp_second=special_timestamp))
+    after = datetime.now(timezone.utc)
+
+    assert observation is not None
+    assert observation.ais_timestamp_second is None
+    assert observation.observed_at is None
+    assert observation.raw["Message"]["PositionReport"]["Timestamp"] == special_timestamp
+    assert before <= observation.received_at <= after
+
+
+def test_model_clears_non_normal_ais_second_without_fabricating_observation_time():
+    observation = AISObservation(
+        "368207620",
+        25.7617,
+        -80.1918,
+        datetime(2026, 8, 28, 0, 4, 31, tzinfo=timezone.utc),
+        ais_timestamp_second=60,
+        raw={"Message": {"PositionReport": {"Timestamp": 60}}},
+    )
+
+    assert observation.ais_timestamp_second is None
+    assert observation.observed_at is None
+
+
+@pytest.mark.parametrize("raw_value", ["1", "true", "yes", "y", "on", "TRUE"])
+def test_historical_persistence_flag_accepts_explicit_true_values(raw_value):
+    settings = AppSettings.from_runtime({"HISTORICAL_PERSISTENCE_ENABLED": raw_value})
+    assert settings.historical_persistence_enabled is True
+
+
+@pytest.mark.parametrize("raw_value", ["", "0", "false", "no", "off", "unexpected"])
+def test_historical_persistence_flag_defaults_or_fails_closed(raw_value):
+    settings = AppSettings.from_runtime({"HISTORICAL_PERSISTENCE_ENABLED": raw_value})
+    assert settings.historical_persistence_enabled is False
+
+
+def test_database_url_alone_keeps_historical_writer_off():
+    writer = create_historical_writer("postgresql://user:password@db.example/mie", persistence_enabled=False)
+
+    assert isinstance(writer, NullHistoricalWriter)
+    assert writer.enabled is False
+    assert writer.status == "HISTORICAL PERSISTENCE OFF"
+    result = writer.persist_collection(
+        [_historical_observation()],
+        REGION_PRESETS["Miami"],
+        60,
+        datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc),
+    )
+    assert result.persisted_observations == 0
+    assert "LIVE-ONLY" in result.reason
+
+
+def test_postgres_writer_requires_explicit_opt_in():
+    writer = create_historical_writer("postgresql://user:password@db.example/mie", persistence_enabled=True)
+    assert isinstance(writer, PostgresHistoricalWriter)
+    assert writer.enabled is True
+
+
+def test_engine_database_url_without_opt_in_keeps_live_collection_and_noop_history():
+    settings = AppSettings(
+        aisstream_api_key="server-side-key",
+        bbox=DEFAULT_BBOX,
+        database_url="postgresql://user:password@db.example/mie",
+        historical_persistence_enabled=False,
+    )
+    engine = MaritimeIntelligenceEngine(settings)
+    observation = _historical_observation()
+    engine.provider.stream = lambda stop_event, duration_seconds: iter([observation])
+
+    assert engine.collect(seconds=30) == 1
+    assert isinstance(engine.historical_writer, NullHistoricalWriter)
+    assert engine.store.all() == [observation]
+    assert engine.snapshot().historical_status == "HISTORICAL PERSISTENCE OFF"
+    assert engine.snapshot().historical_result is not None
+    assert engine.snapshot().historical_result.persisted_observations == 0
+
+
+
+def test_historical_writer_reconfiguration_preserves_live_observations():
+    engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="server-side-key", bbox=DEFAULT_BBOX))
+    observation = _historical_observation()
+    engine.store.extend([observation])
+
+    engine.configure_historical_writer("postgresql://user:password@db.example/mie", False)
+
+    assert engine.store.all() == [observation]
+    assert isinstance(engine.historical_writer, NullHistoricalWriter)
+    assert engine.snapshot().historical_status == "HISTORICAL PERSISTENCE OFF"
+
+    engine.configure_historical_writer(None, False)
+
+    assert engine.store.all() == [observation]
+    assert engine.snapshot().historical_status == "HISTORICAL DATABASE NOT CONFIGURED"
+
+
+
+def test_explicit_false_secret_wins_over_environment_opt_in(monkeypatch):
+    monkeypatch.setenv("HISTORICAL_PERSISTENCE_ENABLED", "true")
+
+    settings = AppSettings.from_runtime({"HISTORICAL_PERSISTENCE_ENABLED": False})
+
+    assert settings.historical_persistence_enabled is False

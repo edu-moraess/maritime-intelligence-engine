@@ -58,7 +58,6 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         settings.stale_after_seconds,
         settings.provider,
         settings.config_error,
-        settings.database_url,
     )
     if st.session_state.get("engine_signature") != signature:
         previous_engine = st.session_state.get("engine")
@@ -67,7 +66,9 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
         st.session_state.pop("selected_mmsi", None)
-    return st.session_state.engine
+    engine = st.session_state.engine
+    engine.configure_historical_writer(settings.database_url, settings.historical_persistence_enabled)
+    return engine
 
 
 def _with_bbox(
@@ -75,6 +76,7 @@ def _with_bbox(
     bbox: tuple[tuple[float, float], tuple[float, float]],
     config_error: str | None = None,
     collection_seconds: float | None = None,
+    historical_persistence_enabled: bool | None = None,
 ) -> AppSettings:
     return AppSettings(
         aisstream_api_key=settings.aisstream_api_key,
@@ -86,6 +88,11 @@ def _with_bbox(
         provider=settings.provider,
         config_error=config_error,
         database_url=settings.database_url,
+        historical_persistence_enabled=(
+            settings.historical_persistence_enabled
+            if historical_persistence_enabled is None
+            else historical_persistence_enabled
+        ),
     )
 
 
@@ -163,6 +170,25 @@ def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool
 
         st.markdown("<div class='data-label' style='margin-top:.8rem'>CONNECTION</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='data-value'>{_connection_state(settings)}</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='data-label' style='margin-top:.8rem'>HISTORICAL</div>", unsafe_allow_html=True)
+        historical_enabled = st.checkbox(
+            "Historical Persistence",
+            value=settings.historical_persistence_enabled,
+            key="historical_persistence_enabled",
+            disabled=settings.database_url is None,
+            help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
+        )
+        if bool(historical_enabled) != settings.historical_persistence_enabled:
+            settings = _with_bbox(settings, settings.bbox, historical_persistence_enabled=bool(historical_enabled))
+        historical_state = (
+            "HISTORICAL DATABASE NOT CONFIGURED"
+            if settings.database_url is None
+            else "HISTORICAL PERSISTENCE ENABLED"
+            if settings.historical_persistence_enabled
+            else "HISTORICAL PERSISTENCE OFF"
+        )
+        st.markdown(f"<div class='data-value'>{historical_state}</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='data-label' style='margin-top:.8rem'>DISPLAY</div>", unsafe_allow_html=True)
         st.selectbox(

@@ -66,11 +66,19 @@ class HistoricalWriter(ABC):
 
 
 class NullHistoricalWriter(HistoricalWriter):
-    """No-op sink used when DATABASE_URL is absent."""
+    """No-op sink used when historical persistence is unavailable or disabled."""
+
+    def __init__(
+        self,
+        status: str = "HISTORICAL DATABASE NOT CONFIGURED",
+        reason: str = "DATABASE_URL is not configured; live session remains LIVE-ONLY.",
+    ) -> None:
+        self._status = status
+        self._reason = reason
 
     @property
     def status(self) -> str:
-        return "HISTORICAL DATABASE NOT CONFIGURED"
+        return self._status
 
     @property
     def enabled(self) -> bool:
@@ -90,7 +98,7 @@ class NullHistoricalWriter(HistoricalWriter):
             persisted_observations=0,
             duplicate_observations=0,
             skipped_invalid=0,
-            reason="DATABASE_URL is not configured; live session remains LIVE-ONLY.",
+            reason=self._reason,
         )
 
 
@@ -110,7 +118,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
         self._migration_dir = migration_dir or DEFAULT_MIGRATION_DIR
         self.pipeline_version = pipeline_version
         self._connection: Any | None = None
-        self._status = "HISTORICAL DATABASE AVAILABLE"
+        self._status = "HISTORICAL PERSISTENCE ENABLED"
         self.last_result: HistoricalWriteResult | None = None
 
     @property
@@ -205,7 +213,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
                              navigational_status, valid, payload_hash)
                         VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s,
                                 %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (payload_hash) DO NOTHING
+                        ON CONFLICT (session_id, payload_hash) DO NOTHING
                         RETURNING observation_id
                         """,
                         (
@@ -312,8 +320,18 @@ class PostgresHistoricalWriter(HistoricalWriter):
             self._connection = None
 
 
-def create_historical_writer(database_url: str | None) -> HistoricalWriter:
-    return PostgresHistoricalWriter(database_url) if database_url else NullHistoricalWriter()
+def create_historical_writer(database_url: str | None, persistence_enabled: bool = False) -> HistoricalWriter:
+    if not database_url:
+        return NullHistoricalWriter(
+            "HISTORICAL DATABASE NOT CONFIGURED",
+            "DATABASE_URL is not configured; live session remains LIVE-ONLY.",
+        )
+    if not persistence_enabled:
+        return NullHistoricalWriter(
+            "HISTORICAL PERSISTENCE OFF",
+            "Historical persistence is disabled by configuration; live session remains LIVE-ONLY.",
+        )
+    return PostgresHistoricalWriter(database_url)
 
 
 def observation_payload_hash(observation: AISObservation) -> str:

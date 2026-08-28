@@ -235,8 +235,9 @@ class AISStreamProvider(AISProvider):
             longitude = float(report.get("Longitude", meta.get("Longitude")))
             if not (math.isfinite(latitude) and math.isfinite(longitude) and -90 <= latitude <= 90 and -180 <= longitude <= 180):
                 return None
-            ais_timestamp_second = _parse_ais_second(report.get("Timestamp"))
-            if ais_timestamp_second is None:
+            raw_timestamp = report.get("Timestamp")
+            ais_timestamp_second = _parse_ais_second(raw_timestamp)
+            if ais_timestamp_second is None and not _is_special_ais_second(raw_timestamp):
                 return None
             valid = report.get("Valid")
             if not isinstance(valid, bool) or not valid:
@@ -312,12 +313,7 @@ def _valid_mmsi(value: str) -> bool:
     return value.isdigit() and len(value) == 9
 
 
-def _parse_ais_second(value: object) -> int | None:
-    """Validate AIS Timestamp as second-within-minute, not an epoch.
-
-    0–59 are ordinary seconds; 60–63 are protocol special states and remain
-    integers so the UI can report them without inventing an absolute datetime.
-    """
+def _ais_timestamp_integer(value: object) -> int | None:
     if isinstance(value, bool):
         return None
     try:
@@ -326,7 +322,23 @@ def _parse_ais_second(value: object) -> int | None:
         return None
     if isinstance(value, float) and value != second:
         return None
-    return second if 0 <= second <= 63 else None
+    return second
+
+
+def _parse_ais_second(value: object) -> int | None:
+    """Return only ordinary AIS seconds; special states are not normal seconds.
+
+    AIS values 60–63 are special protocol states. This parser deliberately
+    returns ``None`` for them, so they are not persisted as ordinary seconds,
+    converted to ``received_at``, or used to fabricate ``observed_at``.
+    """
+    second = _ais_timestamp_integer(value)
+    return second if second is not None and 0 <= second <= 59 else None
+
+
+def _is_special_ais_second(value: object) -> bool:
+    second = _ais_timestamp_integer(value)
+    return second is not None and 60 <= second <= 63
 
 
 def _sog(value: object) -> float | None:

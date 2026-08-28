@@ -21,11 +21,19 @@ def _secret_or_env(name: str, secrets: Any | None = None) -> str:
     if secrets is not None:
         try:
             value = secrets.get(name)
-            if value:
+            if value is not None and str(value) != "":
                 return str(value)
         except Exception:
             pass
     return os.getenv(name, "")
+
+
+def _bool_setting(name: str, default: bool = False, secrets: Any | None = None) -> bool:
+    """Parse an explicit opt-in flag; unknown values fail closed."""
+    raw = _secret_or_env(name, secrets).strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "y", "on"}
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,7 @@ class AppSettings:
     provider: str = "aisstream"
     config_error: str | None = None
     database_url: str | None = None
+    historical_persistence_enabled: bool = False
 
     @classmethod
     def from_runtime(cls, secrets: Any | None = None) -> "AppSettings":
@@ -94,6 +103,7 @@ class AppSettings:
             provider=provider,
             config_error=config_error,
             database_url=_secret_or_env("DATABASE_URL", secrets).strip() or None,
+            historical_persistence_enabled=_bool_setting("HISTORICAL_PERSISTENCE_ENABLED", False, secrets),
         )
 
     @property

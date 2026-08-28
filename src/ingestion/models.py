@@ -44,6 +44,13 @@ class AISObservation:
             if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
                 raise ValueError("observed_at must be timezone-aware when provided")
             object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
+        if self.ais_timestamp_second is not None and (
+            isinstance(self.ais_timestamp_second, bool)
+            or not isinstance(self.ais_timestamp_second, int)
+            or not 0 <= self.ais_timestamp_second <= 59
+        ):
+            # AIS 60–63 are special states; raw keeps the provider value for audit.
+            object.__setattr__(self, "ais_timestamp_second", None)
 
     def as_dict(self) -> dict[str, Any]:
         return {
