@@ -21,20 +21,36 @@ from src.ui.pages_helpers import (
 from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
 
 
-def render_similarity(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_similarity(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+) -> None:
     st.subheader("Similarity search")
-    st.caption("Compare the selected trajectory only with sufficiently represented real AIS tracks from this session.")
+    st.caption(
+        "Compare the selected trajectory only with sufficiently represented "
+        "real AIS tracks from this session."
+    )
+
     selected = _select_vessel(snapshot, "Reference vessel")
+
     if selected is None:
-        reason = _no_real_data_reason(snapshot.status.reason) if not snapshot.vessels else "Select an observed vessel to run a similarity search."
+        reason = (
+            _no_real_data_reason(snapshot.status.reason)
+            if not snapshot.vessels
+            else "Select an observed vessel to run a similarity search."
+        )
         empty_state(reason, "NO REFERENCE TRACK")
         return
 
     track = engine.store.tracks().get(selected.mmsi, [])
+
     if len(track) < 2:
         empty_state(
-            f"Similarity search requires at least 2 real AIS position reports for the reference vessel. "
-            f"Current: {len(track)}/2. Collect real AIS data for longer or select a denser monitoring region.",
+            "Similarity search requires at least 2 real AIS position reports "
+            f"for the reference vessel. Current: {len(track)}/2. "
+            "Collect real AIS data for longer or select a denser monitoring "
+            "region.",
             "INSUFFICIENT REAL AIS DATA",
         )
         return
@@ -42,7 +58,11 @@ def render_similarity(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsh
     _render_similarity_search(engine, snapshot, track, selected.mmsi)
 
 
-def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_anomalies(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+) -> None:
     st.subheader("Behavioral anomaly explorer")
 
     findings = snapshot.findings
@@ -57,9 +77,10 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
 
     if not findings:
         empty_state(
-            "Anomalies are calculated only from currently observed real AIS reports. "
-            "No finding is fabricated when data is insufficient. Collect real AIS data "
-            "for longer or select a denser monitoring region if more history is required.",
+            "Anomalies are calculated only from currently observed real AIS "
+            "reports. No finding is fabricated when data is insufficient. "
+            "Collect real AIS data for longer or select a denser monitoring "
+            "region if more history is required.",
             "NO BEHAVIORAL ANOMALIES",
         )
         return
@@ -88,8 +109,9 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
                 "Location": f"{f.latitude:.4f}, {f.longitude:.4f}",
                 "Score": f"{f.score:.2f}",
                 "Category": f.category,
-                # IsolationForest behavioral findings do not have
-                # calibrated confidence/probability values.
+                # Confidence may legitimately be None for findings whose
+                # score is a session-relative anomaly ranking rather than
+                # a calibrated confidence value.
                 "Confidence": (
                     f"{f.confidence:.2f}"
                     if f.confidence is not None
@@ -110,12 +132,16 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
     _render_anomaly_map(filtered, settings)
 
     notice(
-        "Interpretation guardrail: these are behavioral anomalies in observed "
-        "movement data, not determinations of hostile intent."
+        "Interpretation guardrail: these are behavioral anomalies in "
+        "observed movement data, not determinations of hostile intent."
     )
 
 
-def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_traffic(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+) -> None:
     st.subheader("Traffic analytics")
 
     summary = snapshot.summary
@@ -144,7 +170,10 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
                 x=volume["hour"],
                 y=volume["messages"],
                 marker_color="#35c2c9",
-                hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>",
+                hovertemplate=(
+                    "UTC hour %{x}: %{y} real messages"
+                    "<extra></extra>"
+                ),
             )
         )
 
@@ -174,7 +203,10 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
                     x=speeds["sog_knots"],
                     nbinsx=18,
                     marker_color="#51c79b",
-                    hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>",
+                    hovertemplate=(
+                        "SOG %{x:.1f} kn<br>"
+                        "Vessels %{y}<extra></extra>"
+                    ),
                 )
             )
 
@@ -212,7 +244,11 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
         st.plotly_chart(fig, width="stretch")
 
 
-def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_data_quality(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+) -> None:
     st.subheader("Data quality")
 
     report = snapshot.quality
@@ -266,27 +302,34 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
     with right:
         if report.messages_processed == 0:
             empty_state(
-                "Quality metrics will populate after real AIS messages are received.",
+                "Quality metrics will populate after real AIS messages "
+                "are received.",
                 "NO REAL AIS OBSERVATIONS",
             )
         elif report.quality_percent >= 95:
             notice(
-                "Data quality is within the operational review threshold for this session.",
+                "Data quality is within the operational review threshold "
+                "for this session.",
                 "green",
             )
         else:
             notice(
-                "Data quality requires operator review before using downstream behavioral analysis.",
+                "Data quality requires operator review before using "
+                "downstream behavioral analysis.",
                 "red",
             )
 
     notice(
-        "Quality percentages describe the current in-memory session window only. "
-        "No unobserved data is estimated."
+        "Quality percentages describe the current in-memory session window "
+        "only. No unobserved data is estimated."
     )
 
 
-def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_system(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+) -> None:
     st.subheader("System and pipeline status")
 
     status = snapshot.status
@@ -340,7 +383,8 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
             result = snapshot.historical_result
 
             st.write(
-                f"**Persisted observations:** `{result.persisted_observations}`"
+                f"**Persisted observations:** "
+                f"`{result.persisted_observations}`"
             )
 
             if result.duplicate_observations:
@@ -350,9 +394,7 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
                 )
 
             if result.reason:
-                st.write(
-                    f"**Persist detail:** {result.reason}"
-                )
+                st.write(f"**Persist detail:** {result.reason}")
 
         st.write(
             "Model checkpoint: none. The current representation is fitted "
@@ -361,12 +403,13 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
 
     if status.state == "LIVE AIS":
         notice(
-            "The application is receiving real AIS position reports from AISStream.",
+            "The application is receiving real AIS position reports "
+            "from AISStream.",
             "green",
         )
     else:
         notice(
-            "REAL AIS DATA UNAVAILABLE. The application intentionally renders "
-            "an empty state instead of fabricated traffic.",
+            "REAL AIS DATA UNAVAILABLE. The application intentionally "
+            "renders an empty state instead of fabricated traffic.",
             "red",
         )
