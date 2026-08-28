@@ -2,6 +2,8 @@ Maritime Intelligence Engine (MIE)
 
 Real-Time Maritime Behavioral Intelligence
 
+"MIE Architecture" (docs/architecture-diagram.png)
+
 Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest real AIS telemetry, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
 
 «Real AIS. Real trajectories. No synthetic vessels. No fabricated results.»
@@ -95,7 +97,7 @@ KMeans   Isolation Forest
         ▼
 Behavioral Signals
 
-The current analytical components include:
+Current analytical components include:
 
 - PCA for dimensionality reduction;
 - KMeans for behavioral grouping;
@@ -197,9 +199,7 @@ The architecture intentionally separates:
 
 Detailed Architecture
 
-For the complete technical architecture, see:
-
-""docs/architecture.md"" (docs/architecture.md)
+For the complete technical architecture, see ""docs/architecture.md"" (docs/architecture.md).
 
 ---
 
@@ -340,48 +340,6 @@ Testing| Pytest
 
 ---
 
-Project Structure
-
-src/
-├── ingestion/
-│   ├── aisstream.py
-│   ├── models.py
-│   └── ...
-│
-├── processing/
-│   ├── trajectories.py
-│   ├── features.py
-│   └── ...
-│
-├── ml/
-│   ├── pca.py
-│   ├── clustering.py
-│   ├── isolation_forest.py
-│   └── ...
-│
-├── intelligence/
-│   ├── rules.py
-│   ├── findings.py
-│   └── ...
-│
-├── storage/
-│   ├── session.py
-│   ├── postgres.py
-│   └── ...
-│
-└── ui/
-    ├── pages/
-    └── components/
-
-docs/
-├── architecture.md
-├── AUDIT.md
-├── VALIDATION.md
-├── STREAMLIT_DEPLOY.md
-└── ...
-
----
-
 Installation
 
 Clone
@@ -437,17 +395,11 @@ Run:
 
 pytest -q
 
-For detailed validation evidence, see:
+For detailed validation evidence, see ""docs/VALIDATION.md"" (docs/VALIDATION.md).
 
-""docs/VALIDATION.md"" (docs/VALIDATION.md)
+For technical audit information, see ""docs/AUDIT.md"" (docs/AUDIT.md).
 
-For technical audit information, see:
-
-""docs/AUDIT.md"" (docs/AUDIT.md)
-
-For deployment instructions, see:
-
-""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md)
+For deployment instructions, see ""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md).
 
 ---
 
@@ -585,11 +537,21 @@ The platform is designed to help an analyst understand maritime movement, not to
 
 ---
 
+Documentation
+
+Document| Description
+""docs/architecture.md"" (docs/architecture.md)| Complete technical architecture
+""docs/AUDIT.md"" (docs/AUDIT.md)| Technical audit and engineering decisions
+""docs/VALIDATION.md"" (docs/VALIDATION.md)| Automated and runtime validation
+""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md)| Streamlit deployment documentation
+
+---
+
 License
 
 This project is licensed under the MIT License.
 
-See the ""LICENSE"" (LICENSE) file for the complete license text.
+See ""LICENSE"" (LICENSE) for the complete license text.
 
 ---
 
