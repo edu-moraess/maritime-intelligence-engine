@@ -24,7 +24,13 @@ from src.ui.pages_helpers import (
     _vessel_compact,
     _vessel_label,
 )
-from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
+from src.ui.presentation import (
+    empty_state,
+    frame_for_table,
+    metric_strip,
+    notice,
+    panel_title,
+)
 
 
 def render_overview(
@@ -474,37 +480,132 @@ def render_behavior(
         else None
     )
 
+    # ---------------------------------------------------------------
+    # Visualization-only validation.
+    #
+    # The underlying ML result is NOT modified.
+    # Invalid MMSI values are simply not displayed as vessel labels.
+    # ---------------------------------------------------------------
+    valid_indices = [
+        i
+        for i, mmsi in enumerate(result.mmsis)
+        if str(mmsi).isdigit()
+        and len(str(mmsi)) == 9
+    ]
+
+    if len(valid_indices) < 3:
+        empty_state(
+            "The behavior projection does not contain at least "
+            "3 valid 9-digit MMSI identifiers for visualization.",
+            "INVALID AIS IDENTIFIERS",
+        )
+        return
+
+    # ---------------------------------------------------------------
+    # Selective labeling.
+    #
+    # Every valid point remains available through hover.
+    # Permanent labels are reserved for higher anomaly scores.
+    # ---------------------------------------------------------------
+    score_threshold = 0.75
+
+    ranked_indices = sorted(
+        valid_indices,
+        key=lambda i: float(result.anomaly_scores[i]),
+        reverse=True,
+    )
+
+    top_n = max(
+        3,
+        len(valid_indices) // 10,
+    )
+
+    highlighted_indices = {
+        i
+        for i in valid_indices
+        if float(result.anomaly_scores[i]) >= score_threshold
+    }
+
+    highlighted_indices.update(
+        ranked_indices[:top_n]
+    )
+
     fig = go.Figure()
 
-    for cluster in sorted(
-        set(result.clusters.tolist())
-    ):
-        indices = [
+    # ---------------------------------------------------------------
+    # Cluster visualization.
+    # ---------------------------------------------------------------
+    valid_clusters = sorted(
+        {
+            int(result.clusters[i])
+            for i in valid_indices
+        }
+    )
+
+    for cluster in valid_clusters:
+        cluster_indices = [
             i
-            for i, value in enumerate(result.clusters)
-            if value == cluster
+            for i in valid_indices
+            if int(result.clusters[i]) == cluster
+        ]
+
+        labels = [
+            str(result.mmsis[i])
+            if i in highlighted_indices
+            else ""
+            for i in cluster_indices
+        ]
+
+        customdata = [
+            [
+                str(result.mmsis[i]),
+                int(result.clusters[i]),
+                float(result.anomaly_scores[i]),
+            ]
+            for i in cluster_indices
         ]
 
         fig.add_trace(
             go.Scatter(
-                x=result.projection[indices, 0],
-                y=result.projection[indices, 1],
-                mode="markers+text",
-                text=[
-                    result.mmsis[i]
-                    for i in indices
+                x=result.projection[
+                    cluster_indices,
+                    0,
                 ],
+                y=result.projection[
+                    cluster_indices,
+                    1,
+                ],
+                mode="markers+text",
+                text=labels,
                 textposition="top center",
+                textfont={
+                    "size": 10,
+                },
                 name=f"Cluster {cluster}",
                 marker={
                     "size": 9,
                     "opacity": 0.8,
                 },
-                hovertemplate="MMSI %{text}<extra></extra>",
+                customdata=customdata,
+                hovertemplate=(
+                    "MMSI: %{customdata[0]}"
+                    "<br>Cluster: %{customdata[1]}"
+                    "<br>Isolation Forest: %{customdata[2]:.3f}"
+                    "<br>PC1: %{x:.3f}"
+                    "<br>PC2: %{y:.3f}"
+                    "<extra></extra>"
+                ),
             )
         )
 
-    if selected_idx is not None:
+    # ---------------------------------------------------------------
+    # Current selected vessel.
+    # ---------------------------------------------------------------
+    if selected_idx is not None and selected_idx in valid_indices:
+        current_score = float(
+            result.anomaly_scores[selected_idx]
+        )
+
         fig.add_trace(
             go.Scatter(
                 x=[
@@ -525,14 +626,27 @@ def render_behavior(
                     "size": 16,
                     "symbol": "diamond",
                     "color": "#ef6b73",
+                    "line": {
+                        "width": 2,
+                    },
                 },
+                hovertemplate=(
+                    f"MMSI: {result.mmsis[selected_idx]}"
+                    f"<br>Cluster: "
+                    f"{int(result.clusters[selected_idx])}"
+                    f"<br>Isolation Forest: "
+                    f"{current_score:.3f}"
+                    "<br>Status: CURRENT TARGET"
+                    "<extra></extra>"
+                ),
             )
         )
 
-    # FIX:
-    # Build the layout dictionary first so that a possible
-    # "legend" key returned by _plot_layout() is overwritten
-    # intentionally instead of being passed twice as a keyword.
+    # ---------------------------------------------------------------
+    # Layout.
+    #
+    # Build the dictionary first so legend is not passed twice.
+    # ---------------------------------------------------------------
     layout = _plot_layout(
         "PCA projection of real AIS trajectory representations",
         "PC1",
@@ -555,10 +669,9 @@ def render_behavior(
     metric_strip(
         {
             "METHOD": "Runtime PCA",
-            "CLUSTERS": len(
-                set(result.clusters.tolist())
-            ),
+            "CLUSTERS": len(valid_clusters),
             "TRACKS": len(result.mmsis),
+            "VALID MMSI": len(valid_indices),
             "CHECKPOINT": "NONE",
         }
     )
@@ -566,4 +679,11 @@ def render_behavior(
     notice(
         f"Representation provenance: {result.model_checkpoint}. "
         "No pretrained trajectory checkpoint is claimed or used."
+    )
+
+    st.caption(
+        "Labels are shown selectively for trajectories with higher "
+        "Isolation Forest scores. Hover remains available for every "
+        "valid real AIS trajectory. Malformed MMSI values are excluded "
+        "from visualization only and do not modify the underlying ML result."
     )
