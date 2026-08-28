@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 from datetime import timezone
+from math import cos, radians
 
 import pandas as pd
 import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
 
-from src.analytics.traffic import anomaly_counts, hourly_volume, speed_distribution
+from src.analytics.traffic import (
+    anomaly_counts,
+    hourly_volume,
+    speed_distribution,
+)
 from src.config.settings import AppSettings
-from src.geospatial.map_data import vessel_rows
-from src.ingestion.models import AnomalyFinding, VesselSnapshot
-from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
-from src.trajectory.features import enrich_track, track_to_frame
+from src.ingestion.models import (
+    AnomalyFinding,
+    VesselSnapshot,
+)
+from src.intelligence.engine import (
+    EngineSnapshot,
+    MaritimeIntelligenceEngine,
+)
+from src.trajectory.features import (
+    enrich_track,
+    track_to_frame,
+)
 from src.ui.presentation import (
     empty_state,
     frame_for_table,
@@ -24,7 +37,9 @@ from src.ui.presentation import (
 )
 
 
-def _render_readiness(snapshot: EngineSnapshot) -> None:
+def _render_readiness(
+    snapshot: EngineSnapshot,
+) -> None:
     readiness = snapshot.readiness
 
     duration = (
@@ -33,7 +48,10 @@ def _render_readiness(snapshot: EngineSnapshot) -> None:
         else "—"
     )
 
-    panel_title("Session telemetry", "real AIS only")
+    panel_title(
+        "Session telemetry",
+        "real AIS only",
+    )
 
     metric_strip(
         {
@@ -78,17 +96,19 @@ def _render_readiness(snapshot: EngineSnapshot) -> None:
     )
 
 
-def _no_real_data_reason(status_reason: str) -> str:
+def _no_real_data_reason(
+    status_reason: str,
+) -> str:
     if status_reason:
         return (
             f"{status_reason} "
-            "Collect real AIS data for longer or select a denser "
-            "monitoring region."
+            "Collect real AIS data for longer or select "
+            "a denser monitoring region."
         )
 
     return (
-        "Collect real AIS data for longer or select a denser "
-        "monitoring region."
+        "Collect real AIS data for longer or select "
+        "a denser monitoring region."
     )
 
 
@@ -101,8 +121,8 @@ def _track_readiness_reason(
         f"{module} analysis requires {required} distinct vessels "
         "with sufficient trajectory history. "
         f"Current: {current}/{required}. "
-        "Collect real AIS data for longer or select a denser "
-        "monitoring region."
+        "Collect real AIS data for longer or select "
+        "a denser monitoring region."
     )
 
 
@@ -125,6 +145,7 @@ def _render_similarity_search(
             ),
             "INSUFFICIENT REAL AIS DATA",
         )
+
     else:
         similar = engine.embedding_adapter.similar_tracks(
             track,
@@ -134,15 +155,18 @@ def _render_similarity_search(
 
         if not similar:
             empty_state(
-                "No comparable real AIS tracks are available "
-                "in this session.",
+                "No comparable real AIS tracks are available in this session.",
                 "NO REAL AIS MATCH",
             )
+
         else:
             st.dataframe(
                 frame_for_table(
                     pd.DataFrame(
-                        [item.__dict__ for item in similar]
+                        [
+                            item.__dict__
+                            for item in similar
+                        ]
                     )
                 ),
                 hide_index=True,
@@ -156,6 +180,168 @@ def _render_similarity_search(
     )
 
 
+# ----------------------------------------------------------------------
+# MAP HELPERS
+# ----------------------------------------------------------------------
+
+
+def _build_density_rows(
+    snapshot: EngineSnapshot,
+) -> list[dict]:
+    """Return real AIS observations for spatial density rendering."""
+
+    rows = []
+
+    for observation in snapshot.observations:
+        if (
+            observation.latitude is None
+            or observation.longitude is None
+        ):
+            continue
+
+        rows.append(
+            {
+                "latitude": float(observation.latitude),
+                "longitude": float(observation.longitude),
+            }
+        )
+
+    return rows
+
+
+def _build_hexbin_rows(
+    snapshot: EngineSnapshot,
+) -> list[dict]:
+    """Build lightweight spatial bins from real AIS observations.
+
+    The aggregation is performed in-memory from the current session.
+    No synthetic observations are created.
+    """
+
+    bins: dict[tuple[int, int], int] = {}
+
+    # Approximately 0.05° cells.
+    cell_size = 0.05
+
+    for observation in snapshot.observations:
+        if (
+            observation.latitude is None
+            or observation.longitude is None
+        ):
+            continue
+
+        lat = float(observation.latitude)
+        lon = float(observation.longitude)
+
+        key = (
+            int(lat / cell_size),
+            int(lon / cell_size),
+        )
+
+        bins[key] = bins.get(key, 0) + 1
+
+    rows = []
+
+    for (lat_index, lon_index), count in bins.items():
+        rows.append(
+            {
+                "latitude": (
+                    lat_index * cell_size
+                    + cell_size / 2
+                ),
+                "longitude": (
+                    lon_index * cell_size
+                    + cell_size / 2
+                ),
+                "count": count,
+            }
+        )
+
+    return rows
+
+
+def _build_speed_rows(
+    rows: list[dict],
+) -> list[dict]:
+    """Prepare current real vessel observations for speed visualization."""
+
+    result = []
+
+    for row in rows:
+        sog = row.get("sog_knots")
+
+        if sog is None:
+            continue
+
+        latitude = row.get("latitude")
+        longitude = row.get("longitude")
+
+        if latitude is None or longitude is None:
+            continue
+
+        result.append(
+            {
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+                "sog_knots": float(sog),
+                "cog_degrees": row.get(
+                    "cog_degrees"
+                ),
+            }
+        )
+
+    return result
+
+
+def _build_anomaly_hotspots(
+    findings: list[AnomalyFinding],
+) -> list[dict]:
+    """Aggregate real anomaly findings spatially."""
+
+    hotspots: dict[tuple[int, int], dict] = {}
+
+    cell_size = 0.05
+
+    for finding in findings:
+        if (
+            finding.latitude is None
+            or finding.longitude is None
+        ):
+            continue
+
+        lat = float(finding.latitude)
+        lon = float(finding.longitude)
+
+        key = (
+            int(lat / cell_size),
+            int(lon / cell_size),
+        )
+
+        if key not in hotspots:
+            hotspots[key] = {
+                "latitude": (
+                    key[0] * cell_size
+                    + cell_size / 2
+                ),
+                "longitude": (
+                    key[1] * cell_size
+                    + cell_size / 2
+                ),
+                "count": 0,
+                "max_score": 0.0,
+            }
+
+        hotspots[key]["count"] += 1
+        hotspots[key]["max_score"] = max(
+            hotspots[key]["max_score"],
+            float(finding.score),
+        )
+
+    return list(
+        hotspots.values()
+    )
+
+
 def _render_vessel_map(
     rows: list[dict],
     snapshot: EngineSnapshot,
@@ -163,46 +349,106 @@ def _render_vessel_map(
     show_heading: bool,
     show_trails: bool,
     show_anomalies: bool,
-    show_density: bool,
+    show_density: bool = False,
+    show_hexbin: bool = False,
+    show_speed_field: bool = False,
+    show_anomaly_hotspots: bool = False,
 ) -> None:
-    """
-    Render the operational AIS map.
+    """Render the operational AIS map and optional intelligence layers.
 
-    All map layers are derived exclusively from real AIS observations
-    received during the current session.
-
-    Available layers:
-    - Current vessel positions
-    - Monitoring bounding box
-    - Heading vectors
-    - Observed trails
-    - Behavioral findings
-    - Traffic density
+    Every layer is derived exclusively from current real AIS
+    observations or findings generated from those observations.
     """
 
-    layers = []
-
     # ------------------------------------------------------------------
-    # CURRENT VESSELS
+    # Vessel colors
     # ------------------------------------------------------------------
-    vessel_rows_with_color = []
 
-    for row in rows:
-        enriched_row = dict(row)
-
-        enriched_row["color"] = (
+    colors = [
+        (
             [53, 194, 201, 210]
             if not row["stale"]
             else [121, 147, 155, 180]
         )
+        for row in rows
+    ]
 
-        vessel_rows_with_color.append(enriched_row)
+    for row, color in zip(
+        rows,
+        colors,
+    ):
+        row["color"] = color
+
+    layers = []
+
+    # ------------------------------------------------------------------
+    # TRAFFIC DENSITY
+    # ------------------------------------------------------------------
+
+    if show_density:
+        density_rows = _build_density_rows(
+            snapshot
+        )
+
+        if density_rows:
+            layers.append(
+                pdk.Layer(
+                    "HeatmapLayer",
+                    data=density_rows,
+                    get_position=(
+                        "[longitude, latitude]"
+                    ),
+                    get_weight=1,
+                    radius_pixels=45,
+                    intensity=1.0,
+                    threshold=0.05,
+                    opacity=0.65,
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # TRAFFIC HEXBIN
+    # ------------------------------------------------------------------
+
+    if show_hexbin:
+        hexbin_rows = _build_hexbin_rows(
+            snapshot
+        )
+
+        if hexbin_rows:
+            layers.append(
+                pdk.Layer(
+                    "ColumnLayer",
+                    data=hexbin_rows,
+                    get_position=(
+                        "[longitude, latitude]"
+                    ),
+                    get_elevation="count",
+                    elevation_scale=35,
+                    radius=2800,
+                    pickable=True,
+                    auto_highlight=True,
+                    extruded=True,
+                    get_fill_color=[
+                        233,
+                        184,
+                        87,
+                        150,
+                    ],
+                )
+            )
+
+    # ------------------------------------------------------------------
+    # CURRENT AIS TARGETS
+    # ------------------------------------------------------------------
 
     layers.append(
         pdk.Layer(
             "ScatterplotLayer",
-            data=vessel_rows_with_color,
-            get_position="[longitude, latitude]",
+            data=rows,
+            get_position=(
+                "[longitude, latitude]"
+            ),
             get_fill_color="color",
             get_radius=340,
             radius_min_pixels=3,
@@ -212,9 +458,13 @@ def _render_vessel_map(
     )
 
     # ------------------------------------------------------------------
-    # MONITORING BOUNDING BOX
+    # BOUNDING BOX
     # ------------------------------------------------------------------
-    (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
+
+    (min_lat, min_lon), (
+        max_lat,
+        max_lon,
+    ) = settings.bbox
 
     bbox_path = [
         [min_lon, min_lat],
@@ -229,11 +479,16 @@ def _render_vessel_map(
             "PathLayer",
             data=[
                 {
-                    "path": bbox_path,
+                    "path": bbox_path
                 }
             ],
             get_path="path",
-            get_color=[233, 184, 87, 180],
+            get_color=[
+                233,
+                184,
+                87,
+                180,
+            ],
             get_width=2,
             width_min_pixels=1,
         )
@@ -242,11 +497,12 @@ def _render_vessel_map(
     # ------------------------------------------------------------------
     # HEADING VECTORS
     # ------------------------------------------------------------------
+
     heading_rows = [
         row
-        for row in vessel_rows_with_color
-        if row["end_latitude"] is not None
-        and row["end_longitude"] is not None
+        for row in rows
+        if row.get("end_latitude") is not None
+        and row.get("end_longitude") is not None
     ]
 
     if show_heading and heading_rows:
@@ -254,11 +510,18 @@ def _render_vessel_map(
             pdk.Layer(
                 "LineLayer",
                 data=heading_rows,
-                get_source_position="[longitude, latitude]",
+                get_source_position=(
+                    "[longitude, latitude]"
+                ),
                 get_target_position=(
                     "[end_longitude, end_latitude]"
                 ),
-                get_color=[233, 184, 87, 180],
+                get_color=[
+                    233,
+                    184,
+                    87,
+                    180,
+                ],
                 get_width=2,
                 width_min_pixels=1,
             )
@@ -267,29 +530,30 @@ def _render_vessel_map(
     # ------------------------------------------------------------------
     # OBSERVED TRAILS
     # ------------------------------------------------------------------
+
     if show_trails:
         paths = []
 
-        for mmsi, track in engine_tracks(snapshot):
+        for mmsi, track in engine_tracks(
+            snapshot
+        ):
             if len(track) < 2:
                 continue
 
-            ordered_track = sorted(
+            ordered = sorted(
                 track,
                 key=lambda item: item.received_at,
             )
 
-            path = [
-                [
-                    observation.longitude,
-                    observation.latitude,
-                ]
-                for observation in ordered_track
-            ]
-
             paths.append(
                 {
-                    "path": path,
+                    "path": [
+                        [
+                            observation.longitude,
+                            observation.latitude,
+                        ]
+                        for observation in ordered
+                    ],
                     "mmsi": mmsi,
                 }
             )
@@ -300,7 +564,12 @@ def _render_vessel_map(
                     "PathLayer",
                     data=paths,
                     get_path="path",
-                    get_color=[53, 194, 201, 90],
+                    get_color=[
+                        53,
+                        194,
+                        201,
+                        90,
+                    ],
                     width_min_pixels=1,
                     get_width=1,
                     pickable=True,
@@ -308,9 +577,46 @@ def _render_vessel_map(
             )
 
     # ------------------------------------------------------------------
+    # SPEED FIELD
+    # ------------------------------------------------------------------
+
+    if show_speed_field:
+        speed_rows = _build_speed_rows(
+            rows
+        )
+
+        if speed_rows:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=speed_rows,
+                    get_position=(
+                        "[longitude, latitude]"
+                    ),
+                    get_fill_color=[
+                        81,
+                        199,
+                        155,
+                        145,
+                    ],
+                    get_radius=(
+                        "Math.max(250, "
+                        "sog_knots * 55)"
+                    ),
+                    radius_min_pixels=3,
+                    radius_max_pixels=14,
+                    pickable=True,
+                )
+            )
+
+    # ------------------------------------------------------------------
     # BEHAVIORAL FINDINGS
     # ------------------------------------------------------------------
-    if show_anomalies and snapshot.findings:
+
+    if (
+        show_anomalies
+        and snapshot.findings
+    ):
         anomaly_rows = [
             {
                 "latitude": finding.latitude,
@@ -326,8 +632,15 @@ def _render_vessel_map(
             pdk.Layer(
                 "ScatterplotLayer",
                 data=anomaly_rows,
-                get_position="[longitude, latitude]",
-                get_fill_color=[239, 107, 115, 220],
+                get_position=(
+                    "[longitude, latitude]"
+                ),
+                get_fill_color=[
+                    239,
+                    107,
+                    115,
+                    220,
+                ],
                 get_radius=560,
                 radius_min_pixels=4,
                 radius_max_pixels=12,
@@ -336,58 +649,58 @@ def _render_vessel_map(
         )
 
     # ------------------------------------------------------------------
-    # TRAFFIC DENSITY
-    #
-    # IMPORTANT:
-    # This layer uses only actual AIS observations received during
-    # the current session.
-    #
-    # One observation = one real AIS position report.
-    #
-    # It does NOT represent estimated vessel density and does not
-    # introduce synthetic/fallback positions.
+    # ANOMALY HOTSPOTS
     # ------------------------------------------------------------------
-    if show_density and snapshot.observations:
-        density_rows = [
-            {
-                "longitude": observation.longitude,
-                "latitude": observation.latitude,
-            }
-            for observation in snapshot.observations
-            if observation.latitude is not None
-            and observation.longitude is not None
-        ]
 
-        if density_rows:
+    if (
+        show_anomaly_hotspots
+        and snapshot.findings
+    ):
+        hotspot_rows = _build_anomaly_hotspots(
+            snapshot.findings
+        )
+
+        if hotspot_rows:
             layers.append(
                 pdk.Layer(
-                    "HeatmapLayer",
-                    data=density_rows,
-                    get_position="[longitude, latitude]",
-                    get_weight=1,
-                    radius_pixels=35,
-                    intensity=1,
-                    threshold=0.03,
-                    opacity=0.55,
+                    "ColumnLayer",
+                    data=hotspot_rows,
+                    get_position=(
+                        "[longitude, latitude]"
+                    ),
+                    get_elevation="count",
+                    elevation_scale=250,
+                    radius=2600,
+                    extruded=True,
+                    pickable=True,
+                    auto_highlight=True,
+                    get_fill_color=[
+                        239,
+                        107,
+                        115,
+                        175,
+                    ],
                 )
             )
 
     # ------------------------------------------------------------------
     # MAP CENTER
     # ------------------------------------------------------------------
+
     center_lat = sum(
         row["latitude"]
-        for row in vessel_rows_with_color
-    ) / len(vessel_rows_with_color)
+        for row in rows
+    ) / len(rows)
 
     center_lon = sum(
         row["longitude"]
-        for row in vessel_rows_with_color
-    ) / len(vessel_rows_with_color)
+        for row in rows
+    ) / len(rows)
 
     # ------------------------------------------------------------------
-    # PYDECK
+    # DECK
     # ------------------------------------------------------------------
+
     deck = pdk.Deck(
         map_style=(
             "https://basemaps.cartocdn.com/"
@@ -402,11 +715,11 @@ def _render_vessel_map(
         layers=layers,
         tooltip={
             "html": (
-                "<b>{name}</b><br/>"
-                "MMSI {mmsi}<br/>"
-                "SOG {sog_knots} kn<br/>"
-                "COG {cog_degrees}°<br/>"
-                "Last update {last_received}"
+                "<b>{name}</b>"
+                "<br/>MMSI {mmsi}"
+                "<br/>SOG {sog_knots} kn"
+                "<br/>COG {cog_degrees}°"
+                "<br/>Last update {last_received}"
             ),
             "style": {
                 "backgroundColor": "#0d1c24",
@@ -463,8 +776,15 @@ def _render_anomaly_map(
             pdk.Layer(
                 "ScatterplotLayer",
                 data=rows,
-                get_position="[longitude, latitude]",
-                get_fill_color=[239, 107, 115, 220],
+                get_position=(
+                    "[longitude, latitude]"
+                ),
+                get_fill_color=[
+                    239,
+                    107,
+                    115,
+                    220,
+                ],
                 get_radius=700,
                 radius_min_pixels=5,
                 radius_max_pixels=14,
@@ -473,9 +793,9 @@ def _render_anomaly_map(
         ],
         tooltip={
             "html": (
-                "<b>{category}</b><br/>"
-                "MMSI {mmsi}<br/>"
-                "Score {score}"
+                "<b>{category}</b>"
+                "<br/>MMSI {mmsi}"
+                "<br/>Score {score}"
             ),
             "style": {
                 "backgroundColor": "#0d1c24",
@@ -494,7 +814,9 @@ def _render_track_chart(
     track: list,
     title: str,
 ) -> None:
-    frame = track_to_frame(track)
+    frame = track_to_frame(
+        track
+    )
 
     fig = go.Figure(
         go.Scattergeo(
@@ -509,7 +831,9 @@ def _render_track_chart(
                 "size": 5,
                 "color": "#d9e6e9",
             },
-            text=frame["received_at"].dt.strftime(
+            text=frame[
+                "received_at"
+            ].dt.strftime(
                 "%Y-%m-%d %H:%M:%S UTC"
             ),
             hovertemplate=(
@@ -547,7 +871,9 @@ def _render_track_chart(
     )
 
 
-def _render_speed_chart(track: list) -> None:
+def _render_speed_chart(
+    track: list,
+) -> None:
     frame = enrich_track(
         track_to_frame(track)
     )
@@ -561,7 +887,7 @@ def _render_speed_chart(track: list) -> None:
             mode="lines+markers",
             name="SOG",
             line={
-                "color": "#51c79b",
+                "color": "#51c79b"
             },
             connectgaps=False,
             hovertemplate=(
@@ -605,8 +931,13 @@ def _render_speed_chart(track: list) -> None:
                 "title": "COG (°)",
                 "overlaying": "y",
                 "side": "right",
-                "range": [0, 360],
-                "gridcolor": "rgba(0,0,0,0)",
+                "range": [
+                    0,
+                    360,
+                ],
+                "gridcolor": (
+                    "rgba(0,0,0,0)"
+                ),
             },
             "legend": {
                 "orientation": "h",
@@ -615,7 +946,9 @@ def _render_speed_chart(track: list) -> None:
         }
     )
 
-    fig.update_layout(**layout)
+    fig.update_layout(
+        **layout
+    )
 
     st.plotly_chart(
         fig,
@@ -665,7 +998,7 @@ def _plot_layout(
         "hoverlabel": {
             "bgcolor": "#10242d",
             "font": {
-                "color": "#d9e6e9",
+                "color": "#d9e6e9"
             },
         },
         "legend": {
@@ -749,34 +1082,31 @@ def _vessel_label(
 
     display_name = (
         (
-            vessel.vessel_name or ""
+            vessel.vessel_name
+            or ""
         ).strip()
         or "UNKNOWN"
-        if vessel is not None
-        else "UNKNOWN"
-    )
+    ) if vessel is not None else "UNKNOWN"
 
-    return f"{mmsi} · {display_name}"
+    return (
+        f"{mmsi} · {display_name}"
+    )
 
 
 def _vessel_compact(
     vessel: VesselSnapshot,
 ) -> None:
     st.markdown(
-        (
-            "<div class='data-label'>MMSI</div>"
-            f"<div class='data-value'>{vessel.mmsi}</div>"
-        ),
+        f"<div class='data-label'>MMSI</div>"
+        f"<div class='data-value'>{vessel.mmsi}</div>",
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        (
-            "<div style='margin:.45rem 0 .8rem;"
-            "color:#d9e6e9;font-weight:600'>"
-            f"{vessel.vessel_name or 'UNKNOWN VESSEL'}"
-            "</div>"
-        ),
+        f"<div style='margin:.45rem 0 .8rem;"
+        f"color:#d9e6e9;font-weight:600'>"
+        f"{vessel.vessel_name or 'UNKNOWN VESSEL'}"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -814,27 +1144,29 @@ def _vessel_compact(
         ),
         (
             "Last update",
-            _utc(vessel.last_received),
+            _utc(
+                vessel.last_received
+            ),
         ),
         (
             "State",
-            "STALE"
-            if vessel.stale
-            else "ACTIVE",
+            (
+                "STALE"
+                if vessel.stale
+                else "ACTIVE"
+            ),
         ),
     ]
 
     for label, value in rows:
         st.markdown(
-            (
-                "<div style='display:flex;"
-                "justify-content:space-between;"
-                "border-bottom:1px solid #1b3640;"
-                "padding:.28rem 0'>"
-                f"<span class='data-label'>{label}</span>"
-                f"<span class='data-value'>{value}</span>"
-                "</div>"
-            ),
+            f"<div style='display:flex;"
+            f"justify-content:space-between;"
+            f"border-bottom:1px solid #1b3640;"
+            f"padding:.28rem 0'>"
+            f"<span class='data-label'>{label}</span>"
+            f"<span class='data-value'>{value}</span>"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -843,7 +1175,10 @@ def _utc(value) -> str:
     if value is None:
         return "—"
 
-    if hasattr(value, "to_pydatetime"):
+    if hasattr(
+        value,
+        "to_pydatetime",
+    ):
         value = value.to_pydatetime()
 
     if value.tzinfo is None:
@@ -853,22 +1188,30 @@ def _utc(value) -> str:
 
     return value.astimezone(
         timezone.utc
-    ).strftime("%H:%M:%S UTC")
+    ).strftime(
+        "%H:%M:%S UTC"
+    )
 
 
-def engine_tracks(snapshot: EngineSnapshot):
+def engine_tracks(
+    snapshot: EngineSnapshot,
+):
+    """Expose snapshot observations grouped by MMSI.
+
+    The map remains independent from ObservationStore internals.
     """
-    Keep map rendering independent from store internals.
 
-    Only observations carried by the current EngineSnapshot are used.
-    """
-
-    by_mmsi: dict[str, list] = {}
+    by_mmsi: dict[
+        str,
+        list,
+    ] = {}
 
     for observation in snapshot.observations:
         by_mmsi.setdefault(
             observation.mmsi,
             [],
-        ).append(observation)
+        ).append(
+            observation
+        )
 
     return by_mmsi.items()
