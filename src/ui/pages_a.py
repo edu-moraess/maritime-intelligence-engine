@@ -88,11 +88,13 @@ def render_overview(
             40.0,
             0.0,
             0.5,
+            key="overview_min_speed",
         )
 
         only_fresh = st.checkbox(
             "Fresh reports only",
             value=False,
+            key="overview_only_fresh",
         )
 
     # ------------------------------------------------------------------
@@ -105,16 +107,36 @@ def render_overview(
             f"{len(snapshot.vessels)} targets",
         )
 
+        # ==============================================================
+        # MAP CONFIGURATION
+        #
+        # All map controls remain inside one collapsible operator menu.
+        # ==============================================================
+
         with st.expander(
             "MAP CONFIGURATION",
             expanded=False,
         ):
+            # ----------------------------------------------------------
+            # BASEMAP
+            # ----------------------------------------------------------
+
+            st.markdown(
+                "<div class='data-label' "
+                "style='margin-bottom:.35rem'>"
+                "BASEMAP"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
             map_style = st.selectbox(
                 "Map style",
                 options=list(MAP_STYLES.keys()),
                 index=list(MAP_STYLES.keys()).index(
                     "Dark Matter"
                 ),
+                key="map_style",
+                label_visibility="collapsed",
                 help=(
                     "Select the basemap used by "
                     "the operational map."
@@ -126,10 +148,14 @@ def render_overview(
                 unsafe_allow_html=True,
             )
 
+            # ----------------------------------------------------------
+            # OPERATIONAL LAYERS
+            # ----------------------------------------------------------
+
             st.markdown(
                 "<div class='data-label' "
                 "style='margin-bottom:.35rem'>"
-                "VISUALIZATION LAYERS"
+                "OPERATIONAL LAYERS"
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -137,22 +163,29 @@ def render_overview(
             show_heading = st.checkbox(
                 "Heading vectors",
                 value=True,
+                key="map_show_heading",
             )
 
             show_trails = st.checkbox(
                 "Observed trails",
                 value=True,
+                key="map_show_trails",
             )
 
             show_anomalies = st.checkbox(
                 "Behavioral findings",
                 value=True,
+                key="map_show_anomalies",
             )
 
             st.markdown(
                 "<hr style='border-color:#1b3640'>",
                 unsafe_allow_html=True,
             )
+
+            # ----------------------------------------------------------
+            # TRAFFIC INTELLIGENCE
+            # ----------------------------------------------------------
 
             st.markdown(
                 "<div class='data-label' "
@@ -165,30 +198,39 @@ def render_overview(
             show_density = st.checkbox(
                 "Traffic density",
                 value=False,
+                key="map_show_density",
             )
 
             show_hexbin = st.checkbox(
                 "Traffic hexbin",
                 value=False,
+                key="map_show_hexbin",
             )
 
             show_speed_field = st.checkbox(
                 "Speed field",
                 value=False,
+                key="map_show_speed_field",
             )
 
             show_anomaly_hotspots = st.checkbox(
                 "Anomaly hotspots",
                 value=False,
+                key="map_show_anomaly_hotspots",
             )
 
             st.markdown(
                 "<p class='small-note'>"
-                "Spatial intelligence layers are computed from the "
-                "current AIS observation stream."
+                "All visualization layers are derived from real AIS "
+                "observations available in the current session. "
+                "No synthetic traffic or fallback data is generated."
                 "</p>",
                 unsafe_allow_html=True,
             )
+
+        # --------------------------------------------------------------
+        # VESSEL DATA
+        # --------------------------------------------------------------
 
         rows = vessel_rows(
             snapshot.vessels
@@ -198,16 +240,20 @@ def render_overview(
             rows = [
                 row
                 for row in rows
-                if row["sog_knots"] is not None
-                and row["sog_knots"] >= min_speed
+                if row.get("sog_knots") is not None
+                and float(row["sog_knots"]) >= min_speed
             ]
 
         if only_fresh:
             rows = [
                 row
                 for row in rows
-                if not row["stale"]
+                if not row.get("stale", False)
             ]
+
+        # --------------------------------------------------------------
+        # RENDER MAP
+        # --------------------------------------------------------------
 
         if not rows:
             empty_state(
@@ -312,6 +358,7 @@ def render_vessels(
         "Search MMSI or vessel name",
         placeholder="e.g. 368207620",
         label_visibility="collapsed",
+        key="vessel_search",
     )
 
     filtered = snapshot.vessels
@@ -378,13 +425,25 @@ def render_vessels(
     ]
 
     if options:
+        current = st.session_state.get(
+            "selected_mmsi"
+        )
+
+        index = (
+            options.index(current)
+            if current in options
+            else 0
+        )
+
         selected = st.selectbox(
             "Inspect vessel",
             options,
+            index=index,
             format_func=lambda value: _vessel_label(
                 value,
                 snapshot.vessels,
             ),
+            key="vessels_inspect_mmsi",
         )
 
         st.session_state.selected_mmsi = selected
