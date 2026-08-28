@@ -13,9 +13,11 @@ from src.ingestion.models import AISObservation
 class ObservationStore:
     """Bounded session storage for real AIS messages.
 
-    The store is intentionally in-memory for Streamlit Cloud. It is an adapter
-    boundary where a PostgreSQL/PostGIS repository can be added later. Exact
-    duplicate payloads are ignored while their count remains available for QA.
+    The store is intentionally in-memory for the live Streamlit session. It is
+    the source-of-truth boundary; an optional PostgreSQL/PostGIS sink persists
+    validated observations after collection without feeding history back into
+    runtime analytics. Exact duplicate payloads are ignored while their count
+    remains available for QA.
     """
 
     def __init__(self, max_messages: int = 3000, max_vessels: int = 1000) -> None:

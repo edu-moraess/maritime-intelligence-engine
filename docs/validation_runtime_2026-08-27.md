@@ -115,3 +115,15 @@ The clean temporal instance loaded `Traffic` with `REAL AIS DATA UNAVAILABLE`, z
 ## Final temporal clean boot
 
 After the final code changes, all prior Streamlit processes were stopped and a new instance was started on port 8505. The health endpoint returned `ok`; the Overview loaded without traceback or ImportError. It displayed `LAST RECEIVED = UNAVAILABLE`, operator timezone `UTC`, `NOT CONFIGURED`, `DISCONNECTED`, zero real messages, `WAITING` readiness and the explicit no-fabrication empty state.
+
+
+## E1/E2 clean boot and navigation validation
+
+On 2026-08-28 UTC, prior Streamlit processes were stopped by PID and a brand-new process was started on port 8506. The health endpoint returned `ok`, and the process log contained no traceback. With no `AISSTREAM_API_KEY` and no `DATABASE_URL`, the fresh Overview rendered the existing real-AIS-only disconnected state: collection duration `60 s`, `NOT CONFIGURED`, `DISCONNECTED`, zero messages, zero vessels, `LAST RECEIVED = UNAVAILABLE`, and no synthetic or fallback data.
+
+The clean navigation pass loaded Fleet, Vessel Intelligence, Trajectory Analysis, Behavior, Similarity, Anomalies, Traffic, Data Quality and System. The pages preserved the empty-state/gate semantics: `NO TARGET SELECTED`, `NO TRAJECTORY SELECTED`, `INSUFFICIENT REAL AIS DATA` with `Current: 0/3`, `NO REFERENCE TRACK`, `NO BEHAVIORAL ANOMALIES`, `REAL AIS DATA UNAVAILABLE`, and `NO REAL AIS OBSERVATIONS` respectively. No runtime exception was visible.
+
+System explicitly showed `HISTORICAL DATABASE NOT CONFIGURED`, while the live provider remained `DISCONNECTED`, `WEBSOCKET CLOSED`, and `MESSAGES RECEIVED 0`. This confirms the optional historical path does not become a live dependency when `DATABASE_URL` is absent. The live app was not connected to AISStream because no API key was available; no real collection or external database validation is claimed.
+
+
+A final clean-process check on port 8507 was performed after the UI/storage wording fixes. Health returned `ok` and a traceback scan of the process log returned none. Overview showed the unchanged no-key real-AIS-only state with default `60 s`, `DISCONNECTED`, zero observations, `WAITING` gates and no fabricated layer. Data Quality showed `NO REAL AIS OBSERVATIONS`; System showed `HISTORICAL DATABASE NOT CONFIGURED`, `Observation time: UNAVAILABLE`, and the corrected statement that the in-memory session store is the live source of truth while optional PostgreSQL/PostGIS persistence runs only after valid received observations and never blocks live AIS.

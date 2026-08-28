@@ -339,7 +339,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
 def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("System and pipeline status")
     status = snapshot.status
-    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES RECEIVED": f"{status.messages_received:,}", "LAST RECEIVED": format_received(status.last_received_at), "AIS UTC SECOND": format_ais_second(status.ais_timestamp_second), "LATENCY": "UNAVAILABLE"})
+    metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status, "MESSAGES RECEIVED": f"{status.messages_received:,}", "LAST RECEIVED": format_received(status.last_received_at), "AIS UTC SECOND": format_ais_second(status.ais_timestamp_second), "LATENCY": "UNAVAILABLE", "HISTORICAL": snapshot.historical_status})
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
@@ -352,12 +352,16 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         st.write(f"**AIS UTC second:** `{format_ais_second(status.ais_timestamp_second)}`")
         st.write("**Observation time:** `UNAVAILABLE`")
         st.write("**Latency:** `UNAVAILABLE`")
+        st.write(f"**Historical database:** `{snapshot.historical_status}`")
+        if snapshot.historical_result is not None:
+            result = snapshot.historical_result
+            st.write(f"**Historical write:** `{result.persisted_observations}` persisted · `{result.duplicate_observations}` duplicate · `{result.skipped_invalid}` invalid skipped")
         st.write(f"**Monitoring box:** `{settings.bbox[0]} → {settings.bbox[1]}`")
     with right:
         panel_title("Pipeline", "real AIS")
         st.markdown("`AISStream WebSocket`  →  `Validation`  →  `Trajectory features`  →  `Runtime PCA`  →  `IsolationForest / rules`  →  `Streamlit`")
         st.write("")
-        st.write("Storage mode: bounded in-memory session store. PostgreSQL/PostGIS is an explicit future adapter, not required for the deployed disconnected state.")
+        st.write("Storage mode: bounded in-memory session store is the live source of truth. Optional PostgreSQL/PostGIS persistence runs only after valid observations are received and never blocks live AIS.")
         st.write("Model checkpoint: none. The current representation is fitted only on real observations received in this session.")
     if status.state == "LIVE AIS":
         notice("The application is receiving real AIS position reports from AISStream.", "green")

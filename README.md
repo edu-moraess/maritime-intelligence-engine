@@ -22,16 +22,20 @@ flowchart LR
     F --> G[Isolation Forest + explainable rules]
     D --> H[Streamlit operational UI]
     G --> H
-    I[Optional PostgreSQL/PostGIS adapter] -. future .-> D
+    D --> I[HistoricalWriter]
+    I --> J[Optional external PostgreSQL/PostGIS]
 ```
 
-O frontend Streamlit atua somente como camada de apresentação e orquestração da sessão. O contrato `AISProvider` permite a substituição futura por outro provedor real, sem criar um provedor sintético.
+O frontend Streamlit atua somente como camada de apresentação e orquestração da sessão. O contrato `AISProvider` permite a substituição futura por outro provedor real, sem criar um provedor sintético. O `ObservationStore` continua sendo a fonte do estado live; o `HistoricalWriter` é um sink opcional executado após uma coleta real e nunca substitui o estado live.
+
+Quando `DATABASE_URL` não existe, o sistema permanece **LIVE-ONLY** e mostra `HISTORICAL DATABASE NOT CONFIGURED`. Quando o banco externo está configurado, o writer aplica as migrations versionadas e persiste somente observações AIS válidas recebidas pelo provider. Se o banco falhar, o live permanece em memória e o sistema mostra `HISTORICAL DATABASE UNAVAILABLE` sem vazar a URL ou interromper o Streamlit.
 
 | Camada | Implementação atual | Garantia de integridade |
 | --- | --- | --- |
 | Ingestão | `AISStreamProvider` com `websocket-client` | Decodifica frames binários UTF-8 e aceita somente mensagens `PositionReport` válidas |
 | Processamento | `processing.quality` e `trajectory.features` | Valida MMSI, coordenadas, velocidade, curso, duplicidades, gaps e saltos impossíveis |
-| Armazenamento | `ObservationStore` em memória por sessão | Limite de mensagens; nenhum dado é inventado ou persistido como live sem origem real |
+| Armazenamento live | `ObservationStore` em memória por sessão | Limite de mensagens; nenhuma dependência de banco e nenhum dado inventado |
+| Histórico opcional | `HistoricalWriter` → PostgreSQL/PostGIS externo | Escreve apenas AIS real válido, usa `payload_hash` idempotente e não é fonte obrigatória do live |
 | Representação | Vetor de características + `StandardScaler` + PCA | Ajustado somente sobre tracks reais recebidos nesta sessão |
 | Anomalias | `IsolationForest` e regras explicáveis | Sinaliza anomalias comportamentais; nunca infere intenção hostil |
 | Interface | Streamlit + Plotly + PyDeck | Estados de conexão e indisponibilidade transparentes |
@@ -74,10 +78,12 @@ maritime-intelligence-engine/
 │   ├── processing/quality.py
 │   ├── storage/memory.py
 │   ├── trajectory/features.py
+│   ├── historical/writer.py
 │   └── ui/
 │       ├── pages.py
 │       ├── presentation.py
 │       └── temporal.py
+├── migrations/001_initial_historical.sql
 ├── tests/test_core.py
 ├── .streamlit/config.toml
 ├── .env.example
@@ -115,7 +121,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. A chave não deve ser colocada no código, no README, no frontend, em logs ou no Git.
+Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. `DATABASE_URL` é opcional e deve apontar para um PostgreSQL externo com PostGIS; deixe-o vazio para manter o modo LIVE-ONLY. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. Nenhuma chave deve ser colocada no código, no README, no frontend, em logs ou no Git.
+
+Com `DATABASE_URL`, a primeira coleta real após o boot aplica `migrations/001_initial_historical.sql` de forma lazy e cria/atualiza uma `collection_session` somente quando observações AIS válidas forem recebidas. As tabelas usam `timestamptz`; a geometria é armazenada em PostGIS SRID 4326; `observed_at` permanece NULL; nomes AIS ausentes permanecem NULL no banco; e `Clear Session` limpa apenas live, nunca histórico.
 
 Execute:
 
@@ -123,7 +131,7 @@ Execute:
 streamlit run app.py
 ```
 
-Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas.
+Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas. Sem `DATABASE_URL`, o histórico permanece indisponível de forma explícita e a aplicação continua LIVE-ONLY. O Streamlit Community Cloud não executa PostgreSQL localmente: quando usado, o banco deve ser um serviço PostgreSQL/PostGIS externo.
 
 ## Streamlit Community Cloud
 
@@ -135,6 +143,8 @@ AIS_AREA_MIN_LAT = "25.603"
 AIS_AREA_MIN_LON = "-80.208"
 AIS_AREA_MAX_LAT = "25.835"
 AIS_AREA_MAX_LON = "-79.879"
+# Optional external PostgreSQL/PostGIS; omit or leave empty for LIVE-ONLY.
+# DATABASE_URL = "<external-postgresql-url>"
 ```
 
 Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A alteração da caixa na interface é aplicada à próxima assinatura WebSocket e produz a indicação `Region updated. Collect again to open a new subscription.`. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
@@ -148,7 +158,7 @@ pytest -q
 python -m compileall app.py src tests
 ```
 
-Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos e o tratamento explícito de SOG ausente.
+Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos, o tratamento explícito de SOG ausente, o no-op sem `DATABASE_URL`, a falha de banco sem queda do live, a rejeição de observações inválidas e a idempotência por `payload_hash`. A migration e o writer foram validados por contrato e conexão fake apenas nos testes; uma validação contra PostgreSQL/PostGIS real exige infraestrutura externa disponível.
 
 ## Segurança e privacidade
 
@@ -156,7 +166,7 @@ O `.gitignore` exclui `.env`, `st.secrets.toml`, bancos locais, caches de modelo
 
 ## Roadmap técnico
 
-A próxima evolução recomendada é adicionar um repositório PostgreSQL/PostGIS opcional com retenção e classificação explícita de `HISTORICAL AIS`. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. A camada atual mantém a separação deliberada entre o estado live do provider e o `ObservationStore` da sessão; uma fonte de verdade única só deve ser adotada com testes de regressão específicos para seleção, clear session e atualização do mapa. Deep Learning permanece fora desta versão: quando houver histórico real suficiente, a V2 deverá comparar o baseline IsolationForest com um Autoencoder/VAE em janelas temporais com train/validation/test, sem dataset sintético ou checkpoint sem justificativa verificável.
+A próxima evolução recomendada é adicionar uma consulta histórica read-only na UI, retenção configurável e classificação explícita de `HISTORICAL AIS`, sem misturar esse estado com o live. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. Deep Learning, DTW, baseline histórico e análise contextual permanecem fora desta execução; qualquer evolução futura deverá usar histórico real suficiente e protocolo train/validation/test, sem dataset sintético ou checkpoint sem justificativa verificável.
 
 ## Referências
 

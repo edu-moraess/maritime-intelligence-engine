@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,8 @@ from src.analytics.traffic import speed_distribution
 from src.config.regions import REGION_PRESETS, REGION_TIMEZONES, region_timezone_for_bbox
 from src.config.settings import COLLECTION_DURATION_OPTIONS, DEFAULT_BBOX, AppSettings, _validate_bbox
 from src.ingestion.aisstream import AISStreamProvider
+from src.historical import HistoricalWriteResult, create_historical_writer
+from src.historical.writer import PostgresHistoricalWriter, _database_url_for_connection, observation_payload_hash
 from src.ingestion.models import AISObservation, VesselSnapshot
 from src.intelligence.engine import MaritimeIntelligenceEngine
 from src.ml.embeddings import TrajectoryEmbeddingAdapter
@@ -442,3 +445,237 @@ def test_received_format_is_explicitly_utc_and_observation_is_unavailable():
     received_at = datetime(2026, 8, 28, 0, 4, 31, tzinfo=timezone.utc)
     assert format_received(received_at) == "2026-08-28 00:04:31 UTC"
     assert format_observation_time(None) == "UNAVAILABLE"
+
+
+class _FakeCursor:
+    def __init__(self, connection):
+        self.connection = connection
+        self.result = None
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query, params=None):
+        self.executed.append((str(query), params))
+        normalized = " ".join(str(query).split()).upper()
+        self.result = None
+        if "SELECT 1 FROM MIE_SCHEMA_MIGRATIONS" in normalized:
+            version = str(params[0])
+            self.result = (1,) if version in self.connection.migrations else None
+        elif "INSERT INTO MIE_SCHEMA_MIGRATIONS" in normalized:
+            self.connection.migrations.add(str(params[0]))
+        elif "SELECT REGION_ID FROM REGIONS" in normalized:
+            self.result = (7,)
+        elif "INSERT INTO AIS_OBSERVATIONS" in normalized:
+            payload_hash = str(params[-1])
+            if payload_hash in self.connection.payload_hashes:
+                self.result = None
+            else:
+                self.connection.payload_hashes.add(payload_hash)
+                self.result = (len(self.connection.payload_hashes),)
+
+    def fetchone(self):
+        result, self.result = self.result, None
+        return result
+
+
+class _FakeConnection:
+    def __init__(self):
+        self.migrations = set()
+        self.payload_hashes = set()
+        self.closed = False
+        self.commits = 0
+        self.rollbacks = 0
+        self.last_cursor = None
+
+    def cursor(self):
+        cursor = _FakeCursor(self)
+        self.last_cursor = cursor
+        return cursor
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+    def close(self):
+        self.closed = True
+
+
+def _historical_observation(payload_id=1, valid=True):
+    return AISObservation(
+        mmsi="368207620",
+        latitude=25.7617,
+        longitude=-80.1918,
+        received_at=datetime(2026, 8, 28, 0, 4, 31, tzinfo=timezone.utc),
+        sog_knots=12.4,
+        cog_degrees=86.7,
+        ais_timestamp_second=42,
+        valid=valid,
+        raw={"MessageType": "PositionReport", "Message": {"PositionReport": {"UserID": 368207620, "Timestamp": 42}}, "payload_id": payload_id},
+    )
+
+
+def test_database_url_absent_is_live_only_noop():
+    writer = create_historical_writer(None)
+
+    result = writer.persist_collection(
+        [_historical_observation()],
+        REGION_PRESETS["Miami"],
+        60,
+        datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc),
+    )
+
+    assert writer.enabled is False
+    assert writer.status == "HISTORICAL DATABASE NOT CONFIGURED"
+    assert result.session_id is None
+    assert result.persisted_observations == 0
+    assert "LIVE-ONLY" in result.reason
+
+
+def test_database_failure_does_not_raise_or_change_live_sink():
+    def failing_connect(_database_url):
+        raise ConnectionError("password=must-not-be-exposed")
+
+    writer = PostgresHistoricalWriter("postgresql://user:secret@db.example/mie", connect_fn=failing_connect)
+    result = writer.persist_collection(
+        [_historical_observation()],
+        REGION_PRESETS["Miami"],
+        60,
+        datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "HISTORICAL DATABASE UNAVAILABLE"
+    assert result.persisted_observations == 0
+    assert "secret" not in result.reason
+
+
+def test_valid_observation_persists_and_duplicate_is_idempotent():
+    connection = _FakeConnection()
+    writer = PostgresHistoricalWriter("postgresql://localhost/mie", connect_fn=lambda _url: connection)
+    started = datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc)
+    ended = datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc)
+
+    first = writer.persist_collection([_historical_observation()], REGION_PRESETS["Miami"], 60, started, ended)
+    second = writer.persist_collection([_historical_observation()], REGION_PRESETS["Miami"], 60, started, ended)
+
+    assert first.persisted_observations == 1
+    assert first.duplicate_observations == 0
+    assert second.persisted_observations == 0
+    assert second.duplicate_observations == 1
+    assert len(connection.payload_hashes) == 1
+    assert connection.commits >= 2
+    collection_insert = next(params for query, params in connection.last_cursor.executed if "INSERT INTO collection_sessions" in query)
+    vessel_insert = next(params for query, params in connection.last_cursor.executed if "INSERT INTO vessels" in query)
+    observation_insert = next(params for query, params in connection.last_cursor.executed if "INSERT INTO ais_observations" in query)
+    assert collection_insert[1] == 7
+    assert collection_insert[-1] == "AISSTREAM"
+    assert vessel_insert[1] is None
+    assert observation_insert[1] == "368207620"
+    assert observation_insert[4] == _historical_observation().received_at
+    assert observation_insert[5] == 42
+    assert observation_insert[6] is None
+    assert observation_insert[9] is None
+
+
+def test_invalid_observation_is_not_persisted_or_connected():
+    connect_calls = []
+    connection = _FakeConnection()
+    writer = PostgresHistoricalWriter("postgresql://localhost/mie", connect_fn=lambda url: (connect_calls.append(url), connection)[1])
+    result = writer.persist_collection(
+        [_historical_observation(valid=False)],
+        REGION_PRESETS["Miami"],
+        60,
+        datetime(2026, 8, 28, 0, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 28, 0, 5, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.persisted_observations == 0
+    assert result.skipped_invalid == 1
+    assert connect_calls == []
+    assert connection.payload_hashes == set()
+
+
+
+def test_database_url_is_optional_runtime_setting(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    without_database = AppSettings.from_runtime({})
+    with_database = AppSettings.from_runtime({"DATABASE_URL": "postgresql://user:password@db.example/mie"})
+
+    assert without_database.database_url is None
+    assert with_database.database_url == "postgresql://user:password@db.example/mie"
+
+
+def test_initial_migration_declares_postgis_schema_and_required_indexes():
+    migration = Path(__file__).parents[1].joinpath("migrations", "001_initial_historical.sql").read_text(encoding="utf-8")
+
+    assert "CREATE EXTENSION IF NOT EXISTS postgis" in migration
+    assert "geom geometry(POINT, 4326) NOT NULL" in migration
+    assert "bbox geometry(POLYGON, 4326) NOT NULL" in migration
+    assert "received_at TIMESTAMPTZ NOT NULL" in migration
+    assert "observed_at TIMESTAMPTZ NULL" in migration
+    assert "payload_hash TEXT NOT NULL UNIQUE" in migration
+    assert "idx_ais_observations_mmsi_received_at" in migration
+    assert "idx_ais_observations_geom_gist" in migration
+    assert "idx_ais_observations_session_id" in migration
+
+
+def test_payload_hash_is_stable_for_same_real_provider_payload():
+    first = _historical_observation(payload_id=1)
+    second = _historical_observation(payload_id=1)
+    changed = _historical_observation(payload_id=2)
+
+    assert observation_payload_hash(first) == observation_payload_hash(second)
+    assert observation_payload_hash(first) != observation_payload_hash(changed)
+
+
+def test_remote_database_url_requires_ssl_without_changing_local_url():
+    remote = _database_url_for_connection("postgresql://user:password@db.example/mie")
+    remote_with_query = _database_url_for_connection("postgresql://user:password@db.example/mie?application_name=mie")
+    remote_disable = _database_url_for_connection("postgresql://user:password@db.example/mie?sslmode=disable")
+    local = _database_url_for_connection("postgresql://localhost/mie")
+
+    assert "sslmode=require" in remote
+    assert "application_name=mie" in remote_with_query
+    assert "sslmode=require" in remote_with_query
+    assert "sslmode=require" in remote_disable
+    assert local == "postgresql://localhost/mie"
+
+
+
+def test_engine_persists_only_after_real_collection_and_clear_keeps_writer_history():
+    settings = AppSettings(aisstream_api_key="server-side-key", bbox=DEFAULT_BBOX)
+    engine = MaritimeIntelligenceEngine(settings)
+    observation = _historical_observation()
+
+    class RecordingWriter:
+        status = "HISTORICAL DATABASE AVAILABLE"
+
+        def __init__(self):
+            self.calls = []
+
+        def persist_collection(self, observations, bbox, collection_seconds, started_at, ended_at):
+            self.calls.append((list(observations), bbox, collection_seconds, started_at, ended_at))
+            return HistoricalWriteResult("HISTORICAL DATABASE AVAILABLE", "session-1", len(self.calls[0][0]), 0, 0, "ok")
+
+    writer = RecordingWriter()
+    engine.historical_writer = writer
+    engine.provider.stream = lambda stop_event, duration_seconds: iter([observation])
+
+    assert engine.collect(seconds=30) == 1
+    assert len(writer.calls) == 1
+    assert writer.calls[0][0] == [observation]
+    assert engine.snapshot().historical_result is not None
+
+    engine.clear_session_data()
+
+    assert len(writer.calls) == 1
+    assert engine.snapshot().observations == []
+    assert engine.snapshot().historical_result is None

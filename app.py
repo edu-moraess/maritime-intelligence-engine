@@ -58,8 +58,12 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         settings.stale_after_seconds,
         settings.provider,
         settings.config_error,
+        settings.database_url,
     )
     if st.session_state.get("engine_signature") != signature:
+        previous_engine = st.session_state.get("engine")
+        if previous_engine is not None:
+            previous_engine.historical_writer.close()
         st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
         st.session_state.pop("selected_mmsi", None)
@@ -81,6 +85,7 @@ def _with_bbox(
         stale_after_seconds=settings.stale_after_seconds,
         provider=settings.provider,
         config_error=config_error,
+        database_url=settings.database_url,
     )
 
 

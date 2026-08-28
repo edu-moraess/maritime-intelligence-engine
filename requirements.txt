@@ -6,4 +6,5 @@ pydeck>=0.9,<1
 scikit-learn>=1.5,<2
 websocket-client>=1.8,<2
 python-dotenv>=1.0,<2
+psycopg[binary]>=3.2,<4
 pytest>=8,<10

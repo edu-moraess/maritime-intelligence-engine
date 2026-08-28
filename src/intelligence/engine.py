@@ -5,11 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from src.analytics.traffic import traffic_summary
 from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
+from src.historical import HistoricalWriteResult, create_historical_writer
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.processing.quality import QualityReport, build_quality_report
@@ -52,6 +54,8 @@ class EngineSnapshot:
     summary: dict[str, float | int]
     readiness: ReadinessSnapshot
     last_collection_seconds: float
+    historical_status: str
+    historical_result: HistoricalWriteResult | None
 
 
 class MaritimeIntelligenceEngine:
@@ -76,6 +80,8 @@ class MaritimeIntelligenceEngine:
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
         self.last_collection_seconds: float = 0.0
+        self.historical_writer = create_historical_writer(settings.database_url)
+        self.historical_result: HistoricalWriteResult | None = None
 
     @property
     def region(self) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -84,6 +90,7 @@ class MaritimeIntelligenceEngine:
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window; returns only actual observations received."""
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
+        started_at = datetime.now(timezone.utc)
         started = time.monotonic()
         stop_event = threading.Event()
         collected: list[AISObservation] = []
@@ -93,8 +100,18 @@ class MaritimeIntelligenceEngine:
                 stop_event.set()
                 break
         stop_event.set()
+        ended_at = datetime.now(timezone.utc)
         if collected:
             self.store.extend(collected)
+            self.historical_result = self.historical_writer.persist_collection(
+                collected,
+                self.settings.bbox,
+                time.monotonic() - started,
+                started_at,
+                ended_at,
+            )
+        else:
+            self.historical_result = None
         self.last_collection_seconds = time.monotonic() - started
         self._recompute()
         return len(collected)
@@ -130,6 +147,8 @@ class MaritimeIntelligenceEngine:
             summary=traffic_summary(vessels, observations, self.findings),
             readiness=self._readiness(tracks),
             last_collection_seconds=self.last_collection_seconds,
+            historical_status=self.historical_writer.status,
+            historical_result=self.historical_result,
         )
 
     def clear_session_data(self) -> None:
@@ -138,6 +157,7 @@ class MaritimeIntelligenceEngine:
         self.embeddings = None
         self.findings = []
         self.last_collection_seconds = 0.0
+        self.historical_result = None
         if self.settings.config_error or not self.settings.aisstream_api_key:
             self.provider.connect()
 

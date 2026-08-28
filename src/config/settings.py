@@ -40,6 +40,7 @@ class AppSettings:
     stale_after_seconds: int = 180
     provider: str = "aisstream"
     config_error: str | None = None
+    database_url: str | None = None
 
     @classmethod
     def from_runtime(cls, secrets: Any | None = None) -> "AppSettings":
@@ -92,6 +93,7 @@ class AppSettings:
             stale_after_seconds=int_setting("AIS_STALE_AFTER_SECONDS", 180),
             provider=provider,
             config_error=config_error,
+            database_url=_secret_or_env("DATABASE_URL", secrets).strip() or None,
         )
 
     @property
