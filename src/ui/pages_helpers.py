@@ -306,8 +306,6 @@ def _build_speed_rows(
 
         speed = max(0.0, float(sog))
 
-        # Concrete numeric radius.
-        # Avoids expressions such as Math.max(...) in deck.gl JSON.
         radius = max(
             250.0,
             min(1200.0, 250.0 + speed * 55.0),
@@ -398,9 +396,9 @@ def _render_vessel_map(
 
     Operational intelligence derived from live AIS observations.
 
-    The renderer intentionally avoids JavaScript expressions and
-    HeatmapLayer so the Streamlit Cloud deck.gl renderer receives
-    simple JSON-compatible values and remains WebGL-safe.
+    Vessel tooltips are restricted to the actual vessel layer.
+    Aggregated intelligence layers do not inherit vessel metadata,
+    preventing misleading null values from appearing in the UI.
     """
 
     if not rows:
@@ -411,7 +409,7 @@ def _render_vessel_map(
         return
 
     # ------------------------------------------------------------------
-    # CURRENT VESSEL COLORS
+    # CURRENT VESSEL COLORS + TOOLTIP-SAFE FIELDS
     # ------------------------------------------------------------------
 
     for row in rows:
@@ -421,16 +419,53 @@ def _render_vessel_map(
             else [121, 147, 155, 180]
         )
 
+        row["tooltip_name"] = (
+            str(row.get("name") or "UNKNOWN VESSEL")
+        )
+
+        row["tooltip_mmsi"] = (
+            str(row.get("mmsi") or "UNKNOWN")
+        )
+
+        sog = row.get("sog_knots")
+        row["tooltip_sog"] = (
+            f"{float(sog):.1f}"
+            if sog is not None
+            else "—"
+        )
+
+        cog = row.get("cog_degrees")
+        row["tooltip_cog"] = (
+            f"{float(cog):.1f}"
+            if cog is not None
+            else "—"
+        )
+
+        heading = row.get("heading_degrees")
+        row["tooltip_heading"] = (
+            f"{float(heading):.0f}"
+            if heading is not None
+            else "—"
+        )
+
+        row["tooltip_status"] = (
+            "STALE"
+            if row.get("stale", False)
+            else "ACTIVE"
+        )
+
+        row["tooltip_last_update"] = _utc(
+            row.get("last_received")
+        )
+
     layers: list[pdk.Layer] = []
 
     # ------------------------------------------------------------------
     # TRAFFIC DENSITY
     #
-    # HeatmapLayer is intentionally avoided because some Streamlit
-    # Cloud/deck.gl combinations can fail compiling its fragment shader.
-    #
-    # Instead, density is represented by simple ScatterplotLayer points
-    # derived directly from real AIS observations.
+    # Not pickable because these are aggregate observations rather than
+    # individual vessel targets. This prevents the vessel tooltip from
+    # being displayed over density points.
     # ------------------------------------------------------------------
 
     if show_density:
@@ -460,9 +495,6 @@ def _render_vessel_map(
 
     # ------------------------------------------------------------------
     # TRAFFIC HEXBIN
-    #
-    # Uses concrete numeric values and ScatterplotLayer instead of
-    # ColumnLayer to minimize WebGL/shader complexity.
     # ------------------------------------------------------------------
 
     if show_hexbin:
@@ -516,8 +548,7 @@ def _render_vessel_map(
                     get_radius="radius",
                     radius_min_pixels=4,
                     radius_max_pixels=30,
-                    pickable=True,
-                    auto_highlight=True,
+                    pickable=False,
                 )
             )
 
@@ -578,6 +609,7 @@ def _render_vessel_map(
             ],
             get_width=2,
             width_min_pixels=1,
+            pickable=False,
         )
     )
 
@@ -613,6 +645,7 @@ def _render_vessel_map(
                 ],
                 get_width=2,
                 width_min_pixels=1,
+                pickable=False,
             )
         )
 
@@ -670,12 +703,16 @@ def _render_vessel_map(
                     ],
                     width_min_pixels=1,
                     get_width=1,
-                    pickable=True,
+                    pickable=False,
                 )
             )
 
     # ------------------------------------------------------------------
     # SPEED FIELD
+    #
+    # This is a derived visualization layer, not a vessel target.
+    # It therefore remains non-pickable and cannot trigger the vessel
+    # tooltip.
     # ------------------------------------------------------------------
 
     if show_speed_field:
@@ -699,7 +736,7 @@ def _render_vessel_map(
                     get_radius="radius",
                     radius_min_pixels=3,
                     radius_max_pixels=14,
-                    pickable=True,
+                    pickable=False,
                 )
             )
 
@@ -751,15 +788,12 @@ def _render_vessel_map(
                     get_radius=560,
                     radius_min_pixels=4,
                     radius_max_pixels=12,
-                    pickable=True,
+                    pickable=False,
                 )
             )
 
     # ------------------------------------------------------------------
     # ANOMALY HOTSPOTS
-    #
-    # ScatterplotLayer is used instead of ColumnLayer to avoid additional
-    # extrusion/shader complexity in browser WebGL.
     # ------------------------------------------------------------------
 
     if (
@@ -806,8 +840,7 @@ def _render_vessel_map(
                     get_radius="radius",
                     radius_min_pixels=5,
                     radius_max_pixels=32,
-                    pickable=True,
-                    auto_highlight=True,
+                    pickable=False,
                 )
             )
 
@@ -855,11 +888,13 @@ def _render_vessel_map(
         layers=layers,
         tooltip={
             "html": (
-                "<b>{name}</b>"
-                "<br/>MMSI {mmsi}"
-                "<br/>SOG {sog_knots} kn"
-                "<br/>COG {cog_degrees}°"
-                "<br/>Last update {last_received}"
+                "<b>{tooltip_name}</b>"
+                "<br/>MMSI {tooltip_mmsi}"
+                "<br/>SOG {tooltip_sog} kn"
+                "<br/>COG {tooltip_cog}°"
+                "<br/>Heading {tooltip_heading}°"
+                "<br/>Status {tooltip_status}"
+                "<br/>Last update {tooltip_last_update}"
             ),
             "style": {
                 "backgroundColor": "#0d1c24",
