@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 from datetime import timezone
-from math import cos, radians
 
 import pandas as pd
 import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
 
-from src.analytics.traffic import (
-    anomaly_counts,
-    hourly_volume,
-    speed_distribution,
-)
 from src.config.settings import AppSettings
 from src.ingestion.models import (
     AnomalyFinding,
@@ -181,7 +175,7 @@ def _render_similarity_search(
 
 
 # ----------------------------------------------------------------------
-# MAP HELPERS
+# MAP DATA HELPERS
 # ----------------------------------------------------------------------
 
 
@@ -190,7 +184,7 @@ def _build_density_rows(
 ) -> list[dict]:
     """Return real AIS observations for spatial density rendering."""
 
-    rows = []
+    rows: list[dict] = []
 
     for observation in snapshot.observations:
         if (
@@ -214,13 +208,13 @@ def _build_hexbin_rows(
 ) -> list[dict]:
     """Build lightweight spatial bins from real AIS observations.
 
-    The aggregation is performed in-memory from the current session.
-    No synthetic observations are created.
+    Aggregation is performed entirely in-memory from the current
+    real AIS session. No synthetic observations are created.
     """
 
     bins: dict[tuple[int, int], int] = {}
 
-    # Approximately 0.05° cells.
+    # Approximately 0.05 degree spatial cells.
     cell_size = 0.05
 
     for observation in snapshot.observations:
@@ -230,19 +224,22 @@ def _build_hexbin_rows(
         ):
             continue
 
-        lat = float(observation.latitude)
-        lon = float(observation.longitude)
+        latitude = float(observation.latitude)
+        longitude = float(observation.longitude)
 
         key = (
-            int(lat / cell_size),
-            int(lon / cell_size),
+            int(latitude / cell_size),
+            int(longitude / cell_size),
         )
 
         bins[key] = bins.get(key, 0) + 1
 
-    rows = []
+    rows: list[dict] = []
 
-    for (lat_index, lon_index), count in bins.items():
+    for (
+        lat_index,
+        lon_index,
+    ), count in bins.items():
         rows.append(
             {
                 "latitude": (
@@ -253,7 +250,7 @@ def _build_hexbin_rows(
                     lon_index * cell_size
                     + cell_size / 2
                 ),
-                "count": count,
+                "count": int(count),
             }
         )
 
@@ -263,9 +260,13 @@ def _build_hexbin_rows(
 def _build_speed_rows(
     rows: list[dict],
 ) -> list[dict]:
-    """Prepare current real vessel observations for speed visualization."""
+    """Prepare current real vessel observations for speed rendering.
 
-    result = []
+    Radius is calculated in Python so pydeck receives only concrete
+    numeric values and does not need to evaluate JavaScript expressions.
+    """
+
+    result: list[dict] = []
 
     for row in rows:
         sog = row.get("sog_knots")
@@ -279,14 +280,22 @@ def _build_speed_rows(
         if latitude is None or longitude is None:
             continue
 
+        speed = max(0.0, float(sog))
+
+        # Concrete numeric radius.
+        # Avoids expressions such as Math.max(...) in deck.gl JSON.
+        radius = max(
+            250.0,
+            min(1200.0, 250.0 + speed * 55.0),
+        )
+
         result.append(
             {
                 "latitude": float(latitude),
                 "longitude": float(longitude),
-                "sog_knots": float(sog),
-                "cog_degrees": row.get(
-                    "cog_degrees"
-                ),
+                "sog_knots": speed,
+                "cog_degrees": row.get("cog_degrees"),
+                "radius": radius,
             }
         )
 
@@ -298,7 +307,10 @@ def _build_anomaly_hotspots(
 ) -> list[dict]:
     """Aggregate real anomaly findings spatially."""
 
-    hotspots: dict[tuple[int, int], dict] = {}
+    hotspots: dict[
+        tuple[int, int],
+        dict,
+    ] = {}
 
     cell_size = 0.05
 
@@ -309,12 +321,12 @@ def _build_anomaly_hotspots(
         ):
             continue
 
-        lat = float(finding.latitude)
-        lon = float(finding.longitude)
+        latitude = float(finding.latitude)
+        longitude = float(finding.longitude)
 
         key = (
-            int(lat / cell_size),
-            int(lon / cell_size),
+            int(latitude / cell_size),
+            int(longitude / cell_size),
         )
 
         if key not in hotspots:
@@ -337,9 +349,12 @@ def _build_anomaly_hotspots(
             float(finding.score),
         )
 
-    return list(
-        hotspots.values()
-    )
+    return list(hotspots.values())
+
+
+# ----------------------------------------------------------------------
+# MAP RENDERING
+# ----------------------------------------------------------------------
 
 
 def _render_vessel_map(
@@ -356,85 +371,129 @@ def _render_vessel_map(
 ) -> None:
     """Render the operational AIS map and optional intelligence layers.
 
-    Every layer is derived exclusively from current real AIS
-    observations or findings generated from those observations.
+    All layers originate exclusively from current real AIS observations
+    or anomaly findings derived from those observations.
+
+    The renderer intentionally avoids JavaScript expressions and
+    HeatmapLayer so the Streamlit Cloud deck.gl renderer receives
+    simple JSON-compatible values and remains WebGL-safe.
     """
 
+    if not rows:
+        empty_state(
+            "No real AIS position reports are available for the operational map.",
+            "NO REAL AIS POSITION DATA",
+        )
+        return
+
     # ------------------------------------------------------------------
-    # Vessel colors
+    # CURRENT VESSEL COLORS
     # ------------------------------------------------------------------
 
-    colors = [
-        (
+    for row in rows:
+        row["color"] = (
             [53, 194, 201, 210]
-            if not row["stale"]
+            if not row.get("stale", False)
             else [121, 147, 155, 180]
         )
-        for row in rows
-    ]
 
-    for row, color in zip(
-        rows,
-        colors,
-    ):
-        row["color"] = color
-
-    layers = []
+    layers: list[pdk.Layer] = []
 
     # ------------------------------------------------------------------
     # TRAFFIC DENSITY
+    #
+    # HeatmapLayer is intentionally avoided because some Streamlit
+    # Cloud/deck.gl combinations can fail compiling its fragment shader.
+    #
+    # Instead, density is represented by simple ScatterplotLayer points
+    # derived directly from real AIS observations.
     # ------------------------------------------------------------------
 
     if show_density:
-        density_rows = _build_density_rows(
-            snapshot
-        )
+        density_rows = _build_density_rows(snapshot)
 
         if density_rows:
             layers.append(
                 pdk.Layer(
-                    "HeatmapLayer",
+                    "ScatterplotLayer",
                     data=density_rows,
-                    get_position=(
-                        "[longitude, latitude]"
-                    ),
-                    get_weight=1,
-                    radius_pixels=45,
-                    intensity=1.0,
-                    threshold=0.05,
-                    opacity=0.65,
+                    get_position=[
+                        "longitude",
+                        "latitude",
+                    ],
+                    get_fill_color=[
+                        233,
+                        184,
+                        87,
+                        90,
+                    ],
+                    get_radius=900,
+                    radius_min_pixels=2,
+                    radius_max_pixels=18,
+                    pickable=False,
                 )
             )
 
     # ------------------------------------------------------------------
     # TRAFFIC HEXBIN
+    #
+    # Uses concrete numeric values and ScatterplotLayer instead of
+    # ColumnLayer to minimize WebGL/shader complexity.
     # ------------------------------------------------------------------
 
     if show_hexbin:
-        hexbin_rows = _build_hexbin_rows(
-            snapshot
-        )
+        hexbin_rows = _build_hexbin_rows(snapshot)
 
         if hexbin_rows:
+            max_count = max(
+                row["count"]
+                for row in hexbin_rows
+            )
+
+            for row in hexbin_rows:
+                count = row["count"]
+
+                row["radius"] = min(
+                    4500.0,
+                    700.0
+                    + (
+                        float(count)
+                        / max(1, max_count)
+                    )
+                    * 3800.0,
+                )
+
+                row["alpha"] = min(
+                    220,
+                    70
+                    + int(
+                        150
+                        * (
+                            float(count)
+                            / max(1, max_count)
+                        )
+                    ),
+                )
+
             layers.append(
                 pdk.Layer(
-                    "ColumnLayer",
+                    "ScatterplotLayer",
                     data=hexbin_rows,
-                    get_position=(
-                        "[longitude, latitude]"
-                    ),
-                    get_elevation="count",
-                    elevation_scale=35,
-                    radius=2800,
-                    pickable=True,
-                    auto_highlight=True,
-                    extruded=True,
+                    get_position=[
+                        "longitude",
+                        "latitude",
+                    ],
                     get_fill_color=[
                         233,
                         184,
                         87,
                         150,
                     ],
+                    get_radius="radius",
+                    radius_min_pixels=4,
+                    radius_max_pixels=30,
+                    pickable=True,
+                    auto_highlight=True,
                 )
             )
 
@@ -446,9 +505,10 @@ def _render_vessel_map(
         pdk.Layer(
             "ScatterplotLayer",
             data=rows,
-            get_position=(
-                "[longitude, latitude]"
-            ),
+            get_position=[
+                "longitude",
+                "latitude",
+            ],
             get_fill_color="color",
             get_radius=340,
             radius_min_pixels=3,
@@ -461,7 +521,10 @@ def _render_vessel_map(
     # BOUNDING BOX
     # ------------------------------------------------------------------
 
-    (min_lat, min_lon), (
+    (
+        min_lat,
+        min_lon,
+    ), (
         max_lat,
         max_lon,
     ) = settings.bbox
@@ -479,7 +542,7 @@ def _render_vessel_map(
             "PathLayer",
             data=[
                 {
-                    "path": bbox_path
+                    "path": bbox_path,
                 }
             ],
             get_path="path",
@@ -510,12 +573,14 @@ def _render_vessel_map(
             pdk.Layer(
                 "LineLayer",
                 data=heading_rows,
-                get_source_position=(
-                    "[longitude, latitude]"
-                ),
-                get_target_position=(
-                    "[end_longitude, end_latitude]"
-                ),
+                get_source_position=[
+                    "longitude",
+                    "latitude",
+                ],
+                get_target_position=[
+                    "end_longitude",
+                    "end_latitude",
+                ],
                 get_color=[
                     233,
                     184,
@@ -534,9 +599,7 @@ def _render_vessel_map(
     if show_trails:
         paths = []
 
-        for mmsi, track in engine_tracks(
-            snapshot
-        ):
+        for mmsi, track in engine_tracks(snapshot):
             if len(track) < 2:
                 continue
 
@@ -545,18 +608,29 @@ def _render_vessel_map(
                 key=lambda item: item.received_at,
             )
 
-            paths.append(
-                {
-                    "path": [
-                        [
-                            observation.longitude,
-                            observation.latitude,
-                        ]
-                        for observation in ordered
-                    ],
-                    "mmsi": mmsi,
-                }
-            )
+            path = []
+
+            for observation in ordered:
+                if (
+                    observation.latitude is None
+                    or observation.longitude is None
+                ):
+                    continue
+
+                path.append(
+                    [
+                        float(observation.longitude),
+                        float(observation.latitude),
+                    ]
+                )
+
+            if len(path) >= 2:
+                paths.append(
+                    {
+                        "path": path,
+                        "mmsi": mmsi,
+                    }
+                )
 
         if paths:
             layers.append(
@@ -581,28 +655,24 @@ def _render_vessel_map(
     # ------------------------------------------------------------------
 
     if show_speed_field:
-        speed_rows = _build_speed_rows(
-            rows
-        )
+        speed_rows = _build_speed_rows(rows)
 
         if speed_rows:
             layers.append(
                 pdk.Layer(
                     "ScatterplotLayer",
                     data=speed_rows,
-                    get_position=(
-                        "[longitude, latitude]"
-                    ),
+                    get_position=[
+                        "longitude",
+                        "latitude",
+                    ],
                     get_fill_color=[
                         81,
                         199,
                         155,
                         145,
                     ],
-                    get_radius=(
-                        "Math.max(250, "
-                        "sog_knots * 55)"
-                    ),
+                    get_radius="radius",
                     radius_min_pixels=3,
                     radius_max_pixels=14,
                     pickable=True,
@@ -613,43 +683,59 @@ def _render_vessel_map(
     # BEHAVIORAL FINDINGS
     # ------------------------------------------------------------------
 
-    if (
-        show_anomalies
-        and snapshot.findings
-    ):
-        anomaly_rows = [
-            {
-                "latitude": finding.latitude,
-                "longitude": finding.longitude,
-                "score": finding.score,
-                "mmsi": finding.mmsi,
-                "category": finding.category,
-            }
-            for finding in snapshot.findings
-        ]
+    if show_anomalies and snapshot.findings:
+        anomaly_rows = []
 
-        layers.append(
-            pdk.Layer(
-                "ScatterplotLayer",
-                data=anomaly_rows,
-                get_position=(
-                    "[longitude, latitude]"
-                ),
-                get_fill_color=[
-                    239,
-                    107,
-                    115,
-                    220,
-                ],
-                get_radius=560,
-                radius_min_pixels=4,
-                radius_max_pixels=12,
-                pickable=True,
+        for finding in snapshot.findings:
+            if (
+                finding.latitude is None
+                or finding.longitude is None
+            ):
+                continue
+
+            anomaly_rows.append(
+                {
+                    "latitude": float(
+                        finding.latitude
+                    ),
+                    "longitude": float(
+                        finding.longitude
+                    ),
+                    "score": float(
+                        finding.score
+                    ),
+                    "mmsi": finding.mmsi,
+                    "category": finding.category,
+                }
             )
-        )
+
+        if anomaly_rows:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=anomaly_rows,
+                    get_position=[
+                        "longitude",
+                        "latitude",
+                    ],
+                    get_fill_color=[
+                        239,
+                        107,
+                        115,
+                        220,
+                    ],
+                    get_radius=560,
+                    radius_min_pixels=4,
+                    radius_max_pixels=12,
+                    pickable=True,
+                )
+            )
 
     # ------------------------------------------------------------------
     # ANOMALY HOTSPOTS
+    #
+    # ScatterplotLayer is used instead of ColumnLayer to avoid additional
+    # extrusion/shader complexity in browser WebGL.
     # ------------------------------------------------------------------
 
     if (
@@ -661,25 +747,43 @@ def _render_vessel_map(
         )
 
         if hotspot_rows:
+            max_count = max(
+                row["count"]
+                for row in hotspot_rows
+            )
+
+            for row in hotspot_rows:
+                count = row["count"]
+
+                row["radius"] = min(
+                    5000.0,
+                    900.0
+                    + (
+                        float(count)
+                        / max(1, max_count)
+                    )
+                    * 4100.0,
+                )
+
             layers.append(
                 pdk.Layer(
-                    "ColumnLayer",
+                    "ScatterplotLayer",
                     data=hotspot_rows,
-                    get_position=(
-                        "[longitude, latitude]"
-                    ),
-                    get_elevation="count",
-                    elevation_scale=250,
-                    radius=2600,
-                    extruded=True,
-                    pickable=True,
-                    auto_highlight=True,
+                    get_position=[
+                        "longitude",
+                        "latitude",
+                    ],
                     get_fill_color=[
                         239,
                         107,
                         115,
                         175,
                     ],
+                    get_radius="radius",
+                    radius_min_pixels=5,
+                    radius_max_pixels=32,
+                    pickable=True,
+                    auto_highlight=True,
                 )
             )
 
@@ -687,15 +791,21 @@ def _render_vessel_map(
     # MAP CENTER
     # ------------------------------------------------------------------
 
-    center_lat = sum(
-        row["latitude"]
-        for row in rows
-    ) / len(rows)
+    center_lat = (
+        sum(
+            float(row["latitude"])
+            for row in rows
+        )
+        / len(rows)
+    )
 
-    center_lon = sum(
-        row["longitude"]
-        for row in rows
-    ) / len(rows)
+    center_lon = (
+        sum(
+            float(row["longitude"])
+            for row in rows
+        )
+        / len(rows)
+    )
 
     # ------------------------------------------------------------------
     # DECK
@@ -738,29 +848,56 @@ def _render_anomaly_map(
     findings: list[AnomalyFinding],
     settings: AppSettings,
 ) -> None:
+    """Render anomaly findings using a simple WebGL-safe layer."""
+
+    del settings
+
     if not findings:
         return
 
-    rows = [
-        {
-            "latitude": finding.latitude,
-            "longitude": finding.longitude,
-            "score": finding.score,
-            "mmsi": finding.mmsi,
-            "category": finding.category,
-        }
-        for finding in findings
-    ]
+    rows = []
 
-    center_lat = sum(
-        row["latitude"]
-        for row in rows
-    ) / len(rows)
+    for finding in findings:
+        if (
+            finding.latitude is None
+            or finding.longitude is None
+        ):
+            continue
 
-    center_lon = sum(
-        row["longitude"]
-        for row in rows
-    ) / len(rows)
+        rows.append(
+            {
+                "latitude": float(
+                    finding.latitude
+                ),
+                "longitude": float(
+                    finding.longitude
+                ),
+                "score": float(
+                    finding.score
+                ),
+                "mmsi": finding.mmsi,
+                "category": finding.category,
+            }
+        )
+
+    if not rows:
+        return
+
+    center_lat = (
+        sum(
+            row["latitude"]
+            for row in rows
+        )
+        / len(rows)
+    )
+
+    center_lon = (
+        sum(
+            row["longitude"]
+            for row in rows
+        )
+        / len(rows)
+    )
 
     deck = pdk.Deck(
         map_style=(
@@ -776,9 +913,10 @@ def _render_anomaly_map(
             pdk.Layer(
                 "ScatterplotLayer",
                 data=rows,
-                get_position=(
-                    "[longitude, latitude]"
-                ),
+                get_position=[
+                    "longitude",
+                    "latitude",
+                ],
                 get_fill_color=[
                     239,
                     107,
@@ -810,13 +948,16 @@ def _render_anomaly_map(
     )
 
 
+# ----------------------------------------------------------------------
+# TRAJECTORY CHARTS
+# ----------------------------------------------------------------------
+
+
 def _render_track_chart(
     track: list,
     title: str,
 ) -> None:
-    frame = track_to_frame(
-        track
-    )
+    frame = track_to_frame(track)
 
     fig = go.Figure(
         go.Scattergeo(
@@ -887,7 +1028,7 @@ def _render_speed_chart(
             mode="lines+markers",
             name="SOG",
             line={
-                "color": "#51c79b"
+                "color": "#51c79b",
             },
             connectgaps=False,
             hovertemplate=(
@@ -956,6 +1097,11 @@ def _render_speed_chart(
     )
 
 
+# ----------------------------------------------------------------------
+# PLOTLY LAYOUT
+# ----------------------------------------------------------------------
+
+
 def _plot_layout(
     title: str,
     x_title: str,
@@ -998,7 +1144,7 @@ def _plot_layout(
         "hoverlabel": {
             "bgcolor": "#10242d",
             "font": {
-                "color": "#d9e6e9"
+                "color": "#d9e6e9",
             },
         },
         "legend": {
@@ -1007,6 +1153,11 @@ def _plot_layout(
             "x": 0,
         },
     }
+
+
+# ----------------------------------------------------------------------
+# VESSEL SELECTION
+# ----------------------------------------------------------------------
 
 
 def _select_vessel(
@@ -1088,9 +1239,7 @@ def _vessel_label(
         or "UNKNOWN"
     ) if vessel is not None else "UNKNOWN"
 
-    return (
-        f"{mmsi} · {display_name}"
-    )
+    return f"{mmsi} · {display_name}"
 
 
 def _vessel_compact(
@@ -1191,6 +1340,11 @@ def _utc(value) -> str:
     ).strftime(
         "%H:%M:%S UTC"
     )
+
+
+# ----------------------------------------------------------------------
+# SNAPSHOT TRACK ACCESS
+# ----------------------------------------------------------------------
 
 
 def engine_tracks(
