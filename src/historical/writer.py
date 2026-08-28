@@ -320,6 +320,81 @@ class PostgresHistoricalWriter(HistoricalWriter):
             self._connection = None
 
 
+@dataclass(frozen=True)
+class DatabaseDiagnostics:
+    """Sanitized connectivity probe for PostgreSQL/PostGIS. Never includes secrets."""
+
+    database_url_status: str
+    postgresql_status: str
+    postgis_status: str
+    historical_write_status: str
+    postgresql_version: str | None = None
+    postgis_version: str | None = None
+    detail: str = ""
+
+
+def diagnose_database(
+    database_url: str | None,
+    *,
+    historical_persistence_enabled: bool = False,
+    connect_fn: Callable[[str], Any] | None = None,
+) -> DatabaseDiagnostics:
+    """Read-only connectivity check. Runs only SELECT version() / PostGIS_Version().
+
+    Does not apply migrations, create tables, or write any rows.
+    """
+    write_status = "ON" if historical_persistence_enabled else "OFF"
+    if not database_url:
+        return DatabaseDiagnostics(
+            database_url_status="ABSENT",
+            postgresql_status="UNAVAILABLE",
+            postgis_status="UNAVAILABLE",
+            historical_write_status=write_status,
+            detail="DATABASE_URL is not configured in the application runtime.",
+        )
+
+    connection = None
+    try:
+        connector = connect_fn or _default_connect
+        connection = connector(database_url)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT version()")
+            pg_row = cursor.fetchone()
+            pg_version = str(pg_row[0]).split(",")[0].strip() if pg_row and pg_row[0] else "unknown"
+            try:
+                cursor.execute("SELECT PostGIS_Version()")
+                postgis_row = cursor.fetchone()
+                postgis_version = str(postgis_row[0]).strip() if postgis_row and postgis_row[0] else None
+                postgis_status = "AVAILABLE" if postgis_version else "UNAVAILABLE"
+            except Exception:
+                postgis_version = None
+                postgis_status = "UNAVAILABLE"
+        return DatabaseDiagnostics(
+            database_url_status="PRESENT",
+            postgresql_status="CONNECTED",
+            postgis_status=postgis_status,
+            historical_write_status=write_status,
+            postgresql_version=pg_version,
+            postgis_version=postgis_version,
+            detail="Read-only connectivity probe succeeded. No migrations or writes were executed.",
+        )
+    except Exception as exc:
+        LOGGER.warning("Database diagnostics failed without exposing connection details.")
+        return DatabaseDiagnostics(
+            database_url_status="PRESENT",
+            postgresql_status="UNAVAILABLE",
+            postgis_status="UNAVAILABLE",
+            historical_write_status=write_status,
+            detail="Connection error: authentication/connection failure",
+        )
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
 def create_historical_writer(database_url: str | None, persistence_enabled: bool = False) -> HistoricalWriter:
     if not database_url:
         return NullHistoricalWriter(
