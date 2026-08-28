@@ -1,175 +1,562 @@
-# Maritime Intelligence Engine (MIE)
+Maritime Intelligence Engine (MIE)
 
-Plataforma de inteligência marítima para ingestão, validação, análise de trajetórias, visualização geoespacial e detecção explicável de anomalias comportamentais em dados **AIS reais**.
+Real-time Maritime Behavioral Intelligence
 
-> **Regra de integridade:** o MIE não implementa AIS sintético, embarcações simuladas, trajetórias falsas, fallback datasets ou resultados fabricados. Sem conexão válida com o AISStream, a aplicação apresenta um estado operacional vazio e informa `REAL AIS DATA UNAVAILABLE`.
+Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest real AIS data in real time, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and present explainable operational intelligence through an interactive geospatial workspace.
 
-## Visão geral
+«Real AIS. Real trajectories. No synthetic vessels. No fabricated results.»
 
-O sistema usa o [AISStream.io](https://aisstream.io/documentation) como provedor de dados em tempo real. A conexão é feita exclusivamente no servidor por WebSocket, e a chave é lida de uma variável de ambiente local ou de `st.secrets` no Streamlit Community Cloud. Conexões diretas do navegador ao AISStream não são usadas, de modo que a credencial nunca é exposta ao frontend [1].
+---
 
-A interface foi desenhada como um posto operacional escuro e compacto, com o mapa como elemento principal. O estado de dados é sempre explícito: `LIVE AIS` quando mensagens reais estão sendo recebidas, `CONNECTING` durante a abertura/assinatura do WebSocket e `DISCONNECTED` quando não há disponibilidade. Dados de sessão não são reclassificados como históricos.
+Overview
 
-## Arquitetura
+AIS provides continuous information about vessel movement, but raw position reports alone do not provide meaningful operational context.
 
-```mermaid
-flowchart LR
-    A[AISStream.io<br/>Real AIS WebSocket] --> B[Ingestion Service]
-    B --> C[Validation and normalization]
-    C --> D[Bounded session store]
-    D --> E[Trajectory features]
-    E --> F[Runtime PCA representation]
-    F --> G[Isolation Forest + explainable rules]
-    D --> H[Streamlit operational UI]
-    G --> H
-    D --> I[HistoricalWriter]
-    I --> J[Optional external PostgreSQL/PostGIS]
-```
+MIE transforms raw AIS telemetry into a structured intelligence pipeline:
 
-O frontend Streamlit atua somente como camada de apresentação e orquestração da sessão. O contrato `AISProvider` permite a substituição futura por outro provedor real, sem criar um provedor sintético. O `ObservationStore` continua sendo a fonte do estado live; o `HistoricalWriter` é um sink opcional executado após uma coleta real e nunca substitui o estado live.
+Real AIS
+   ↓
+WebSocket Ingestion
+   ↓
+Validation & Data Quality
+   ↓
+Session Store
+   ↓
+Trajectory Reconstruction
+   ↓
+Feature Engineering
+   ↓
+PCA / Clustering
+   ↓
+Isolation Forest
+   +
+Explainable Rules
+   ↓
+Behavioral Intelligence
+   ↓
+Operational Visualization
 
-Quando `DATABASE_URL` não existe, o sistema permanece **LIVE-ONLY** e mostra `HISTORICAL DATABASE NOT CONFIGURED`. Quando o banco externo está configurado, a gravação histórica continua desligada por padrão e só é habilitada por `HISTORICAL_PERSISTENCE_ENABLED=true` ou pelo controle equivalente da sidebar. Nesse caso, o writer aplica as migrations versionadas e persiste somente observações AIS válidas recebidas pelo provider. Se o banco falhar, o live permanece em memória e o sistema mostra `HISTORICAL DATABASE UNAVAILABLE` sem vazar a URL ou interromper o Streamlit.
+The objective is not simply to answer:
 
-| Camada | Implementação atual | Garantia de integridade |
-| --- | --- | --- |
-| Ingestão | `AISStreamProvider` com `websocket-client` | Decodifica frames binários UTF-8 e aceita somente mensagens `PositionReport` válidas |
-| Processamento | `processing.quality` e `trajectory.features` | Valida MMSI, coordenadas, velocidade, curso, duplicidades, gaps e saltos impossíveis |
-| Armazenamento live | `ObservationStore` em memória por sessão | Limite de mensagens; nenhuma dependência de banco e nenhum dado inventado |
-| Histórico opcional | `HistoricalWriter` → PostgreSQL/PostGIS externo | Somente com opt-in explícito; escreve AIS real válido e usa `UNIQUE (session_id, payload_hash)` |
-| Representação | Vetor de características + `StandardScaler` + PCA | Ajustado somente sobre tracks reais recebidos nesta sessão |
-| Anomalias | `IsolationForest` e regras explicáveis | Sinaliza anomalias comportamentais; nunca infere intenção hostil |
-| Interface | Streamlit + Plotly + PyDeck | Estados de conexão e indisponibilidade transparentes |
+«Where are the vessels?»
 
-## Fluxo de dados
+but to move toward:
 
-```mermaid
-sequenceDiagram
-    participant UI as Streamlit
-    participant P as AISStreamProvider
-    participant S as AISStream.io
-    participant E as Intelligence Engine
+«How are they moving, how does their behavior compare with other observed vessels, and which patterns deserve investigation?»
 
-    UI->>E: Collect real AIS
-    E->>P: open stream + server-side subscription
-    P->>S: WSS subscription with BoundingBoxes
-    S-->>P: binary UTF-8 JSON AIS frames
-    P-->>E: normalized observations only
-    E-->>UI: map, telemetry, quality and findings
-    S-->>P: close / interruption
-    P-->>E: DISCONNECTED + reason, no fallback data
-```
+---
 
-A assinatura deve incluir uma caixa geográfica e ser enviada logo após a abertura da conexão. O AISStream documenta limite de três conexões por conta e por IP, necessidade de leitura contínua e reconexão com backoff; o cliente deste projeto usa uma janela finita por ação do operador e reconexão exponencial com jitter [1]. Após cada coleta, o Overview exibe a duração efetiva, mensagens reais recebidas, vessels distintos, tracks com pelo menos dois pontos, status dos embeddings e quantidade de anomalias. Behavior, Similarity e ML Anomaly permanecem condicionados a pelo menos três tracks com histórico suficiente; o sistema não reduz esses requisitos para preencher a interface.
+Core Capabilities
 
-## Estrutura do projeto
+📡 Real-time AIS Ingestion
 
-```text
-maritime-intelligence-engine/
-├── app.py
-├── src/
-│   ├── analytics/traffic.py
-│   ├── anomaly/detector.py
-│   ├── config/settings.py
-│   ├── geospatial/map_data.py
-│   ├── ingestion/aisstream.py
-│   ├── ingestion/models.py
-│   ├── intelligence/engine.py
-│   ├── ml/embeddings.py
-│   ├── processing/quality.py
-│   ├── storage/memory.py
-│   ├── trajectory/features.py
-│   ├── historical/writer.py
-│   └── ui/
-│       ├── pages.py
-│       ├── presentation.py
-│       └── temporal.py
-├── migrations/001_initial_historical.sql
-├── tests/test_core.py
-├── .streamlit/config.toml
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── packages.txt
-├── requirements.txt
-└── README.md
-```
+- AISStream WebSocket integration
+- Server-side subscription
+- Geographic Bounding Box filtering
+- Configurable collection windows
+- Real vessel telemetry
+- Explicit connection and data states
 
-As áreas de trabalho disponíveis são Overview, Vessels, Vessel Intelligence, Trajectory Analysis, Behavior, Anomalies, Traffic, Data Quality e System. A navegação é feita no mesmo shell operacional, evitando a aparência de páginas Streamlit desconectadas.
+🚢 Vessel Tracking
 
-## Inteligência e limitações do modelo
+- MMSI-based vessel tracking
+- Individual vessel trajectories
+- Position history
+- Speed and course information
+- Heading visualization
+- Vessel-level investigation
 
-Não há um checkpoint público pré-treinado de trajetória incluído ou alegado neste repositório. O sistema informa explicitamente `none: runtime PCA/IsolationForest trained only on real AIS observations`. A representação é construída a partir de latitude, longitude, SOG, COG, heading change, delta temporal, distância percorrida e velocidade calculada; depois, o PCA e o detector são ajustados somente quando há observações reais suficientes.
+🧭 Trajectory Intelligence
 
-### Semântica temporal
+Trajectory data is transformed into behavioral features including:
 
-O modelo canônico mantém `received_at` como um `datetime` timezone-aware em UTC: é o instante em que o MIE recebe ou processa o frame. `ais_timestamp_second` preserva somente o segundo UTC normal informado pelo `PositionReport.Timestamp` (0–59). Os valores especiais 60–63 são mantidos apenas no payload bruto de auditoria e o campo normal fica `None`; nunca são convertidos em uma data/hora completa. `observed_at` permanece `None` porque o envelope atualmente utilizado não fornece uma fonte absoluta comprovada do instante em que o navio gerou o relatório. `MetaData.time_utc` também não é promovido para observation time sem evidência semântica suficiente.
+- Position
+- Speed over ground
+- Course over ground
+- Heading
+- Distance traveled
+- Time delta
+- Computed speed
+- Heading changes
+- Track duration
 
-Freshness, ordenação, trajetórias e agrupamentos de Traffic usam `received_at` e são rotulados como tempo de recebimento. A UI usa `Last received`, `Received`, `AIS UTC second` e `Observation time: UNAVAILABLE` para evitar confusão. Latency permanece `UNAVAILABLE`: o MIE não interpreta a diferença modular entre o relógio do servidor e o segundo AIS como latência de rede.
+These features provide the foundation for behavioral analysis.
 
-O armazenamento permanece em UTC. Conversões para horário regional ou do operador ocorrem apenas na apresentação com `zoneinfo`. Miami usa `America/New_York`, Santos usa `America/Sao_Paulo`, Singapore usa `Asia/Singapore` e Rotterdam usa `Europe/Amsterdam`. English Channel usa UTC por abranger múltiplos contextos locais; Custom também usa UTC por padrão. O operador pode selecionar UTC, `America/Sao_Paulo`, `America/New_York`, `Europe/London`, `Europe/Amsterdam` ou `Asia/Singapore`, sem alterar o timestamp armazenado.
+🤖 Behavioral Anomaly Detection
 
-A detecção combina limiares explicáveis para velocidade, gaps, mudanças bruscas de curso e permanência, com o score do Isolation Forest sobre a projeção. Esses scores são heurísticos e exploratórios, não uma validação científica ou uma classificação operacional de risco. O resultado deve ser interpretado como **behavioral anomaly detected**, não como ameaça, intenção ou atividade hostil. Sem histórico AIS real conectado, a busca de similaridade usa somente a sessão real atual e não é rotulada como histórica. O campo `Timestamp` do PositionReport é tratado como segundo dentro do minuto UTC; para frescor, ordenação e stale state, o sistema usa o instante de recepção do frame e preserva o segundo AIS separadamente.
+MIE combines unsupervised machine learning with deterministic rules:
 
-## Configuração local
+Trajectory Features
+        ↓
+Standardization
+        ↓
+PCA
+        ↓
+KMeans
+        +
+Isolation Forest
+        ↓
+Behavioral Findings
 
-Instale Python 3.11 ou superior, crie um ambiente virtual e instale as dependências:
+The system is designed to identify behavioral anomalies, not to automatically classify vessels as threats.
 
-```bash
+🔎 Explainable Findings
+
+Machine-learning scores are complemented by interpretable rules such as:
+
+- unusual speed;
+- prolonged stops;
+- signal gaps;
+- significant heading changes;
+- unusual movement patterns.
+
+The goal is to provide an analyst with context, rather than an unexplained model score.
+
+🗺️ Geospatial Intelligence
+
+The operational workspace provides:
+
+- live vessel positions;
+- vessel trajectories;
+- geographic filtering;
+- Bounding Box control;
+- vessel selection;
+- behavioral overlays;
+- heading visualization;
+- interactive maps.
+
+📊 Data Quality Monitoring
+
+Data quality is treated as part of the intelligence pipeline.
+
+The system monitors conditions such as:
+
+- invalid MMSI;
+- invalid coordinates;
+- impossible speeds;
+- impossible geographic jumps;
+- duplicate observations;
+- missing data;
+- signal gaps;
+- stale observations.
+
+When real data is unavailable, MIE does not fabricate results.
+
+---
+
+Architecture
+
+                         ┌─────────────────────┐
+                         │      AISStream      │
+                         │     Real AIS Data   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │      Ingestion      │
+                         │ WebSocket + BBox    │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │     Validation      │
+                         │  Quality / Integrity│
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │    Session Store    │
+                         │ Tracks / Observations│
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │  Trajectory Engine  │
+                         │ Features / Tracks   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │    ML Pipeline      │
+                         │ PCA / KMeans / IF    │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Intelligence Layer  │
+                         │ Rules + Findings    │
+                         └──────────┬──────────┘
+                                    │
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+                ┌─────────────────┐   ┌─────────────────┐
+                │ Operational UI  │   │ Historical Store│
+                │ Streamlit / Map │   │ PostgreSQL/PostGIS│
+                └─────────────────┘   └─────────────────┘
+
+---
+
+System Design Principles
+
+Real Data First
+
+MIE is designed around real AIS observations.
+
+The platform does not generate synthetic vessels or artificial trajectories to make the dashboard appear populated.
+
+No Real AIS
+     ↓
+No Artificial Vessels
+     ↓
+No Fabricated Intelligence
+
+---
+
+Explicit System States
+
+The platform distinguishes between states such as:
+
+- LIVE
+- DISCONNECTED
+- STALE
+- WAITING FOR DATA
+- INSUFFICIENT DATA
+- HISTORICAL DATABASE UNAVAILABLE
+
+This prevents infrastructure failures or missing observations from being mistaken for analytical results.
+
+---
+
+Live vs Historical Data
+
+Live operational data and historical persistence are intentionally separated.
+
+                 Real AIS
+                    │
+                    ▼
+              Session Store
+                 /       \
+                /         \
+               ▼           ▼
+          Live Analysis   PostgreSQL
+                             │
+                             ▼
+                           PostGIS
+
+Historical persistence is optional. The live pipeline can continue operating when the historical database is unavailable.
+
+---
+
+Behavioral Intelligence
+
+MIE currently focuses on session-relative behavioral analysis.
+
+The machine-learning pipeline learns the structure of the real trajectories available in the current analytical session.
+
+This means the current system should be understood as:
+
+«Real-time exploratory behavioral intelligence»
+
+rather than a universal pre-trained maritime behavior model.
+
+This distinction is intentional and keeps the interpretation of the results technically honest.
+
+---
+
+Vessel Intelligence
+
+The vessel-level workspace brings together:
+
+Vessel Identity
+      +
+Telemetry
+      +
+Trajectory
+      +
+Behavior
+      +
+Anomaly Findings
+
+This allows an operator to move from a global maritime picture to the detailed investigation of an individual MMSI.
+
+---
+
+Technology Stack
+
+Layer| Technology
+Language| Python
+Interface| Streamlit
+AIS Transport| WebSocket / AISStream
+Data Processing| Pandas / NumPy
+Machine Learning| Scikit-learn
+Dimensionality Reduction| PCA
+Clustering| KMeans
+Anomaly Detection| Isolation Forest
+Visualization| Plotly / PyDeck
+Database| PostgreSQL
+Geospatial Database| PostGIS
+Containers| Docker
+Testing| Pytest
+
+---
+
+Project Structure
+
+src/
+├── ingestion/
+│   ├── aisstream.py
+│   ├── models.py
+│   └── ...
+│
+├── processing/
+│   ├── trajectories.py
+│   ├── features.py
+│   └── ...
+│
+├── ml/
+│   ├── pca.py
+│   ├── clustering.py
+│   ├── isolation_forest.py
+│   └── ...
+│
+├── intelligence/
+│   ├── rules.py
+│   ├── findings.py
+│   └── ...
+│
+├── storage/
+│   ├── session.py
+│   ├── postgres.py
+│   └── ...
+│
+└── ui/
+    ├── pages/
+    └── components/
+
+---
+
+Running Locally
+
+1. Clone
+
+git clone https://github.com/edu-moraess/maritime-intelligence-engine.git
+cd maritime-intelligence-engine
+
+2. Create environment
+
 python -m venv .venv
 source .venv/bin/activate
+
+Windows:
+
+.venv\Scripts\activate
+
+3. Install dependencies
+
 pip install -r requirements.txt
-cp .env.example .env
-```
 
-Edite `.env` e preencha `AISSTREAM_API_KEY` com uma chave obtida na [conta oficial do AISStream](https://aisstream.io/account). Configure também `AIS_AREA_MIN_LAT`, `AIS_AREA_MIN_LON`, `AIS_AREA_MAX_LAT` e `AIS_AREA_MAX_LON`; os nomes são semânticos, portanto `min_lat < max_lat` e `min_lon < max_lon`, e a aplicação rejeita caixas invertidas, incompletas ou fora dos limites geográficos. `DATABASE_URL` é opcional e deve apontar para um PostgreSQL externo com PostGIS; deixe-o vazio para manter o modo LIVE-ONLY. Mesmo com URL configurada, `HISTORICAL_PERSISTENCE_ENABLED` tem default `false` e precisa ser explicitamente `true` para permitir gravação histórica. A interface oferece janelas de coleta de 30, 60, 120 e 180 segundos, com 60 segundos como default; o valor selecionado é passado diretamente ao engine e ao WebSocket, dentro desse limite operacional. A sidebar também oferece presets de Bounding Box para Miami, Santos, Singapore, Rotterdam e English Channel, além de Custom. A alteração de região substitui o provider e o armazenamento da sessão anterior antes da próxima assinatura, evitando misturar regiões. Nenhuma chave deve ser colocada no código, no README, no frontend, em logs ou no Git.
+4. Configure secrets
 
-Com `DATABASE_URL` e `HISTORICAL_PERSISTENCE_ENABLED=true`, a primeira coleta real após o boot aplica de forma lazy `migrations/001_initial_historical.sql` e `migrations/002_fix_historical_constraints.sql`, criando/atualizando uma `collection_session` somente quando observações AIS válidas forem recebidas. A migration 002 corrige o legado da 001: valores especiais temporais são anulados e a idempotência passa a ser `UNIQUE (session_id, payload_hash)`, permitindo o mesmo payload em sessões distintas. As tabelas usam `timestamptz`; a geometria é armazenada em PostGIS SRID 4326; `observed_at` permanece NULL; nomes AIS ausentes permanecem NULL no banco; e `Clear Session` limpa apenas live, nunca histórico.
+Provide the required AISStream credentials through the application's supported secrets/environment configuration.
 
-Execute:
+Do not commit credentials to the repository.
 
-```bash
+5. Run
+
 streamlit run app.py
-```
 
-Sem a chave, a aplicação ainda inicia para permitir auditoria visual e testar o estado seguro de indisponibilidade; ela não mostra embarcações ou métricas fabricadas. Sem `DATABASE_URL`, o histórico permanece indisponível de forma explícita e a aplicação continua LIVE-ONLY. Com URL configurada e opt-in desligado, o System mostra `HISTORICAL PERSISTENCE OFF` e não há INSERT. O Streamlit Community Cloud não executa PostgreSQL localmente: quando usado, o banco deve ser um serviço PostgreSQL/PostGIS externo.
+---
 
-## Streamlit Community Cloud
+Historical Persistence
 
-Publique o repositório e configure `app.py` como arquivo principal. Em **Settings → Secrets**, adicione a chave como TOML:
+Historical persistence can be enabled with PostgreSQL/PostGIS.
 
-```toml
-AISSTREAM_API_KEY = "sua-chave-fornecida-pelo-aisstream"
-AIS_AREA_MIN_LAT = "25.603"
-AIS_AREA_MIN_LON = "-80.208"
-AIS_AREA_MAX_LAT = "25.835"
-AIS_AREA_MAX_LON = "-79.879"
-# Optional external PostgreSQL/PostGIS; omit or leave empty for LIVE-ONLY.
-# DATABASE_URL = "<external-postgresql-url>"
-# Explicit opt-in; DATABASE_URL alone never enables historical INSERTs.
-HISTORICAL_PERSISTENCE_ENABLED = "false"
-```
+The architecture supports:
 
-Os secrets são opcionais para o boot, mas são necessários para que o deploy receba AIS real. A alteração da caixa na interface é aplicada à próxima assinatura WebSocket e produz a indicação `Region updated. Collect again to open a new subscription.`. A operação não deve ser declarada como bem-sucedida até que a aplicação publicada mostre `LIVE AIS`, contador de mensagens crescente e pelo menos uma atualização real recebida do AISStream. A documentação oficial também proíbe conexões diretas do navegador, por isso a chave é lida somente no processo Streamlit [1].
+- session storage;
+- observation persistence;
+- geospatial data;
+- historical vessel observations;
+- database health diagnostics.
 
-## Testes
+The historical layer is intentionally decoupled from live ingestion.
 
-A suíte cobre configuração sem credencial, parsing do envelope AISStream, descarte de mensagens que não são `PositionReport`, matemática de distância, guarda de trajetória insuficiente, qualidade vazia e inválida, ausência de anomalias sem observações e transparência sobre o não uso de checkpoint pré-treinado:
+---
 
-```bash
+Testing
+
+The project includes automated tests covering core components such as:
+
+- AIS parsing;
+- validation;
+- session behavior;
+- trajectory processing;
+- feature generation;
+- anomaly logic;
+- storage behavior;
+- system diagnostics.
+
+Run:
+
 pytest -q
-python -m compileall app.py src tests
-```
 
-Os testes não alimentam a aplicação com tráfego sintético. Dados AIS reais não são incluídos no repositório. Uma validação online com mensagens reais exige uma chave AISStream válida e uma caixa geográfica operacional. A suíte também verifica as quatro janelas de coleta, o encaminhamento do tempo selecionado, o readiness baseado em tracks reais, os presets geográficos, o tratamento explícito de SOG ausente, os segundos AIS normais e especiais, o no-op sem `DATABASE_URL`, o modo `DATABASE_URL` + persistence OFF sem INSERT, a falha de banco sem queda do live, a rejeição de observações inválidas e a idempotência por sessão com `payload_hash`. A migration e o writer foram validados por contrato e conexão fake apenas nos testes; uma validação contra PostgreSQL/PostGIS real exige infraestrutura externa disponível.
+---
 
-## Segurança e privacidade
+Current Scope
 
-O `.gitignore` exclui `.env`, `st.secrets.toml`, bancos locais, caches de modelos e artefatos temporários. O repositório não contém credenciais. A aplicação não imprime a chave, não a envia ao browser e não registra o payload bruto no frontend.
+Available
 
-## Roadmap técnico
+- Real-time AIS ingestion
+- Real vessel tracking
+- Bounding Box filtering
+- Session-based analysis
+- Trajectory reconstruction
+- Behavioral feature engineering
+- PCA
+- KMeans
+- Isolation Forest
+- Explainable behavioral rules
+- Vessel Intelligence
+- Data Quality monitoring
+- Interactive geospatial visualization
+- Optional PostgreSQL/PostGIS persistence
 
-A próxima evolução recomendada é adicionar uma consulta histórica read-only na UI, retenção configurável e classificação explícita de `HISTORICAL AIS`, sem misturar esse estado com o live. Em seguida, pode-se implementar um worker persistente separado para ingestão contínua, uma fila de mensagens com observabilidade e um índice vetorial para similaridade em tracks reais. Deep Learning, DTW, baseline histórico e análise contextual permanecem fora desta execução; qualquer evolução futura deverá usar histórico real suficiente e protocolo train/validation/test, sem dataset sintético ou checkpoint sem justificativa verificável.
+In Development
 
-## Referências
+- AIS "ShipStaticData" enrichment
+- Vessel metadata enrichment
+- Improved vessel identity intelligence
+- Historical behavioral analysis
 
-[1]: https://aisstream.io/documentation "AISStream — Developer Documentation"
+Roadmap
+
+Real-time AIS
+      ↓
+AIS Static Data
+      ↓
+Historical Behavioral Baselines
+      ↓
+Advanced Geospatial Intelligence
+      ↓
+Multimodal Maritime Intelligence
+      ↓
+AIS + Visual Intelligence + External Sensors
+
+---
+
+Design Philosophy
+
+MIE is built around a simple principle:
+
+«Turn real maritime telemetry into trustworthy, explainable intelligence.»
+
+The system deliberately separates:
+
+Observation
+    ↓
+Validation
+    ↓
+Representation
+    ↓
+Analysis
+    ↓
+Finding
+    ↓
+Human Investigation
+
+A behavioral anomaly is therefore treated as a signal for investigation, not as proof of malicious intent.
+
+---
+
+What MIE Is — and Is Not
+
+MIE is:
+
+- a real-time AIS intelligence platform;
+- a trajectory analysis system;
+- a behavioral anomaly detection engine;
+- a geospatial operational workspace;
+- an experimental foundation for maritime intelligence.
+
+MIE is not:
+
+- a physical radar;
+- a sonar system;
+- a universal threat detector;
+- a military targeting system;
+- a pre-trained universal maritime behavior model;
+- a guarantee of vessel intent.
+
+AIS also has an important limitation:
+
+«A vessel that is not transmitting usable AIS data cannot automatically be detected by an AIS-only system.»
+
+This is one reason the long-term architecture is designed to evolve toward multi-source maritime intelligence.
+
+---
+
+Future Vision
+
+The long-term direction is to evolve from AIS-only behavioral intelligence toward multimodal maritime perception.
+
+                     MARITIME ENVIRONMENT
+                              │
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+           AIS              VIDEO              SAR
+            │                 │                 │
+            ▼                 ▼                 ▼
+       Vessel Data        Computer Vision    Remote Sensing
+            │                 │                 │
+            └─────────────────┼─────────────────┘
+                              ▼
+                        Sensor Fusion
+                              │
+                              ▼
+                     Behavioral Analysis
+                              │
+                              ▼
+                    Maritime Intelligence
+                              │
+                              ▼
+                       Human Analyst
+
+The goal is not to replace human analysis.
+
+The goal is to give the analyst:
+
+«better data, better context, better signals, and better explanations.»
+
+---
+
+Why This Project?
+
+MIE combines several areas of modern engineering in one operational system:
+
+- Data Engineering
+- Real-time Streaming
+- Geospatial Computing
+- Machine Learning
+- Unsupervised Learning
+- Anomaly Detection
+- Data Quality Engineering
+- Backend Architecture
+- Database Engineering
+- Visualization
+- Operational UI
+
+Instead of treating these as isolated experiments, MIE connects them into a single end-to-end pipeline.
+
+---
+
+License
+
+See the repository license for usage and distribution terms.
+
+---
+
+Maritime Intelligence Engine
+
+Real AIS → Trusted Data → Trajectories → Behavior → Intelligence
+
+Built as an engineering and research platform for real-time maritime behavioral intelligence.
