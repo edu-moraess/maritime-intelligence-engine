@@ -53,3 +53,31 @@ The `Data & System` module exposed both `Data Quality` and `System`. Data Qualit
 ## Sidebar collapse validation
 
 The native Streamlit sidebar control hid the sidebar, expanded the main content area, and exposed the corresponding reopen control. Reopening restored the compact sidebar and its five-module navigation. No custom JavaScript or DOM hack was used.
+
+
+## P0 missing-vessel-name validation
+
+All previous Streamlit processes were stopped by PID and a new clean instance started on port 8503. Its health endpoint returned `ok`. The fresh Overview booted without traceback or ImportError, showed `Collection duration · 60 s`, `Collect Real AIS`, `Clear Session`, the five consolidated modules, `NOT CONFIGURED`, `DISCONNECTED`, zero observations and the existing `WAITING` readiness state. No synthetic data appeared.
+
+
+## Missing vessel-name regression validation
+
+In the clean Streamlit instance, `Vessels` exposed `Fleet` and `Vessel Intelligence`; both loaded without traceback and showed safe empty states while AIS was not configured. The `vessel_name=None`, empty and whitespace cases are covered by the automated `_vessel_label` regression test because the disconnected runtime must not fabricate vessels merely to exercise the UI.
+
+
+After the P0 fix, the clean instance navigated through Vessels/Fleet and Vessel Intelligence without traceback. Browser console inspection produced no errors. The collection-duration combobox exposed exactly `30 s`, `60 s`, `120 s` and `180 s`, with 60 s selected by default.
+
+
+The clean instance navigated from Vessels to `Movement & Behavior`; its subareas remained visible and `Trajectory Analysis` loaded with the expected `NO TRAJECTORY SELECTED` state, without traceback.
+
+
+The clean instance navigated through `Behavior` and `Similarity`. Behavior showed the unchanged three-track gate (`Current: 0/3`), and Similarity showed `NO REFERENCE TRACK` with real-AIS guidance. Both pages loaded without traceback.
+
+
+The current clean instance exposed `Anomalies` and `Traffic` under `Anomalies & Traffic`. Anomalies showed zero findings with the explicit no-fabrication message, and Traffic showed `REAL AIS DATA UNAVAILABLE` with zero metrics and no artificial charts.
+
+
+The clean instance exposed `Data Quality` and `System` under `Data & System`. Data Quality showed its empty-session quality table and `NO REAL AIS OBSERVATIONS`; System showed the AISStream server-side pipeline, `DISCONNECTED`, zero messages and no traceback.
+
+
+A verificação final do console do navegador não registrou saída ou erros após a navegação completa pelas áreas principais e subáreas na instância limpa.

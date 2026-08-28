@@ -132,7 +132,7 @@ def render_vessels(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
             for vessel in filtered
         ]
     )
-    st.dataframe(table, hide_index=True, use_container_width=True)
+    st.dataframe(table, hide_index=True, width="stretch")
     options = [v.mmsi for v in filtered]
     if options:
         selected = st.selectbox("Inspect vessel", options, format_func=lambda value: _vessel_label(value, snapshot.vessels))
@@ -158,7 +158,7 @@ def render_vessel_intelligence(engine: MaritimeIntelligenceEngine, snapshot: Eng
         st.write("")
         panel_title("Event timeline", "observed")
         if findings:
-            st.dataframe(frame_for_table(pd.DataFrame([f.__dict__ for f in findings])), hide_index=True, use_container_width=True)
+            st.dataframe(frame_for_table(pd.DataFrame([f.__dict__ for f in findings])), hide_index=True, width="stretch")
         else:
             notice("No behavioral anomaly detected in the available real AIS observations.", "green")
     with right:
@@ -217,7 +217,7 @@ def _render_similarity_search(engine: MaritimeIntelligenceEngine, snapshot: Engi
             st.dataframe(
                 frame_for_table(pd.DataFrame([item.__dict__ for item in similar])),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )
     notice("Historical comparison is disabled unless a real AIS historical source is connected. Session observations are not relabeled as historical.")
 
@@ -248,7 +248,7 @@ def render_behavior(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     if selected_idx is not None:
         fig.add_trace(go.Scatter(x=[result.projection[selected_idx, 0]], y=[result.projection[selected_idx, 1]], mode="markers", name="CURRENT", marker={"size": 16, "symbol": "diamond", "color": "#ef6b73"}))
     fig.update_layout(**_plot_layout("PCA projection of real AIS trajectory representations", "PC1", "PC2"), height=460, legend={"orientation": "h", "y": 1.08})
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     metric_strip({"METHOD": "Runtime PCA", "CLUSTERS": len(set(result.clusters.tolist())), "TRACKS": len(result.mmsis), "CHECKPOINT": "NONE"})
     notice(f"Representation provenance: {result.model_checkpoint}. No pretrained trajectory checkpoint is claimed or used.")
 
@@ -277,7 +277,7 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
             for f in filtered
         ]
     )
-    st.dataframe(table, hide_index=True, use_container_width=True)
+    st.dataframe(table, hide_index=True, width="stretch")
     _render_anomaly_map(filtered, settings)
     notice("Interpretation guardrail: these are behavioral anomalies in observed movement data, not determinations of hostile intent.")
 
@@ -294,7 +294,7 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
         volume = hourly_volume(snapshot.observations)
         fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9", hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>"))
         fig.update_layout(**_plot_layout("Observed AIS message volume by UTC hour", "UTC hour", "Real AIS messages"), height=330)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with right:
         speeds = speed_distribution(snapshot.vessels)
         if speeds.empty:
@@ -302,12 +302,12 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
         else:
             fig = go.Figure(go.Histogram(x=speeds["sog_knots"], nbinsx=18, marker_color="#51c79b", hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>"))
             fig.update_layout(**_plot_layout("Observed speed-over-ground distribution", "SOG (knots)", "Vessels"), height=330)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     counts = anomaly_counts(snapshot.findings)
     if not counts.empty:
         fig = go.Figure(go.Bar(x=counts["category"], y=counts["events"], marker_color="#e9b857"))
         fig.update_layout(**_plot_layout("Behavioral findings by category", "Category", "Events"), height=300)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
@@ -323,7 +323,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
                 "Count": [report.invalid_records, report.duplicate_records, report.missing_values, report.timestamp_gaps, report.invalid_mmsi, report.impossible_speeds, report.impossible_jumps, report.stale_records],
             }
         )
-        st.dataframe(rows, hide_index=True, use_container_width=True)
+        st.dataframe(rows, hide_index=True, width="stretch")
     with right:
         if report.messages_processed == 0:
             empty_state("Quality metrics will populate after real AIS messages are received.", "NO REAL AIS OBSERVATIONS")
@@ -401,7 +401,7 @@ def _render_vessel_map(rows: list[dict], snapshot: EngineSnapshot, settings: App
         layers=layers,
         tooltip={"html": "<b>{name}</b><br/>MMSI {mmsi}<br/>SOG {sog_knots} kn<br/>COG {cog_degrees}°<br/>Last update {last_update}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
     )
-    st.pydeck_chart(deck, use_container_width=True)
+    st.pydeck_chart(deck, width="stretch")
 
 
 def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -> None:
@@ -416,7 +416,7 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
         layers=[pdk.Layer("ScatterplotLayer", data=rows, get_position="[longitude, latitude]", get_fill_color=[239, 107, 115, 220], get_radius=700, radius_min_pixels=5, radius_max_pixels=14, pickable=True)],
         tooltip={"html": "<b>{category}</b><br/>MMSI {mmsi}<br/>Score {score}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
     )
-    st.pydeck_chart(deck, use_container_width=True)
+    st.pydeck_chart(deck, width="stretch")
 
 
 def _render_track_chart(track: list, title: str) -> None:
@@ -424,7 +424,7 @@ def _render_track_chart(track: list, title: str) -> None:
     fig = go.Figure(go.Scattergeo(lon=frame["longitude"], lat=frame["latitude"], mode="lines+markers", line={"color": "#35c2c9", "width": 2}, marker={"size": 5, "color": "#d9e6e9"}, text=frame["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), hovertemplate="%{text}<br>Latitude %{lat:.5f}<br>Longitude %{lon:.5f}<extra></extra>"))
     fig.update_geos(showland=True, landcolor="#10242d", showocean=True, oceancolor="#08151b", showcountries=True, countrycolor="#1b3640", coastlinecolor="#31505b", projection_type="equirectangular")
     fig.update_layout(**_plot_layout(title, "Longitude", "Latitude"), height=390)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _render_speed_chart(track: list) -> None:
@@ -435,7 +435,7 @@ def _render_speed_chart(track: list) -> None:
     layout = _plot_layout("Observed SOG and COG history", "UTC timestamp", "SOG (knots)")
     layout.update({"height": 300, "yaxis2": {"title": "COG (°)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"}, "legend": {"orientation": "h", "y": 1.12}})
     fig.update_layout(**layout)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _plot_layout(title: str, x_title: str, y_title: str) -> dict:
@@ -471,7 +471,8 @@ def _selected_vessel(vessels: list[VesselSnapshot]) -> VesselSnapshot | None:
 
 def _vessel_label(mmsi: str, vessels: list[VesselSnapshot]) -> str:
     vessel = next((v for v in vessels if v.mmsi == mmsi), None)
-    return f"{mmsi} · {(vessel.vessel_name if vessel else 'UNKNOWN').strip()}"
+    display_name = ((vessel.vessel_name or "").strip() or "UNKNOWN") if vessel is not None else "UNKNOWN"
+    return f"{mmsi} · {display_name}"
 
 
 def _vessel_compact(vessel: VesselSnapshot) -> None:

@@ -117,8 +117,8 @@ def _render_sidebar(settings: AppSettings) -> tuple[AppSettings, str, bool, bool
         )
         if float(selected_duration) != settings.collection_seconds:
             settings = _with_bbox(settings, settings.bbox, settings.config_error, collection_seconds=float(selected_duration))
-        collect = st.button("Collect Real AIS", use_container_width=True, type="primary", disabled=settings.config_error is not None)
-        clear = st.button("Clear Session", use_container_width=True)
+        collect = st.button("Collect Real AIS", width="stretch", type="primary", disabled=settings.config_error is not None)
+        clear = st.button("Clear Session", width="stretch")
 
         st.markdown("<div class='data-label' style='margin-top:.8rem'>REGION</div>", unsafe_allow_html=True)
         with st.expander("Bounding Box", expanded=False):

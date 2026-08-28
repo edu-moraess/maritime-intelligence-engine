@@ -14,6 +14,7 @@ from src.ml.embeddings import TrajectoryEmbeddingAdapter
 from src.processing.quality import build_quality_report, haversine_km, validate_observation
 from src.storage.memory import ObservationStore
 from src.trajectory.features import summarize_track, trajectory_vector
+from src.ui.pages import _vessel_label
 
 
 def position_payload(*, mmsi: int = 368207620, timestamp_second: int = 42, latitude: float = 25.7617, longitude: float = -80.1918) -> str:
@@ -306,6 +307,8 @@ def test_readiness_uses_real_tracks_and_embedding_guard():
     assert readiness.trajectory_ready
     assert readiness.embeddings_ready
     assert readiness.embedding_status == "READY"
+    assert readiness.trajectory_status == "READY"
+    assert readiness.multitrack_status == "READY"
 
 
 def test_region_presets_are_valid_real_monitoring_boxes():
@@ -335,3 +338,27 @@ def test_readiness_multitrack_status_is_explicit(tracks_with_history, expected):
         anomaly_count=0,
     )
     assert readiness.multitrack_status == expected
+
+
+@pytest.mark.parametrize(
+    ("vessel_name", "expected_name"),
+    [(None, "UNKNOWN"), ("", "UNKNOWN"), ("   ", "UNKNOWN"), ("  MV REAL AIS  ", "MV REAL AIS")],
+)
+def test_vessel_label_handles_missing_or_blank_name_without_mutating_snapshot(vessel_name, expected_name):
+    vessel = VesselSnapshot(
+        mmsi="368207620",
+        latitude=25.7617,
+        longitude=-80.1918,
+        last_update=datetime.now(timezone.utc),
+        sog_knots=12.4,
+        cog_degrees=86.7,
+        heading_degrees=87.0,
+        vessel_name=vessel_name,
+        message_count=1,
+    )
+    original_name = vessel.vessel_name
+
+    label = _vessel_label(vessel.mmsi, [vessel])
+
+    assert label == f"368207620 · {expected_name}"
+    assert vessel.vessel_name == original_name
