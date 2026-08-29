@@ -11,5 +11,5 @@ psycopg[binary]>=3.2,<4
 torch>=2.0,<3
 pytest>=8,<10
 
-# Optional for Gemini multimodal interpretation; client reports unavailable if missing.
-google-generativeai>=0.8,<1
+# Modern Gemini SDK (replaces deprecated google-generativeai).
+google-genai>=1,<3

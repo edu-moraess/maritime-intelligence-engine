@@ -1,8 +1,9 @@
 """Isolated Gemini API client for multimodal vessel intelligence.
 
+Uses the modern google-genai SDK (package: google-genai).
 Never hardcodes the API key. Never logs the key. Optional dependency:
-if google-generativeai is missing or GEMINI_API_KEY is unset, the rest
-of the MIE continues to operate normally.
+if google-genai is missing or GEMINI_API_KEY is unset, the rest of the
+MIE continues to operate normally.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ from src.intelligence.llm.schemas import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-1.5-flash"
+# Current multimodal Flash model per Google Gen AI docs (2026).
+# gemini-1.5-flash is retired / not found on the modern API surface.
+DEFAULT_MODEL = "gemini-3.7-flash"
 REQUEST_TIMEOUT_SECONDS = 45
 
 
@@ -39,17 +42,27 @@ def _read_api_key(secrets: Any | None = None) -> str:
 
 
 def _import_genai():
-    """Lazy import so missing package does not break classical MIE paths."""
+    """Lazy import of the modern google-genai package."""
     try:
-        import google.generativeai as genai  # type: ignore
+        from google import genai  # type: ignore
 
         return genai
     except Exception:
         return None
 
 
+def _import_genai_types():
+    """Lazy import of google.genai.types for multimodal parts / config."""
+    try:
+        from google.genai import types  # type: ignore
+
+        return types
+    except Exception:
+        return None
+
+
 class GeminiClient:
-    """Thin wrapper around Gemini generate_content for vessel interpretation."""
+    """Thin wrapper around google-genai Client.models.generate_content."""
 
     def __init__(
         self,
@@ -79,7 +92,7 @@ class GeminiClient:
             return GeminiAvailability(
                 available=False,
                 reason=(
-                    "Gemini unavailable: google-generativeai package "
+                    "Gemini unavailable: google-genai package "
                     "is not installed"
                 ),
             )
@@ -98,7 +111,7 @@ class GeminiClient:
         mmsi: str = "",
     ) -> GeminiVesselAnalysis | None:
         """
-        Request a structured interpretation.
+        Request a structured interpretation via the modern Gen AI SDK.
 
         Returns None when the client is unavailable or the call fails.
         Never raises into the classical pipeline.
@@ -109,15 +122,18 @@ class GeminiClient:
             return None
 
         genai = _import_genai()
-        if genai is None:
+        types = _import_genai_types()
+        if genai is None or types is None:
             return None
 
         key = self._resolved_key()
-        # Configure without ever logging the key.
         try:
-            genai.configure(api_key=key)
+            client = genai.Client(api_key=key)
         except Exception as exc:
-            logger.warning("Gemini configure failed: %s", type(exc).__name__)
+            logger.warning(
+                "Gemini client init failed: %s",
+                type(exc).__name__,
+            )
             return None
 
         from src.intelligence.llm.context import context_to_json
@@ -129,33 +145,55 @@ class GeminiClient:
             image_provided=image_provided,
         )
 
-        try:
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                system_instruction=SYSTEM_PROMPT,
-            )
-            parts: list[Any] = [user_prompt]
-            if image_provided:
-                parts.append(
-                    {
-                        "mime_type": image_mime,
-                        "data": image_bytes,
-                    }
+        contents: list[Any] = [user_prompt]
+        if image_provided:
+            try:
+                contents.append(
+                    types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type=image_mime,
+                    )
                 )
+            except Exception as exc:
+                logger.warning(
+                    "Gemini image part build failed: %s",
+                    type(exc).__name__,
+                )
+                image_provided = False
+                contents = [
+                    build_user_prompt(
+                        context_json,
+                        image_provided=False,
+                    )
+                ]
 
-            response = model.generate_content(
-                parts,
-                generation_config={
-                    "temperature": 0.2,
-                    "response_mime_type": "application/json",
-                },
-                request_options={"timeout": REQUEST_TIMEOUT_SECONDS},
+        try:
+            config = types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.2,
+                response_mime_type="application/json",
+                http_options=types.HttpOptions(
+                    timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                ),
+            )
+            response = client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=config,
             )
         except Exception as exc:
-            # Do not include request payloads or keys in logs.
+            err_name = type(exc).__name__
+            err_msg = str(exc)
+            safe_msg = re.sub(
+                r"(?i)(api[_-]?key|token|bearer)\s*[:=]\s*\S+",
+                r"\1=[redacted]",
+                err_msg,
+            )
+            safe_msg = safe_msg[:200]
             logger.warning(
-                "Gemini API call failed: %s",
-                type(exc).__name__,
+                "Gemini API call failed: %s%s",
+                err_name,
+                f" — {safe_msg}" if safe_msg else "",
             )
             return None
 
@@ -172,7 +210,9 @@ class GeminiClient:
         try:
             return parse_gemini_response(
                 payload,
-                mmsi=mmsi or str(context.get("identity", {}).get("mmsi", "")),
+                mmsi=mmsi or str(
+                    context.get("identity", {}).get("mmsi", "")
+                ),
                 model_name=self.model_name,
                 image_provided=image_provided,
             )
@@ -185,6 +225,7 @@ class GeminiClient:
 
 
 def _extract_text(response: Any) -> str:
+    """Extract plain text from a google-genai GenerateContentResponse."""
     try:
         text = getattr(response, "text", None)
         if text:
