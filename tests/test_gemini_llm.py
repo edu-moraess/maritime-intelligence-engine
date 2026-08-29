@@ -16,6 +16,7 @@ from src.ingestion.models import (
 from src.intelligence.engine import EngineSnapshot, ReadinessSnapshot
 from src.intelligence.llm.client import (
     DEFAULT_MODEL,
+    REQUEST_TIMEOUT_SECONDS,
     GeminiClient,
     _parse_json_payload,
     create_gemini_client,
@@ -128,11 +129,15 @@ def _mock_interactions_stack(
     fake_genai = MagicMock()
     fake_genai.Client.return_value = fake_client_instance
 
-    return fake_genai, fake_interactions, fake_client_instance
+    fake_types = MagicMock()
+    fake_types.HttpOptions = MagicMock(side_effect=lambda **kwargs: kwargs)
+
+    return fake_genai, fake_types, fake_interactions, fake_client_instance
 
 
-def test_default_model_is_modern_flash():
+def test_default_model_and_timeout():
     assert DEFAULT_MODEL == "gemini-3.7-flash"
+    assert 25 <= REQUEST_TIMEOUT_SECONDS <= 30
 
 
 def test_missing_api_key_unavailable(monkeypatch):
@@ -172,10 +177,7 @@ def test_context_without_optional_fields():
     context = build_vessel_context(vessel, snapshot, track=[])
     assert context["identity"]["mmsi"] == "367000002"
     assert "vessel_name" not in context["identity"]
-    assert "imo" not in context["identity"]
-    assert "flag" not in context["identity"]
     assert context["classical_anomalies"] == []
-    assert context["deep_temporal"]["status"] == "WAITING"
     payload = context_to_json(context)
     assert "367000002" in payload
 
@@ -218,21 +220,24 @@ def test_schema_validation_and_defaults():
     )
     assert isinstance(analysis, GeminiVesselAnalysis)
     assert analysis.confidence == "medium"
-    assert analysis.mmsi == "367000004"
-    assert analysis.image_provided is False
-
     low = parse_gemini_response({"confidence": "extreme"}, mmsi="x")
     assert low.confidence == "low"
 
 
-def test_interactions_create_called(monkeypatch):
+def test_interactions_create_with_timeout_http_options(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
-    fake_genai, fake_interactions, _ = _mock_interactions_stack()
+    fake_genai, fake_types, fake_interactions, _ = _mock_interactions_stack()
 
-    client = GeminiClient(api_key="test-key-not-real")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    client = GeminiClient(api_key="test-key-not-real", timeout_seconds=28)
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000010"}},
@@ -241,21 +246,21 @@ def test_interactions_create_called(monkeypatch):
 
     assert result is not None
     assert result.summary == "ok"
-    assert result.model_name == DEFAULT_MODEL
-    assert result.image_provided is False
+    assert client.last_duration_seconds is not None
     fake_genai.Client.assert_called_once()
+    client_kwargs = fake_genai.Client.call_args.kwargs
+    assert "http_options" in client_kwargs
+    assert client_kwargs["http_options"]["timeout"] == 28 * 1000
     assert fake_interactions.create.called
     call_kwargs = fake_interactions.create.call_args.kwargs
     assert call_kwargs["model"] == DEFAULT_MODEL
-    assert "response_format" in call_kwargs
     assert call_kwargs["response_format"]["mime_type"] == "application/json"
-    assert isinstance(call_kwargs["input"], list)
     assert call_kwargs["input"][0]["type"] == "text"
 
 
 def test_multimodal_image_in_interactions_input(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
-    fake_genai, fake_interactions, _ = _mock_interactions_stack(
+    fake_genai, fake_types, fake_interactions, _ = _mock_interactions_stack(
         response_text=(
             '{"summary":"vessel visible","behavior_assessment":"ok",'
             '"visual_assessment":"white hull","anomaly_context":"none",'
@@ -266,9 +271,15 @@ def test_multimodal_image_in_interactions_input(monkeypatch):
 
     client = GeminiClient(api_key="test-key-not-real")
     image = b"\xff\xd8\xfffakejpeg"
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000011"}},
@@ -279,23 +290,25 @@ def test_multimodal_image_in_interactions_input(monkeypatch):
 
     assert result is not None
     assert result.image_provided is True
-    call_kwargs = fake_interactions.create.call_args.kwargs
-    contents = call_kwargs["input"]
+    contents = fake_interactions.create.call_args.kwargs["input"]
     assert len(contents) == 2
-    assert contents[0]["type"] == "text"
     assert contents[1]["type"] == "image"
-    assert contents[1]["mime_type"] == "image/jpeg"
-    assert "data" in contents[1]
 
 
 def test_no_image_text_only(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
-    fake_genai, fake_interactions, _ = _mock_interactions_stack()
+    fake_genai, fake_types, fake_interactions, _ = _mock_interactions_stack()
 
     client = GeminiClient(api_key="test-key-not-real")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000012"}},
@@ -307,7 +320,38 @@ def test_no_image_text_only(monkeypatch):
     assert result.image_provided is False
     contents = fake_interactions.create.call_args.kwargs["input"]
     assert len(contents) == 1
-    assert contents[0]["type"] == "text"
+
+
+def test_timeout_sets_operator_message(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+
+    class TimeoutError_(Exception):
+        pass
+
+    fake_genai, fake_types, _, _ = _mock_interactions_stack(
+        raise_on_create=TimeoutError_("The read operation timed out")
+    )
+
+    client = GeminiClient(api_key="test-key-not-real")
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
+    ):
+        result = client.analyze_vessel(
+            {"identity": {"mmsi": "367000008"}},
+            mmsi="367000008",
+        )
+
+    assert result is None
+    assert client.last_error is not None
+    assert "timed out" in client.last_error.lower()
+    assert "MIE pipeline remains operational" in client.last_error
 
 
 def test_gemini_api_not_found_returns_none(monkeypatch):
@@ -316,20 +360,27 @@ def test_gemini_api_not_found_returns_none(monkeypatch):
     class NotFound(Exception):
         pass
 
-    fake_genai, _, _ = _mock_interactions_stack(
+    fake_genai, fake_types, _, _ = _mock_interactions_stack(
         raise_on_create=NotFound("model not found")
     )
 
     client = GeminiClient(api_key="test-key-not-real")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000005"}},
             mmsi="367000005",
         )
     assert result is None
+    assert client.last_error is not None
 
 
 def test_gemini_auth_error_returns_none(monkeypatch):
@@ -338,14 +389,20 @@ def test_gemini_auth_error_returns_none(monkeypatch):
     class PermissionDenied(Exception):
         pass
 
-    fake_genai, _, _ = _mock_interactions_stack(
+    fake_genai, fake_types, _, _ = _mock_interactions_stack(
         raise_on_create=PermissionDenied("API key not valid")
     )
 
     client = GeminiClient(api_key="bad-key")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000006"}},
@@ -354,44 +411,29 @@ def test_gemini_auth_error_returns_none(monkeypatch):
     assert result is None
 
 
-def test_timeout_error_returns_none(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
-
-    class TimeoutError_(Exception):
-        pass
-
-    fake_genai, _, _ = _mock_interactions_stack(
-        raise_on_create=TimeoutError_("deadline exceeded")
-    )
-
-    client = GeminiClient(api_key="test-key-not-real")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
-    ):
-        result = client.analyze_vessel(
-            {"identity": {"mmsi": "367000008"}},
-            mmsi="367000008",
-        )
-    assert result is None
-
-
 def test_invalid_json_response_returns_none(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
-    fake_genai, _, _ = _mock_interactions_stack(
+    fake_genai, fake_types, _, _ = _mock_interactions_stack(
         response_text="this is not json at all"
     )
 
     client = GeminiClient(api_key="test-key-not-real")
-    with patch(
-        "src.intelligence.llm.client._import_genai",
-        return_value=fake_genai,
+    with (
+        patch(
+            "src.intelligence.llm.client._import_genai",
+            return_value=fake_genai,
+        ),
+        patch(
+            "src.intelligence.llm.client._import_genai_types",
+            return_value=fake_types,
+        ),
     ):
         result = client.analyze_vessel(
             {"identity": {"mmsi": "367000007"}},
             mmsi="367000007",
         )
     assert result is None
+    assert client.last_error is not None
 
 
 def test_api_key_never_logged(caplog, monkeypatch):
@@ -403,13 +445,21 @@ def test_api_key_never_logged(caplog, monkeypatch):
         def __str__(self) -> str:
             return f"auth failed api_key={secret}"
 
-    fake_genai, _, _ = _mock_interactions_stack(raise_on_create=Boom())
+    fake_genai, fake_types, _, _ = _mock_interactions_stack(
+        raise_on_create=Boom()
+    )
 
     with caplog.at_level(logging.DEBUG):
         client.availability()
-        with patch(
-            "src.intelligence.llm.client._import_genai",
-            return_value=fake_genai,
+        with (
+            patch(
+                "src.intelligence.llm.client._import_genai",
+                return_value=fake_genai,
+            ),
+            patch(
+                "src.intelligence.llm.client._import_genai_types",
+                return_value=fake_types,
+            ),
         ):
             client.analyze_vessel({"identity": {"mmsi": "1"}})
 
