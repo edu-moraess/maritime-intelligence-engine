@@ -41,6 +41,7 @@ def render_gemini_vessel_panel(
     )
 
     cache_key = f"gemini_analysis_{vessel.mmsi}"
+    error_key = f"gemini_error_{vessel.mmsi}"
     run = st.button(
         "Analyze with Gemini",
         key=f"gemini_btn_{vessel.mmsi}",
@@ -48,7 +49,10 @@ def render_gemini_vessel_panel(
     )
 
     if run:
-        with st.spinner("Requesting Gemini interpretation..."):
+        with st.spinner(
+            "Requesting Gemini interpretation "
+            f"(timeout {client.timeout_seconds}s)..."
+        ):
             context = build_vessel_context(
                 vessel,
                 snapshot,
@@ -64,8 +68,10 @@ def render_gemini_vessel_panel(
                 mmsi=vessel.mmsi,
             )
             st.session_state[cache_key] = result
+            st.session_state[error_key] = client.last_error
 
     result = st.session_state.get(cache_key)
+    last_error = st.session_state.get(error_key)
 
     if result is None and not run:
         st.caption(
@@ -75,11 +81,11 @@ def render_gemini_vessel_panel(
         return
 
     if result is None:
-        notice(
+        message = last_error or (
             "Gemini did not return a usable interpretation. "
-            "Check API availability and try again.",
-            "red",
+            "Check API availability and try again."
         )
+        notice(message, "red")
         return
 
     metric_strip(
