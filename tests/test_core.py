@@ -81,8 +81,7 @@ def test_quality_flags_invalid_provider_record():
     assert "impossible_speed" in errors
     assert "provider_invalid" in errors
     assert "invalid_heading" in errors
-    import pytest as _pytest
-    with _pytest.raises(ValueError, match="Invalid AIS MMSI"):
+    with pytest.raises(ValueError, match="Invalid AIS MMSI"):
         AISObservation("bad", 25.0, -80.0, datetime.now(timezone.utc))
 
 
@@ -92,3 +91,10 @@ def test_store_counts_exact_duplicates():
     store.extend([observation, observation])
     assert len(store.all()) == 1
     assert store.duplicate_count == 1
+
+
+def test_engine_without_key_starts_in_explicit_disconnected_state():
+    engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="", bbox=DEFAULT_BBOX))
+    status = engine.snapshot().status
+    assert status.state == "DISCONNECTED"
+    assert "not configured" in status.reason.lower()
