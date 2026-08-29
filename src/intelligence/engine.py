@@ -14,6 +14,8 @@ from src.ingestion.aisstream import AISStreamProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
+from src.ml.temporal import TemporalAnomalyAdapter
+from src.ml.temporal.types import TemporalFitResult
 from src.processing.quality import QualityReport, build_quality_report
 from src.storage.memory import ObservationStore
 
@@ -29,6 +31,7 @@ class ReadinessSnapshot:
     embedding_status: str
     anomaly_count: int
     required_tracks: int = 3
+    temporal_status: str = "WAITING"
 
     @property
     def multitrack_status(self) -> str:
@@ -56,6 +59,19 @@ class EngineSnapshot:
     last_collection_seconds: float
     historical_status: str
     historical_result: HistoricalWriteResult | None
+    temporal: TemporalFitResult | None = None
+
+
+def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
+    """Stable fingerprint of track identities and lengths for cache invalidation."""
+    parts: list[str] = []
+    for mmsi in sorted(tracks.keys()):
+        obs = tracks[mmsi]
+        if not obs:
+            continue
+        last = max(o.received_at for o in obs)
+        parts.append(f"{mmsi}:{len(obs)}:{last.isoformat()}")
+    return "|".join(parts)
 
 
 class MaritimeIntelligenceEngine:
@@ -73,12 +89,15 @@ class MaritimeIntelligenceEngine:
         )
         self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
+        self.temporal_adapter = TemporalAnomalyAdapter()
         ready, reason = settings.validate_for_connection()
         if not ready:
             self.provider.config_error = reason
             self.provider.connect()
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
+        self.temporal: TemporalFitResult | None = None
+        self._temporal_fingerprint: str | None = None
         self.last_collection_seconds: float = 0.0
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
@@ -141,11 +160,26 @@ class MaritimeIntelligenceEngine:
 
     def _recompute(self) -> None:
         tracks = self.store.tracks()
+        # Classical path — always runs independently of temporal.
         self.embeddings = self.embedding_adapter.fit(tracks)
         self.findings = detect_anomalies(tracks, self.embeddings)
+        # Deep Temporal path — isolated; failures never clear classical state.
+        fingerprint = _track_fingerprint(tracks)
+        if self.temporal is not None and self._temporal_fingerprint == fingerprint:
+            return
+        try:
+            self.temporal = self.temporal_adapter.fit(tracks)
+            self._temporal_fingerprint = fingerprint
+        except Exception as exc:  # pragma: no cover — defensive isolation
+            self.temporal = TemporalFitResult(
+                status="FAILED",
+                reason=f"Temporal path exception (classical path intact): {exc}",
+            )
+            self._temporal_fingerprint = fingerprint
 
     def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
         tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
+        temporal_status = self.temporal.status if self.temporal is not None else "WAITING"
         return ReadinessSnapshot(
             distinct_vessels=len(tracks),
             tracks_with_history=tracks_with_history,
@@ -153,6 +187,7 @@ class MaritimeIntelligenceEngine:
             embeddings_ready=self.embeddings is not None,
             embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"),
             anomaly_count=len(self.findings),
+            temporal_status=temporal_status,
         )
 
     def snapshot(self) -> EngineSnapshot:
@@ -172,6 +207,7 @@ class MaritimeIntelligenceEngine:
             last_collection_seconds=self.last_collection_seconds,
             historical_status=self.historical_writer.status,
             historical_result=self.historical_result,
+            temporal=self.temporal,
         )
 
     def clear_session_data(self) -> None:
@@ -179,6 +215,8 @@ class MaritimeIntelligenceEngine:
         self.provider.reset_session()
         self.embeddings = None
         self.findings = []
+        self.temporal = None
+        self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
         self.historical_result = None
         if self.settings.config_error or not self.settings.aisstream_api_key:
