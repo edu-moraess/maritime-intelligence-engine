@@ -1,6 +1,8 @@
 """Isolated Gemini API client for multimodal vessel intelligence.
 
-Uses the modern google-genai SDK (package: google-genai).
+Uses the modern google-genai SDK with the Interactions API
+(client.interactions.create), as recommended by current Google Gen AI docs.
+
 Never hardcodes the API key. Never logs the key. Optional dependency:
 if google-genai is missing or GEMINI_API_KEY is unset, the rest of the
 MIE continues to operate normally.
@@ -8,6 +10,7 @@ MIE continues to operate normally.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -23,10 +26,42 @@ from src.intelligence.llm.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Current multimodal Flash model per Google Gen AI docs (2026).
-# gemini-1.5-flash is retired / not found on the modern API surface.
+# Multimodal Flash model documented for Interactions API
+# (ai.google.dev Interactions / text-generation / structured-output, 2026).
 DEFAULT_MODEL = "gemini-3.7-flash"
 REQUEST_TIMEOUT_SECONDS = 45
+
+# JSON Schema for structured vessel analysis (Interactions response_format).
+VESSEL_ANALYSIS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "behavior_assessment": {"type": "string"},
+        "visual_assessment": {"type": "string"},
+        "anomaly_context": {"type": "string"},
+        "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+        },
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "limitations": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": [
+        "summary",
+        "behavior_assessment",
+        "visual_assessment",
+        "anomaly_context",
+        "confidence",
+        "evidence",
+        "limitations",
+    ],
+}
 
 
 def _read_api_key(secrets: Any | None = None) -> str:
@@ -51,18 +86,8 @@ def _import_genai():
         return None
 
 
-def _import_genai_types():
-    """Lazy import of google.genai.types for multimodal parts / config."""
-    try:
-        from google.genai import types  # type: ignore
-
-        return types
-    except Exception:
-        return None
-
-
 class GeminiClient:
-    """Thin wrapper around google-genai Client.models.generate_content."""
+    """Thin wrapper around google-genai Interactions API."""
 
     def __init__(
         self,
@@ -111,7 +136,7 @@ class GeminiClient:
         mmsi: str = "",
     ) -> GeminiVesselAnalysis | None:
         """
-        Request a structured interpretation via the modern Gen AI SDK.
+        Request a structured interpretation via Interactions API.
 
         Returns None when the client is unavailable or the call fails.
         Never raises into the classical pipeline.
@@ -122,8 +147,7 @@ class GeminiClient:
             return None
 
         genai = _import_genai()
-        types = _import_genai_types()
-        if genai is None or types is None:
+        if genai is None:
             return None
 
         key = self._resolved_key()
@@ -145,41 +169,46 @@ class GeminiClient:
             image_provided=image_provided,
         )
 
-        contents: list[Any] = [user_prompt]
+        # Interactions API multimodal input format (official docs).
+        interaction_input: list[dict[str, Any]] = [
+            {"type": "text", "text": user_prompt},
+        ]
         if image_provided:
             try:
-                contents.append(
-                    types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type=image_mime,
-                    )
+                image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                interaction_input.append(
+                    {
+                        "type": "image",
+                        "data": image_b64,
+                        "mime_type": image_mime,
+                    }
                 )
             except Exception as exc:
                 logger.warning(
-                    "Gemini image part build failed: %s",
+                    "Gemini image encoding failed: %s",
                     type(exc).__name__,
                 )
                 image_provided = False
-                contents = [
-                    build_user_prompt(
-                        context_json,
-                        image_provided=False,
-                    )
+                interaction_input = [
+                    {
+                        "type": "text",
+                        "text": build_user_prompt(
+                            context_json,
+                            image_provided=False,
+                        ),
+                    }
                 ]
 
         try:
-            config = types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.2,
-                response_mime_type="application/json",
-                http_options=types.HttpOptions(
-                    timeout=REQUEST_TIMEOUT_SECONDS * 1000,
-                ),
-            )
-            response = client.models.generate_content(
+            interaction = client.interactions.create(
                 model=self.model_name,
-                contents=contents,
-                config=config,
+                system_instruction=SYSTEM_PROMPT,
+                input=interaction_input,
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": VESSEL_ANALYSIS_SCHEMA,
+                },
             )
         except Exception as exc:
             err_name = type(exc).__name__
@@ -197,7 +226,7 @@ class GeminiClient:
             )
             return None
 
-        text = _extract_text(response)
+        text = _extract_interaction_text(interaction)
         if not text:
             logger.warning("Gemini returned empty response text")
             return None
@@ -224,25 +253,58 @@ class GeminiClient:
             return None
 
 
-def _extract_text(response: Any) -> str:
-    """Extract plain text from a google-genai GenerateContentResponse."""
+def _extract_interaction_text(interaction: Any) -> str:
+    """Extract text from an Interactions API response object."""
+    # Preferred sugar on current schema (SDK >= 2.x).
     try:
-        text = getattr(response, "text", None)
+        text = getattr(interaction, "output_text", None)
         if text:
             return str(text).strip()
     except Exception:
         pass
+
+    # Fallback: outputs list (older / alternate response shapes).
     try:
-        candidates = getattr(response, "candidates", None) or []
-        for candidate in candidates:
-            content = getattr(candidate, "content", None)
-            parts = getattr(content, "parts", None) or []
-            for part in parts:
-                part_text = getattr(part, "text", None)
-                if part_text:
-                    return str(part_text).strip()
+        outputs = getattr(interaction, "outputs", None) or []
+        for output in reversed(list(outputs)):
+            if isinstance(output, dict):
+                if output.get("type") == "text" and output.get("text"):
+                    return str(output["text"]).strip()
+                continue
+            out_type = getattr(output, "type", None)
+            out_text = getattr(output, "text", None)
+            if out_text and (out_type in (None, "text") or out_type == "text"):
+                return str(out_text).strip()
     except Exception:
         pass
+
+    # Fallback: steps timeline (model_output content parts).
+    try:
+        steps = getattr(interaction, "steps", None) or []
+        for step in reversed(list(steps)):
+            step_type = (
+                step.get("type")
+                if isinstance(step, dict)
+                else getattr(step, "type", None)
+            )
+            if step_type not in ("model_output", None):
+                continue
+            content = (
+                step.get("content")
+                if isinstance(step, dict)
+                else getattr(step, "content", None)
+            ) or []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") == "text" and part.get("text"):
+                        return str(part["text"]).strip()
+                else:
+                    part_text = getattr(part, "text", None)
+                    if part_text:
+                        return str(part_text).strip()
+    except Exception:
+        pass
+
     return ""
 
 
