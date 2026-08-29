@@ -7,6 +7,6 @@ scikit-learn>=1.5,<2
 websocket-client>=1.8,<2
 python-dotenv>=1.0,<2
 psycopg[binary]>=3.2,<4
-# Optional for temporal DL; UNAVAILABLE if missing
+# Optional for temporal DL path; adapter reports UNAVAILABLE if missing.
 torch>=2.0,<3
 pytest>=8,<10
