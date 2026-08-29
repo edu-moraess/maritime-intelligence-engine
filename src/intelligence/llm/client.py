@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 from src.intelligence.llm.prompts import SYSTEM_PROMPT, build_user_prompt
@@ -29,7 +30,10 @@ logger = logging.getLogger(__name__)
 # Multimodal Flash model documented for Interactions API
 # (ai.google.dev Interactions / text-generation / structured-output, 2026).
 DEFAULT_MODEL = "gemini-3.7-flash"
-REQUEST_TIMEOUT_SECONDS = 45
+
+# Hard ceiling for a single Interactions call (Streamlit UX).
+# Applied via Client http_options.timeout (milliseconds in google-genai).
+REQUEST_TIMEOUT_SECONDS = 28
 
 # JSON Schema for structured vessel analysis (Interactions response_format).
 VESSEL_ANALYSIS_SCHEMA: dict[str, Any] = {
@@ -86,6 +90,32 @@ def _import_genai():
         return None
 
 
+def _import_genai_types():
+    """Lazy import of google.genai.types (HttpOptions, etc.)."""
+    try:
+        from google.genai import types  # type: ignore
+
+        return types
+    except Exception:
+        return None
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    """Detect timeout-like failures without depending on a specific SDK class."""
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    tokens = (
+        "timeout",
+        "timed out",
+        "deadline",
+        "read timed out",
+        "connect timeout",
+    )
+    if "timeout" in name or "deadline" in name:
+        return True
+    return any(token in msg for token in tokens)
+
+
 class GeminiClient:
     """Thin wrapper around google-genai Interactions API."""
 
@@ -95,10 +125,15 @@ class GeminiClient:
         api_key: str | None = None,
         model_name: str = DEFAULT_MODEL,
         secrets: Any | None = None,
+        timeout_seconds: int = REQUEST_TIMEOUT_SECONDS,
     ) -> None:
         self._explicit_key = (api_key or "").strip()
         self._secrets = secrets
         self.model_name = model_name
+        self.timeout_seconds = max(5, int(timeout_seconds))
+        # Last operator-safe failure reason (never contains secrets).
+        self.last_error: str | None = None
+        self.last_duration_seconds: float | None = None
 
     def _resolved_key(self) -> str:
         if self._explicit_key:
@@ -140,20 +175,36 @@ class GeminiClient:
 
         Returns None when the client is unavailable or the call fails.
         Never raises into the classical pipeline.
+        On timeout, sets last_error to a clear operator message.
         """
+        self.last_error = None
+        self.last_duration_seconds = None
+
         status = self.availability()
         if not status.available:
+            self.last_error = status.reason
             logger.info("Gemini analyze skipped: %s", status.reason)
             return None
 
         genai = _import_genai()
+        types = _import_genai_types()
         if genai is None:
+            self.last_error = (
+                "Gemini unavailable: google-genai package is not installed"
+            )
             return None
 
         key = self._resolved_key()
         try:
-            client = genai.Client(api_key=key)
+            client_kwargs: dict[str, Any] = {"api_key": key}
+            # Official google-genai timeout is on Client http_options (ms).
+            if types is not None and hasattr(types, "HttpOptions"):
+                client_kwargs["http_options"] = types.HttpOptions(
+                    timeout=self.timeout_seconds * 1000,
+                )
+            client = genai.Client(**client_kwargs)
         except Exception as exc:
+            self.last_error = "Gemini client initialization failed."
             logger.warning(
                 "Gemini client init failed: %s",
                 type(exc).__name__,
@@ -169,7 +220,14 @@ class GeminiClient:
             image_provided=image_provided,
         )
 
-        # Interactions API multimodal input format (official docs).
+        # Compactness diagnostic only (sizes, never content).
+        logger.info(
+            "Gemini request prepared: prompt_chars=%s image=%s timeout_s=%s",
+            len(user_prompt),
+            "yes" if image_provided else "no",
+            self.timeout_seconds,
+        )
+
         interaction_input: list[dict[str, Any]] = [
             {"type": "text", "text": user_prompt},
         ]
@@ -199,6 +257,7 @@ class GeminiClient:
                     }
                 ]
 
+        started = time.perf_counter()
         try:
             interaction = client.interactions.create(
                 model=self.model_name,
@@ -211,6 +270,8 @@ class GeminiClient:
                 },
             )
         except Exception as exc:
+            elapsed = time.perf_counter() - started
+            self.last_duration_seconds = elapsed
             err_name = type(exc).__name__
             err_msg = str(exc)
             safe_msg = re.sub(
@@ -219,21 +280,56 @@ class GeminiClient:
                 err_msg,
             )
             safe_msg = safe_msg[:200]
-            logger.warning(
-                "Gemini API call failed: %s%s",
-                err_name,
-                f" — {safe_msg}" if safe_msg else "",
-            )
+
+            if _is_timeout_error(exc):
+                self.last_error = (
+                    "Gemini analysis timed out. "
+                    "The MIE pipeline remains operational."
+                )
+                logger.warning(
+                    "Gemini API call timed out after %.1fs: %s",
+                    elapsed,
+                    err_name,
+                )
+            else:
+                self.last_error = (
+                    "Gemini did not return a usable interpretation. "
+                    "Check API availability and try again."
+                )
+                logger.warning(
+                    "Gemini API call failed after %.1fs: %s%s",
+                    elapsed,
+                    err_name,
+                    f" — {safe_msg}" if safe_msg else "",
+                )
             return None
+
+        elapsed = time.perf_counter() - started
+        self.last_duration_seconds = elapsed
+        logger.info("Gemini API call completed in %.1fs", elapsed)
 
         text = _extract_interaction_text(interaction)
         if not text:
-            logger.warning("Gemini returned empty response text")
+            self.last_error = (
+                "Gemini returned an empty response. "
+                "The MIE pipeline remains operational."
+            )
+            logger.warning(
+                "Gemini returned empty response text after %.1fs",
+                elapsed,
+            )
             return None
 
         payload = _parse_json_payload(text)
         if payload is None:
-            logger.warning("Gemini response was not valid JSON")
+            self.last_error = (
+                "Gemini returned an invalid response. "
+                "The MIE pipeline remains operational."
+            )
+            logger.warning(
+                "Gemini response was not valid JSON after %.1fs",
+                elapsed,
+            )
             return None
 
         try:
@@ -246,6 +342,10 @@ class GeminiClient:
                 image_provided=image_provided,
             )
         except Exception as exc:
+            self.last_error = (
+                "Gemini response could not be validated. "
+                "The MIE pipeline remains operational."
+            )
             logger.warning(
                 "Gemini response schema validation failed: %s",
                 type(exc).__name__,
@@ -255,7 +355,6 @@ class GeminiClient:
 
 def _extract_interaction_text(interaction: Any) -> str:
     """Extract text from an Interactions API response object."""
-    # Preferred sugar on current schema (SDK >= 2.x).
     try:
         text = getattr(interaction, "output_text", None)
         if text:
@@ -263,7 +362,6 @@ def _extract_interaction_text(interaction: Any) -> str:
     except Exception:
         pass
 
-    # Fallback: outputs list (older / alternate response shapes).
     try:
         outputs = getattr(interaction, "outputs", None) or []
         for output in reversed(list(outputs)):
@@ -278,7 +376,6 @@ def _extract_interaction_text(interaction: Any) -> str:
     except Exception:
         pass
 
-    # Fallback: steps timeline (model_output content parts).
     try:
         steps = getattr(interaction, "steps", None) or []
         for step in reversed(list(steps)):
@@ -330,6 +427,11 @@ def _parse_json_payload(text: str) -> dict[str, Any] | None:
 def create_gemini_client(
     secrets: Any | None = None,
     model_name: str = DEFAULT_MODEL,
+    timeout_seconds: int = REQUEST_TIMEOUT_SECONDS,
 ) -> GeminiClient:
     """Factory used by UI / tests."""
-    return GeminiClient(secrets=secrets, model_name=model_name)
+    return GeminiClient(
+        secrets=secrets,
+        model_name=model_name,
+        timeout_seconds=timeout_seconds,
+    )
