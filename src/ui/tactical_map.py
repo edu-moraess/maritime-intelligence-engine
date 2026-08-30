@@ -8,7 +8,7 @@ STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":
 STATUS_HALO = {"NORMAL":[53,194,201,50],"ATTENTION":[233,184,87,65],"ANOMALY":[239,107,115,85],"CRITICAL":[220,50,60,105],"SELECTED":[255,255,255,95],"STALE":[121,147,155,40]}
 STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,160],"ANOMALY":[239,107,115,200],"CRITICAL":[220,50,60,230],"SELECTED":[255,255,255,240],"STALE":[121,147,155,80]}
 _SHIP_LOCAL = ((0.0,1.6),(0.55,-0.3),(0.45,-1.1),(-0.45,-1.1),(-0.55,-0.3))
-VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.018
+VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.004
 TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45'>"
     "<div style='color:#35c2c9;font-weight:600'>{tooltip_name}</div>"
@@ -78,7 +78,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
     enriched = []
     for raw in rows:
         row = dict(raw)
-        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
+        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsi=critical_mmsis) if False else classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
         row["tactical_status"] = status
         row["fill_color"] = list(STATUS_FILL.get(status, STATUS_FILL["NORMAL"]))
         row["halo_color"] = list(STATUS_HALO.get(status, STATUS_HALO["NORMAL"]))
@@ -88,8 +88,8 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["course_degrees"] = course
         scale = SHIP_SCALE_DEG * (1.35 if status=="SELECTED" else 1.2 if status=="CRITICAL" else 1.1 if status=="ANOMALY" else 1.0)
         row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale)
-        row["halo_radius"] = 650 if status=="SELECTED" else 420
-        row["core_radius"] = 160 if status=="SELECTED" else 120
+        row["halo_radius"] = 180 if status=="SELECTED" else 120
+        row["core_radius"] = 55 if status=="SELECTED" else 40
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
         try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
@@ -145,27 +145,14 @@ def density_points_from_observations(observations, *, max_points=2500):
             continue
     return points
 
-
-# Layer id used exclusively for vessel pick/selection. Optional visual layers
-# (density, trails, vectors, bbox) must never use this id or be pickable.
 AIS_TARGETS_LAYER_ID = "ais-targets"
-
-# HeatmapLayer (deck.gl gaussian KDE) is intentionally NOT used. Its WebGL
-# fragment shader (_ugaussianKDE / weights-transform) fails on some clients and
-# can break the entire map including selection. Density uses ScatterplotLayer only.
 DENSITY_LAYER_TYPE = "ScatterplotLayer"
 DENSITY_FILL_COLOR = [53, 194, 201, 30]
 DENSITY_RADIUS = 900
 DENSITY_RADIUS_MIN_PX = 2
 DENSITY_RADIUS_MAX_PX = 8
 
-
 def build_density_layer_spec(points: list[dict]) -> dict | None:
-    """Return a WebGL-safe density layer spec from real AIS points, or None.
-
-    Never returns a HeatmapLayer configuration. Callers must treat density as
-    optional: if this returns None, omit density and continue rendering targets.
-    """
     if not points:
         return None
     return {
