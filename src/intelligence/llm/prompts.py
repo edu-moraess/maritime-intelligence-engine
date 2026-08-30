@@ -44,3 +44,25 @@ def build_user_prompt(context_json: str, *, image_provided: bool) -> str:
         f"{context_json}\n\n"
         "Produce the JSON response now."
     )
+
+
+QUICK_SYSTEM_PROMPT = """You are a maritime intelligence analyst producing a SHORT operational brief.
+Rules:
+1. 2-4 factual sentences maximum.
+2. Never invent identity, IMO, flag, or cargo.
+3. Use only provided context; treat image as optional non-authoritative evidence.
+4. Mention anomaly signals only as session-relative technical evidence.
+5. Respond with plain text (no JSON, no markdown headings).
+"""
+
+def build_quick_user_prompt(context_json: str, *, image_provided: bool) -> str:
+    image_note = (
+        "A vessel image is attached as optional visual evidence."
+        if image_provided else "No vessel image was provided."
+    )
+    return (
+        "Produce a short Quick Intelligence brief for this vessel.\n\n"
+        f"{image_note}\n\n"
+        f"VESSEL CONTEXT (JSON):\n{context_json}\n\n"
+        "Brief:"
+    )

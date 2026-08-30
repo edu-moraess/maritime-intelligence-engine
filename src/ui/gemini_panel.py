@@ -62,9 +62,18 @@ def render_gemini_vessel_panel(
             image_bytes = st.session_state.get(
                 f"gemini_image_{vessel.mmsi}"
             )
+            image_mime = "image/jpeg"
+            if image_bytes is None and st.session_state.get(
+                "quick_intel_mmsi"
+            ) == getattr(vessel, "mmsi", None):
+                image_bytes = st.session_state.get("quick_intel_photo_bytes")
+                image_mime = st.session_state.get(
+                    "quick_intel_photo_mime", "image/jpeg"
+                )
             result = client.analyze_vessel(
                 context,
                 image_bytes=image_bytes,
+                image_mime=image_mime,
                 mmsi=vessel.mmsi,
             )
             st.session_state[cache_key] = result
