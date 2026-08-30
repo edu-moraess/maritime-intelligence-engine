@@ -63,8 +63,7 @@ def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True)
     speeds = [x for x in speeds if x is not None]
     avg_sog = sum(speeds) / len(speeds) if speeds else None
     max_sog = max(speeds) if speeds else None
-    headings = [getattr(o, "heading_degrees", None) for o in observations]
-    heading_delta = _heading_delta(headings)
+    heading_delta = _heading_delta([getattr(o, "heading_degrees", None) for o in observations])
     latest_received = max((getattr(o, "received_at", None) for o in observations), default=getattr(vessel, "last_received", None))
     signal_age = _signal_age(latest_received)
 
@@ -103,16 +102,19 @@ def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True)
         notice("INSUFFICIENT OBSERVATIONS · movement profile requires at least 2 AIS observations for this target.", "yellow")
 
     st.markdown("### Behavioral Signals")
-    if reports >= 3:
-        similar = [s for s in (snapshot.similar_tracks or []) if str(getattr(s, "mmsi", "")) == mmsi]
-        score = max((float(getattr(f, "score", 0) or 0) for f in findings), default=None)
+    embedding = getattr(snapshot, "embeddings", None)
+    if reports >= 3 and embedding is not None and mmsi in embedding.mmsis:
+        idx = embedding.mmsis.index(mmsi)
+        cluster = int(embedding.clusters[idx])
+        behavior_score = float(embedding.anomaly_scores[idx])
         metric_strip({
-            "BEHAVIOR SCORE": f"{score:.2f}" if score is not None else "NOT SCORED",
-            "CLUSTER": str(getattr(similar[0], "cluster", "NOT AVAILABLE")) if similar else "NOT AVAILABLE",
-            "PATTERN": str(getattr(similar[0], "region", "NOT AVAILABLE")) if similar else "NOT AVAILABLE",
+            "BEHAVIOR SCORE": f"{behavior_score:.2f}",
+            "CLUSTER": str(cluster),
+            "MODEL": "PCA + KMEANS",
         })
+        st.markdown("<div class='small-note' style='margin-top:.4rem'>Behavior score is a session-relative ranking signal, not a probability or calibrated confidence.</div>", unsafe_allow_html=True)
     else:
-        notice("INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least 3 AIS observations.", "yellow")
+        notice("INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least 3 independent real AIS trajectories.", "yellow")
 
     st.markdown("### Anomaly Assessment")
     if findings:
@@ -131,8 +133,6 @@ def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True)
     else:
         notice("No behavioral anomaly is currently associated with this target in the observed session.", "green")
 
-    # Keep image enrichment out of the critical selection path. It is available
-    # on demand and cached in session state once resolved.
     photo_key = f"vessel_photo:{mmsi}"
     photo = st.session_state.get(photo_key)
     if photo:
