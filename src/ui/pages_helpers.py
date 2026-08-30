@@ -22,6 +22,11 @@ from src.trajectory.features import (
     enrich_track,
     track_to_frame,
 )
+from src.ui.tactical_map import (
+    TACTICAL_MAP_STYLE, TACTICAL_TOOLTIP_HTML, TACTICAL_TOOLTIP_STYLE,
+    anomaly_mmsi_sets, build_track_segments, density_points_from_observations,
+    enrich_tactical_rows, legend_markdown, operational_strip,
+)
 from src.ui.presentation import (
     empty_state,
     frame_for_table,
@@ -409,505 +414,137 @@ def _render_vessel_map(
         )
         return
 
-    # ------------------------------------------------------------------
-    # CURRENT VESSEL COLORS + TOOLTIP-SAFE FIELDS
-    # ------------------------------------------------------------------
 
-    for row in rows:
-        row["color"] = (
-            [53, 194, 201, 210]
-            if not row.get("stale", False)
-            else [121, 147, 155, 180]
-        )
-
-        row["tooltip_name"] = (
-            str(row.get("name") or "UNKNOWN VESSEL")
-        )
-
-        row["tooltip_mmsi"] = (
-            str(row.get("mmsi") or "UNKNOWN")
-        )
-
-        sog = row.get("sog_knots")
-        row["tooltip_sog"] = (
-            f"{float(sog):.1f}"
-            if sog is not None
-            else "—"
-        )
-
-        cog = row.get("cog_degrees")
-        row["tooltip_cog"] = (
-            f"{float(cog):.1f}"
-            if cog is not None
-            else "—"
-        )
-
-        heading = row.get("heading_degrees")
-        row["tooltip_heading"] = (
-            f"{float(heading):.0f}"
-            if heading is not None
-            else "—"
-        )
-
-        row["tooltip_status"] = (
-            "STALE"
-            if row.get("stale", False)
-            else "ACTIVE"
-        )
-
-        row["tooltip_last_update"] = _utc(
-            row.get("last_received")
-        )
-
+    selected_mmsi = st.session_state.get("selected_mmsi")
+    anomaly_mmsis, critical_mmsis = anomaly_mmsi_sets(snapshot.findings)
+    rows = enrich_tactical_rows(rows, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
     layers: list[pdk.Layer] = []
 
-    # ------------------------------------------------------------------
-    # TRAFFIC DENSITY
-    #
-    # Not pickable because these are aggregate observations rather than
-    # individual vessel targets. This prevents the vessel tooltip from
-    # being displayed over density points.
-    # ------------------------------------------------------------------
-
     if show_density:
-        density_rows = _build_density_rows(snapshot)
+        density_source = density_points_from_observations(list(snapshot.observations or []))
+        if density_source:
+            try:
+                layers.append(pdk.Layer("HeatmapLayer", data=density_source, get_position=["longitude","latitude"],
+                    opacity=0.25, radius_pixels=26, aggregation="SUM",
+                    color_range=[[7,17,22,0],[27,64,72,70],[53,194,201,110],[233,184,87,130]], pickable=False))
+            except Exception:
+                layers.append(pdk.Layer("ScatterplotLayer", data=density_source, get_position=["longitude","latitude"],
+                    get_fill_color=[53,194,201,30], get_radius=900, radius_min_pixels=2, radius_max_pixels=8, pickable=False))
 
-        if density_rows:
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=density_rows,
-                    get_position=[
-                        "longitude",
-                        "latitude",
-                    ],
-                    get_fill_color=[
-                        233,
-                        184,
-                        87,
-                        90,
-                    ],
-                    get_radius=900,
-                    radius_min_pixels=2,
-                    radius_max_pixels=18,
-                    pickable=False,
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # TRAFFIC HEXBIN
-    # ------------------------------------------------------------------
-
-    if show_hexbin:
-        hexbin_rows = _build_hexbin_rows(snapshot)
-
-        if hexbin_rows:
-            max_count = max(
-                row["count"]
-                for row in hexbin_rows
-            )
-
-            for row in hexbin_rows:
-                count = row["count"]
-
-                row["radius"] = min(
-                    4500.0,
-                    700.0
-                    + (
-                        float(count)
-                        / max(1, max_count)
-                    )
-                    * 3800.0,
-                )
-
-                row["alpha"] = min(
-                    220,
-                    70
-                    + int(
-                        150
-                        * (
-                            float(count)
-                            / max(1, max_count)
-                        )
-                    ),
-                )
-
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=hexbin_rows,
-                    get_position=[
-                        "longitude",
-                        "latitude",
-                    ],
-                    get_fill_color=[
-                        233,
-                        184,
-                        87,
-                        150,
-                    ],
-                    get_radius="radius",
-                    radius_min_pixels=4,
-                    radius_max_pixels=30,
-                    pickable=False,
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # CURRENT AIS TARGETS
-    # ------------------------------------------------------------------
-
-    layers.append(
-        pdk.Layer(
-            "ScatterplotLayer",
-            data=rows,
-            get_position=[
-                "longitude",
-                "latitude",
-            ],
-            get_fill_color="color",
-            get_radius=340,
-            radius_min_pixels=3,
-            radius_max_pixels=10,
-            pickable=True,
-        )
-    )
-
-    # ------------------------------------------------------------------
-    # BOUNDING BOX
-    # ------------------------------------------------------------------
-
-    (
-        min_lat,
-        min_lon,
-    ), (
-        max_lat,
-        max_lon,
-    ) = settings.bbox
-
-    bbox_path = [
-        [min_lon, min_lat],
-        [max_lon, min_lat],
-        [max_lon, max_lat],
-        [min_lon, max_lat],
-        [min_lon, min_lat],
-    ]
-
-    layers.append(
-        pdk.Layer(
-            "PathLayer",
-            data=[
-                {
-                    "path": bbox_path,
-                }
-            ],
-            get_path="path",
-            get_color=[
-                233,
-                184,
-                87,
-                180,
-            ],
-            get_width=2,
-            width_min_pixels=1,
-            pickable=False,
-        )
-    )
-
-    # ------------------------------------------------------------------
-    # HEADING VECTORS
-    # ------------------------------------------------------------------
-
-    heading_rows = [
-        row
-        for row in rows
-        if row.get("end_latitude") is not None
-        and row.get("end_longitude") is not None
-    ]
-
-    if show_heading and heading_rows:
-        layers.append(
-            pdk.Layer(
-                "LineLayer",
-                data=heading_rows,
-                get_source_position=[
-                    "longitude",
-                    "latitude",
-                ],
-                get_target_position=[
-                    "end_longitude",
-                    "end_latitude",
-                ],
-                get_color=[
-                    233,
-                    184,
-                    87,
-                    180,
-                ],
-                get_width=2,
-                width_min_pixels=1,
-                pickable=False,
-            )
-        )
-
-    # ------------------------------------------------------------------
-    # OBSERVED TRAILS
-    # ------------------------------------------------------------------
-
-    if show_trails:
-        paths = []
-
-        for mmsi, track in engine_tracks(snapshot):
-            if len(track) < 2:
-                continue
-
-            ordered = sorted(
-                track,
-                key=lambda item: item.received_at,
-            )
-
-            path = []
-
-            for observation in ordered:
-                if (
-                    observation.latitude is None
-                    or observation.longitude is None
-                ):
-                    continue
-
-                path.append(
-                    [
-                        float(observation.longitude),
-                        float(observation.latitude),
-                    ]
-                )
-
-            if len(path) >= 2:
-                paths.append(
-                    {
-                        "path": path,
-                        "mmsi": mmsi,
-                    }
-                )
-
-        if paths:
-            layers.append(
-                pdk.Layer(
-                    "PathLayer",
-                    data=paths,
-                    get_path="path",
-                    get_color=[
-                        53,
-                        194,
-                        201,
-                        90,
-                    ],
-                    width_min_pixels=1,
-                    get_width=1,
-                    pickable=False,
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # SPEED FIELD
-    #
-    # This is a derived visualization layer, not a vessel target.
-    # It therefore remains non-pickable and cannot trigger the vessel
-    # tooltip.
-    # ------------------------------------------------------------------
+    if show_hexbin and snapshot.observations:
+        hex_rows = [{"longitude": float(o.longitude), "latitude": float(o.latitude), "radius": 1200}
+                    for o in list(snapshot.observations)[:2000]]
+        if hex_rows:
+            layers.append(pdk.Layer("ScatterplotLayer", data=hex_rows, get_position=["longitude","latitude"],
+                get_fill_color=[233,184,87,55], get_radius="radius", radius_min_pixels=4, radius_max_pixels=28, pickable=False))
 
     if show_speed_field:
-        speed_rows = _build_speed_rows(rows)
-
+        speed_rows = [r for r in rows if r.get("sog_knots") is not None]
         if speed_rows:
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=speed_rows,
-                    get_position=[
-                        "longitude",
-                        "latitude",
-                    ],
-                    get_fill_color=[
-                        81,
-                        199,
-                        155,
-                        145,
-                    ],
-                    get_radius="radius",
-                    radius_min_pixels=3,
-                    radius_max_pixels=14,
-                    pickable=False,
-                )
-            )
+            layers.append(pdk.Layer("ScatterplotLayer", data=speed_rows, get_position=["longitude","latitude"],
+                get_fill_color=[121,147,155,40], get_radius=750, radius_min_pixels=3, radius_max_pixels=12, pickable=False))
 
-    # ------------------------------------------------------------------
-    # BEHAVIORAL FINDINGS
-    # ------------------------------------------------------------------
+    if show_anomaly_hotspots and snapshot.findings:
+        hot = [{"latitude": float(f.latitude), "longitude": float(f.longitude),
+                "radius": 900 + min(2000, float(f.score) * 1500)}
+               for f in snapshot.findings if f.latitude is not None and f.longitude is not None]
+        if hot:
+            layers.append(pdk.Layer("ScatterplotLayer", data=hot, get_position=["longitude","latitude"],
+                get_fill_color=[239,107,115,55], get_radius="radius", radius_min_pixels=5, radius_max_pixels=30, pickable=False))
 
-    if show_anomalies and snapshot.findings:
-        anomaly_rows = []
+    if show_trails:
+        by_mmsi: dict[str, list] = {}
+        for observation in list(snapshot.observations or []):
+            by_mmsi.setdefault(str(observation.mmsi), []).append(observation)
+        track_segments: list[dict] = []
+        for mmsi, track in by_mmsi.items():
+            if len(track) < 2: continue
+            is_selected = bool(selected_mmsi and mmsi == selected_mmsi)
+            segs = build_track_segments(track, selected=is_selected)
+            if selected_mmsi and not is_selected:
+                for seg in segs:
+                    color = list(seg["color"]); color[3] = max(22, int(color[3]*0.4)); seg["color"] = color
+            track_segments.extend(segs)
+        if track_segments:
+            layers.append(pdk.Layer("PathLayer", data=track_segments, get_path="path", get_color="color",
+                get_width="width", width_min_pixels=1, pickable=False))
 
-        for finding in snapshot.findings:
-            if (
-                finding.latitude is None
-                or finding.longitude is None
-            ):
-                continue
+    (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
+    layers.append(pdk.Layer("PathLayer", data=[{"path": [[min_lon,min_lat],[max_lon,min_lat],[max_lon,max_lat],[min_lon,max_lat],[min_lon,min_lat]]}],
+        get_path="path", get_color=[233,184,87,90], get_width=1, width_min_pixels=1, pickable=False))
 
-            anomaly_rows.append(
-                {
-                    "latitude": float(
-                        finding.latitude
-                    ),
-                    "longitude": float(
-                        finding.longitude
-                    ),
-                    "score": float(
-                        finding.score
-                    ),
-                    "mmsi": finding.mmsi,
-                    "category": finding.category,
-                }
-            )
+    if show_heading:
+        vector_rows = [r for r in rows if r.get("has_vector")]
+        if vector_rows:
+            layers.append(pdk.Layer("LineLayer", data=vector_rows, get_source_position=["longitude","latitude"],
+                get_target_position=["vector_end_lon","vector_end_lat"], get_color=[233,184,87,200],
+                get_width=2, width_min_pixels=1, pickable=False))
 
+    layers.append(pdk.Layer("ScatterplotLayer", data=rows, get_position=["longitude","latitude"],
+        get_fill_color="halo_color", get_radius="halo_radius", radius_min_pixels=8, radius_max_pixels=26, pickable=False))
+    layers.append(pdk.Layer("PolygonLayer", data=rows, get_polygon="polygon", get_fill_color="fill_color",
+        get_line_color=[7,17,22,220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
+    layers.append(pdk.Layer("ScatterplotLayer", data=rows, id="ais-targets", get_position=["longitude","latitude"],
+        get_fill_color=[255,255,255,1], get_radius="core_radius", radius_min_pixels=5, radius_max_pixels=14,
+        pickable=True, auto_highlight=True))
+
+    if selected_mmsi:
+        selected_rows = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
+        if selected_rows:
+            layers.append(pdk.Layer("ScatterplotLayer", data=selected_rows, get_position=["longitude","latitude"],
+                get_fill_color=[0,0,0,0], get_radius=780, radius_min_pixels=14, radius_max_pixels=24,
+                stroked=True, filled=False, get_line_color=[255,255,255,235], line_width_min_pixels=2, pickable=False))
+
+    if show_anomalies and anomaly_mmsis:
+        anomaly_rows = [r for r in rows if str(r.get("mmsi")) in anomaly_mmsis
+                        and (not selected_mmsi or str(r.get("mmsi")) != str(selected_mmsi))]
         if anomaly_rows:
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=anomaly_rows,
-                    get_position=[
-                        "longitude",
-                        "latitude",
-                    ],
-                    get_fill_color=[
-                        239,
-                        107,
-                        115,
-                        220,
-                    ],
-                    get_radius=560,
-                    radius_min_pixels=4,
-                    radius_max_pixels=12,
-                    pickable=False,
-                )
-            )
+            layers.append(pdk.Layer("ScatterplotLayer", data=anomaly_rows, get_position=["longitude","latitude"],
+                get_fill_color=[0,0,0,0], get_radius=620, radius_min_pixels=11, radius_max_pixels=20,
+                stroked=True, filled=False, get_line_color="ring_color", line_width_min_pixels=2, pickable=False))
 
-    # ------------------------------------------------------------------
-    # ANOMALY HOTSPOTS
-    # ------------------------------------------------------------------
+    if selected_mmsi:
+        focus = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
+        if focus:
+            center_lat, center_lon = float(focus[0]["latitude"]), float(focus[0]["longitude"])
+            zoom = float(st.session_state.get("tactical_map_zoom", 9.5))
+        else:
+            center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
+            center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
+            zoom = float(st.session_state.get("tactical_map_zoom", 7.5))
+    else:
+        center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
+        center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
+        zoom = float(st.session_state.get("tactical_map_zoom", 7.5))
 
-    if (
-        show_anomaly_hotspots
-        and snapshot.findings
-    ):
-        hotspot_rows = _build_anomaly_hotspots(
-            snapshot.findings
-        )
+    style = TACTICAL_MAP_STYLE if map_style in (None, "", "Dark Matter", "dark", "tactical") else MAP_STYLES.get(map_style, TACTICAL_MAP_STYLE)
+    by_mmsi_obs: dict[str, int] = {}
+    for observation in list(snapshot.observations or []):
+        by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
+    tracks_count = sum(1 for n in by_mmsi_obs.values() if n >= 2)
+    live_state = str(getattr(snapshot.status, "state", "DISCONNECTED") or "DISCONNECTED")
+    region = "CUSTOM"
+    try:
+        from src.config.regions import region_name_for_bbox
+        region = region_name_for_bbox(settings.bbox) or "CUSTOM"
+    except Exception:
+        pass
 
-        if hotspot_rows:
-            max_count = max(
-                row["count"]
-                for row in hotspot_rows
-            )
+    st.markdown(operational_strip(live_state=live_state, targets=len(rows), tracks=tracks_count,
+        anomalies=len(anomaly_mmsis), region=str(region).upper()), unsafe_allow_html=True)
+    st.markdown(legend_markdown(), unsafe_allow_html=True)
+    deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(
+        latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0),
+        layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
+    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map",
+                            selection_mode="single-object", on_select="rerun")
+    _apply_map_selection(event)
+    st.markdown(
+        f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;"
+        f"font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
+        f"<span>N ▲</span><span>LAT {center_lat:.4f} · LON {center_lon:.4f}</span>"
+        f"<span>TARGETS {len(rows)}</span></div>", unsafe_allow_html=True)
 
-            for row in hotspot_rows:
-                count = row["count"]
-
-                row["radius"] = min(
-                    5000.0,
-                    900.0
-                    + (
-                        float(count)
-                        / max(1, max_count)
-                    )
-                    * 4100.0,
-                )
-
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=hotspot_rows,
-                    get_position=[
-                        "longitude",
-                        "latitude",
-                    ],
-                    get_fill_color=[
-                        239,
-                        107,
-                        115,
-                        175,
-                    ],
-                    get_radius="radius",
-                    radius_min_pixels=5,
-                    radius_max_pixels=32,
-                    pickable=False,
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # MAP CENTER
-    # ------------------------------------------------------------------
-
-    center_lat = (
-        sum(
-            float(row["latitude"])
-            for row in rows
-        )
-        / len(rows)
-    )
-
-    center_lon = (
-        sum(
-            float(row["longitude"])
-            for row in rows
-        )
-        / len(rows)
-    )
-
-    # ------------------------------------------------------------------
-    # MAP STYLE
-    # ------------------------------------------------------------------
-
-    selected_map_style = MAP_STYLES.get(
-        map_style,
-        MAP_STYLES["Dark Matter"],
-    )
-
-    # ------------------------------------------------------------------
-    # DECK
-    # ------------------------------------------------------------------
-
-    deck = pdk.Deck(
-        map_style=selected_map_style,
-        initial_view_state=pdk.ViewState(
-            latitude=center_lat,
-            longitude=center_lon,
-            zoom=7.5,
-            pitch=0,
-        ),
-        layers=layers,
-        tooltip={
-            "html": (
-                "<b>{tooltip_name}</b>"
-                "<br/>MMSI {tooltip_mmsi}"
-                "<br/>SOG {tooltip_sog} kn"
-                "<br/>COG {tooltip_cog}°"
-                "<br/>Heading {tooltip_heading}°"
-                "<br/>Status {tooltip_status}"
-                "<br/>Last update {tooltip_last_update}"
-            ),
-            "style": {
-                "backgroundColor": "#0d1c24",
-                "color": "#d9e6e9",
-            },
-        },
-    )
-
-    st.pydeck_chart(
-        deck,
-        width="stretch",
-    )
 
 
 def _render_anomaly_map(
@@ -1224,6 +861,34 @@ def _plot_layout(
 # ----------------------------------------------------------------------
 # VESSEL SELECTION
 # ----------------------------------------------------------------------
+
+
+
+def _apply_map_selection(event) -> None:
+    try:
+        selection = event.selection if event is not None else None
+    except Exception:
+        return
+    if selection is None:
+        return
+    try:
+        objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
+    except Exception:
+        objects = getattr(selection, "objects", None)
+    if not objects or not isinstance(objects, dict):
+        return
+    layer_objects = objects.get("ais-targets") or objects.get("ais_targets")
+    if not layer_objects:
+        return
+    first = layer_objects[0] if isinstance(layer_objects, list) and layer_objects else None
+    if not isinstance(first, dict):
+        return
+    mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
+    if mmsi is None:
+        return
+    mmsi = str(mmsi).strip()
+    if mmsi.isdigit() and len(mmsi) == 9:
+        st.session_state.selected_mmsi = mmsi
 
 
 def _select_vessel(
