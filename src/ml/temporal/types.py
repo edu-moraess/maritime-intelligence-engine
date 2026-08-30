@@ -26,7 +26,7 @@ TEMPORAL_FEATURE_NAMES: tuple[str, ...] = (
 DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
-DEFAULT_NUM_LAYERS = 1
+DEFAULT_NUM_LAYERS = 3
 MAX_TIME_DELTA_SECONDS = 900.0
 
 DEFAULT_EPOCHS_MAX = 30
@@ -62,13 +62,9 @@ class TemporalSequence:
         if arr.ndim != 2:
             raise ValueError(f"sequence must be 2-D (T, F), got {arr.shape}")
         if arr.shape[0] != self.sequence_length:
-            raise ValueError(
-                f"sequence length {arr.shape[0]} != sequence_length {self.sequence_length}"
-            )
+            raise ValueError(f"sequence length {arr.shape[0]} != sequence_length {self.sequence_length}")
         if arr.shape[1] != len(self.feature_names):
-            raise ValueError(
-                f"feature dim {arr.shape[1]} != len(feature_names) {len(self.feature_names)}"
-            )
+            raise ValueError(f"feature dim {arr.shape[1]} != len(feature_names {self.feature_names})")
 
 
 @dataclass
@@ -80,7 +76,7 @@ class TemporalFitResult:
     n_points_min: int | None = None
     sequence_length: int = DEFAULT_SEQUENCE_LENGTH
     input_dim: int = DEFAULT_INPUT_DIM
-    method: str = "GRU Temporal Autoencoder"
+    method: str = "TCN Temporal Autoencoder"
     scores: list[TemporalScore] = field(default_factory=list)
     sequences: list[TemporalSequence] = field(default_factory=list)
     latent: np.ndarray | None = None
