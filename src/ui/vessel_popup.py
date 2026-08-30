@@ -7,7 +7,7 @@ from src.ui.presentation import metric_strip, notice, panel_title
 
 
 def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True):
-    """Render an AIS-derived target profile without network enrichment."""
+    """Render an AIS-derived target profile; visual enrichment is explicitly lazy-loaded."""
     panel_title("Vessel Intelligence", "selected target")
     if vessel is None:
         notice("Select a target on the tactical map or fleet view to inspect its operational profile.")
@@ -52,7 +52,24 @@ def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True)
     else:
         notice("No behavioral anomaly is currently associated with this target in the observed session.", "green")
 
+    # Keep image enrichment out of the critical selection path. It is available
+    # on demand and cached in session state once resolved.
+    photo_key = f"vessel_photo:{mmsi}"
+    photo = st.session_state.get(photo_key)
+    if photo:
+        st.image(photo.image_bytes, caption=f"Visual identification · {photo.license_name} · {photo.author}", use_container_width=True)
+    elif st.button("Load visual identification", key=f"load_photo:{mmsi}", use_container_width=True):
+        try:
+            from src.enrichment.vessel_photo import resolve_vessel_photo
+            with st.spinner("Resolving verified vessel image…"):
+                photo = resolve_vessel_photo(mmsi)
+            if photo:
+                st.session_state[photo_key] = photo
+                st.rerun()
+            else:
+                notice("No verified vessel image was found for this MMSI.", "yellow")
+        except Exception:
+            notice("Visual identification is temporarily unavailable. AIS intelligence remains available.", "yellow")
+
     if show_gemini_hook:
         st.session_state["quick_intel_mmsi"] = mmsi
-        st.session_state.pop("quick_intel_photo_bytes", None)
-        st.session_state.pop("quick_intel_photo_mime", None)
