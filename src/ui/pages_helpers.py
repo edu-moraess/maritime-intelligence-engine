@@ -23,9 +23,11 @@ from src.trajectory.features import (
     track_to_frame,
 )
 from src.ui.tactical_map import (
+    AIS_TARGETS_LAYER_ID,
     TACTICAL_MAP_STYLE, TACTICAL_TOOLTIP_HTML, TACTICAL_TOOLTIP_STYLE,
-    anomaly_mmsi_sets, build_track_segments, density_points_from_observations,
-    enrich_tactical_rows, legend_markdown, operational_strip,
+    anomaly_mmsi_sets, build_density_layer_spec, build_track_segments,
+    density_points_from_observations, enrich_tactical_rows, legend_markdown,
+    operational_strip,
 )
 from src.ui.presentation import (
     empty_state,
@@ -422,14 +424,23 @@ def _render_vessel_map(
 
     if show_density:
         density_source = density_points_from_observations(list(snapshot.observations or []))
-        if density_source:
+        density_spec = build_density_layer_spec(density_source) if density_source else None
+        if density_spec is not None:
             try:
-                layers.append(pdk.Layer("HeatmapLayer", data=density_source, get_position=["longitude","latitude"],
-                    opacity=0.25, radius_pixels=26, aggregation="SUM",
-                    color_range=[[7,17,22,0],[27,64,72,70],[53,194,201,110],[233,184,87,130]], pickable=False))
+                # Optional visual only — never uses deck.gl KDE heatmap (WebGL shader failures).
+                layers.append(pdk.Layer(
+                    density_spec["type"],
+                    data=density_spec["data"],
+                    get_position=density_spec["get_position"],
+                    get_fill_color=density_spec["get_fill_color"],
+                    get_radius=density_spec["get_radius"],
+                    radius_min_pixels=density_spec["radius_min_pixels"],
+                    radius_max_pixels=density_spec["radius_max_pixels"],
+                    pickable=False,
+                ))
             except Exception:
-                layers.append(pdk.Layer("ScatterplotLayer", data=density_source, get_position=["longitude","latitude"],
-                    get_fill_color=[53,194,201,30], get_radius=900, radius_min_pixels=2, radius_max_pixels=8, pickable=False))
+                # Density failure must not break map or selection.
+                pass
 
     if show_hexbin and snapshot.observations:
         hex_rows = [{"longitude": float(o.longitude), "latitude": float(o.latitude), "radius": 1200}
@@ -484,7 +495,7 @@ def _render_vessel_map(
         get_fill_color="halo_color", get_radius="halo_radius", radius_min_pixels=8, radius_max_pixels=26, pickable=False))
     layers.append(pdk.Layer("PolygonLayer", data=rows, get_polygon="polygon", get_fill_color="fill_color",
         get_line_color=[7,17,22,220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
-    layers.append(pdk.Layer("ScatterplotLayer", data=rows, id="ais-targets", get_position=["longitude","latitude"],
+    layers.append(pdk.Layer("ScatterplotLayer", data=rows, id=AIS_TARGETS_LAYER_ID, get_position=["longitude","latitude"],
         get_fill_color=[255,255,255,1], get_radius="core_radius", radius_min_pixels=5, radius_max_pixels=14,
         pickable=True, auto_highlight=True))
 
@@ -877,7 +888,7 @@ def _apply_map_selection(event) -> None:
         objects = getattr(selection, "objects", None)
     if not objects or not isinstance(objects, dict):
         return
-    layer_objects = objects.get("ais-targets") or objects.get("ais_targets")
+    layer_objects = objects.get(AIS_TARGETS_LAYER_ID) or objects.get("ais_targets")
     if not layer_objects:
         return
     first = layer_objects[0] if isinstance(layer_objects, list) and layer_objects else None
