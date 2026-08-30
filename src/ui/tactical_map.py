@@ -85,8 +85,8 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["course_degrees"] = course
         scale = SHIP_SCALE_DEG * (1.35 if status=="SELECTED" else 1.2 if status=="CRITICAL" else 1.1 if status=="ANOMALY" else 1.0)
         row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale)
-        row["halo_radius"] = 220 if status=="SELECTED" else 140
-        row["core_radius"] = 115 if status=="SELECTED" else 85
+        row["halo_radius"] = 180 if status=="SELECTED" else 110
+        row["core_radius"] = 55 if status=="SELECTED" else 40
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
         try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
@@ -133,6 +133,7 @@ def density_points_from_observations(observations, *, max_points=2500):
     return points
 
 AIS_TARGETS_LAYER_ID = "ais-targets"
+VESSEL_HIT_RADIUS = 115
 DENSITY_LAYER_TYPE = "ScatterplotLayer"
 DENSITY_FILL_COLOR = [53, 194, 201, 30]
 DENSITY_RADIUS = 900
