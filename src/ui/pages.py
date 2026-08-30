@@ -7,12 +7,10 @@ from src.ui.pages_helpers import _vessel_label  # noqa: F401
 
 from src.ui.pages_a import (  # noqa: F401
     render_behavior,
-    render_overview,
     render_trajectory_analysis,
     render_vessel_intelligence,
     render_vessels,
 )
-
 from src.ui.pages_b import (  # noqa: F401
     render_anomalies,
     render_data_quality,
@@ -20,6 +18,7 @@ from src.ui.pages_b import (  # noqa: F401
     render_system,
     render_traffic,
 )
+from src.ui.pages_overview import render_overview
 
 __all__ = [
     "_vessel_label",
@@ -32,4 +31,5 @@ __all__ = [
     "render_trajectory_analysis",
     "render_vessel_intelligence",
     "render_vessels",
+    "render_behavior",
 ]
