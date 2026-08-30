@@ -109,9 +109,6 @@ def render_anomalies(
                 "Location": f"{f.latitude:.4f}, {f.longitude:.4f}",
                 "Score": f"{f.score:.2f}",
                 "Category": f.category,
-                # Confidence may legitimately be None for findings whose
-                # score is a session-relative anomaly ranking rather than
-                # a calibrated confidence value.
                 "Confidence": (
                     f"{f.confidence:.2f}"
                     if f.confidence is not None
@@ -370,7 +367,7 @@ def render_system(
         st.markdown(
             "`AISStream WebSocket`  →  `Validation`  →  "
             "`Trajectory features`  →  `Runtime PCA / IsolationForest`  →  "
-            "`Deep Temporal (GRU-AE)`  →  `Streamlit`"
+            "`Deep Temporal (TCN-AE)`  →  `Streamlit`"
         )
 
         st.write("")
@@ -402,12 +399,12 @@ def render_system(
         )
 
     st.write("")
-    panel_title("Deep Temporal", "GRU autoencoder · real AIS only")
+    panel_title("Deep Temporal", "TCN autoencoder · real AIS only")
     temporal = snapshot.temporal
     if temporal is None:
         metric_strip({
             "STATUS": "WAITING",
-            "MODEL": "GRU Temporal AE",
+            "MODEL": "TCN Temporal AE",
             "TRACKS": "—",
             "TRAINING": "—",
             "LOSS": "—",
