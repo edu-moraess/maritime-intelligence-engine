@@ -6,10 +6,6 @@ from math import cos, radians, sin
 
 import pydeck as pdk
 
-# Streamlit requires every layer in a selectable PyDeck chart to have a stable
-# id. The operational map has several optional layers, so assign deterministic
-# ids to layers that don't explicitly provide one. This avoids React/DOM churn
-# when the map reruns after AIS updates or a vessel selection.
 _ORIGINAL_PYDECK_LAYER = pdk.Layer
 
 
@@ -39,8 +35,9 @@ def _layer_with_stable_id(*args, **kwargs):
     return _ORIGINAL_PYDECK_LAYER(*args, **kwargs)
 
 
-# pages_helpers.py constructs layers through pdk.Layer. Keep the existing
-# renderer unchanged while making all selectable-chart layers stateful.
+# The operational map is selectable. Every layer therefore receives a stable
+# id, including optional layers, so Streamlit can reconcile the chart safely
+# across reruns without React/DOM churn.
 pdk.Layer = _layer_with_stable_id
 
 STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":[239,107,115,235],"CRITICAL":[220,50,60,245],"SELECTED":[255,255,255,250],"STALE":[121,147,155,180]}
@@ -115,7 +112,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
     enriched = []
     for raw in rows:
         row = dict(raw)
-        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsi)
+        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
         row["tactical_status"] = status
         row["fill_color"] = list(STATUS_FILL.get(status, STATUS_FILL["NORMAL"]))
         row["halo_color"] = list(STATUS_HALO.get(status, STATUS_HALO["NORMAL"]))
