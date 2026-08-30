@@ -1,19 +1,55 @@
-"""Tests for Vessel Quick Intelligence popup helpers."""
+"""Focused tests for Vessel Intelligence popup helpers."""
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
-from src.ui.vessel_popup import render_vessel_quick_intelligence
+
+from src.ui.vessel_popup import _heading_delta, _safe_float, _signal_age, render_vessel_quick_intelligence
+
+
+def test_safe_float_handles_valid_and_invalid_values():
+    assert _safe_float("12.5") == 12.5
+    assert _safe_float(None) is None
+    assert _safe_float("not-a-number") is None
+
+
+def test_heading_delta_uses_shortest_circular_distance():
+    assert _heading_delta([350, 10]) == 20
+    assert _heading_delta([10, 40, 100]) == 60
+    assert _heading_delta([90]) is None
+
+
+def test_signal_age_is_non_negative_and_timezone_aware():
+    recent = datetime.now(timezone.utc) - timedelta(seconds=5)
+    age = _signal_age(recent)
+    assert age is not None
+    assert age >= 0
+    assert age < 10
+    assert _signal_age(None) is None
+
+
 def test_render_none_vessel_does_not_crash():
-    render_vessel_quick_intelligence(None, SimpleNamespace(findings=[], vessels=[]))
-def test_render_with_vessel_no_photo():
-    vessel=SimpleNamespace(mmsi="235102528",vessel_name="BF VOLUNTEER",sog_knots=0.1,cog_degrees=272.6,heading_degrees=259.0,latitude=51.32,longitude=1.42,imo=None)
-    with patch("src.ui.vessel_popup._cached_photo", return_value=None):
-        render_vessel_quick_intelligence(vessel, SimpleNamespace(findings=[SimpleNamespace(mmsi="235102528",category="loitering",score=0.4)], vessels=[vessel]))
-def test_render_with_photo_sets_session_keys():
-    import streamlit as st
-    from src.enrichment.vessel_photo import VesselPhoto
-    vessel=SimpleNamespace(mmsi="235102528",vessel_name="BF VOLUNTEER",sog_knots=1.0,cog_degrees=10.0,heading_degrees=10.0,latitude=51.0,longitude=1.0,imo=None)
-    photo=VesselPhoto(image_bytes=b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82',mime_type="image/jpeg",source_url="https://commons.example/File:X.jpg",commons_title="File:X.jpg",license_name="CC BY-SA 4.0",author="A",qid="Q1",verified=True)
-    with patch("src.ui.vessel_popup._cached_photo", return_value=photo):
-        render_vessel_quick_intelligence(vessel, SimpleNamespace(findings=[], vessels=[vessel]))
-    assert st.session_state.get("quick_intel_mmsi")=="235102528"
+    snapshot = SimpleNamespace(observations=[], findings=[], embeddings=None)
+    render_vessel_quick_intelligence(None, snapshot)
+
+
+def test_render_vessel_with_insufficient_observations_does_not_require_external_enrichment():
+    vessel = SimpleNamespace(
+        mmsi="235102528",
+        vessel_name="BF VOLUNTEER",
+        sog_knots=0.1,
+        cog_degrees=272.6,
+        heading_degrees=259.0,
+        latitude=51.32,
+        longitude=1.42,
+        navigational_status=None,
+        last_received=datetime.now(timezone.utc),
+    )
+    observation = SimpleNamespace(
+        mmsi="235102528",
+        sog_knots=0.1,
+        heading_degrees=259.0,
+        received_at=datetime.now(timezone.utc),
+    )
+    snapshot = SimpleNamespace(observations=[observation], findings=[], embeddings=None)
+    render_vessel_quick_intelligence(vessel, snapshot, show_gemini_hook=False)
