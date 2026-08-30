@@ -12,6 +12,7 @@ from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
+from src.historical.reader import load_recent_observations
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
@@ -101,15 +102,35 @@ class MaritimeIntelligenceEngine:
         self.last_collection_seconds: float = 0.0
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
+        self._historical_loaded = False
         self.historical_writer = create_historical_writer(
             settings.database_url,
             settings.historical_persistence_enabled,
         )
         self.historical_result: HistoricalWriteResult | None = None
+        self._restore_historical_context()
 
     @property
     def region(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return self.settings.bbox
+
+    def _restore_historical_context(self) -> int:
+        """Hydrate the live store from persisted real AIS history once per engine."""
+        if self._historical_loaded:
+            return 0
+        self._historical_loaded = True
+        if not self._historical_persistence_enabled or not self._historical_database_url:
+            return 0
+        restored = load_recent_observations(
+            self._historical_database_url,
+            self.settings.bbox,
+            limit=self.settings.max_messages,
+        )
+        if not restored:
+            return 0
+        self.store.extend(restored)
+        self._recompute()
+        return len(restored)
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window; returns only actual observations received."""
@@ -150,6 +171,7 @@ class MaritimeIntelligenceEngine:
         self.historical_writer.close()
         self._historical_database_url = database_url
         self._historical_persistence_enabled = persistence_enabled
+        self._historical_loaded = False
         self.historical_writer = create_historical_writer(database_url, persistence_enabled)
         self.historical_result = None
         self.settings = replace(
@@ -157,13 +179,12 @@ class MaritimeIntelligenceEngine:
             database_url=database_url,
             historical_persistence_enabled=persistence_enabled,
         )
+        self._restore_historical_context()
 
     def _recompute(self) -> None:
         tracks = self.store.tracks()
-        # Classical path — always runs independently of temporal.
         self.embeddings = self.embedding_adapter.fit(tracks)
         self.findings = detect_anomalies(tracks, self.embeddings)
-        # Deep Temporal path — isolated; failures never clear classical state.
         fingerprint = _track_fingerprint(tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             return
@@ -219,6 +240,7 @@ class MaritimeIntelligenceEngine:
         self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
         self.historical_result = None
+        self._historical_loaded = True
         if self.settings.config_error or not self.settings.aisstream_api_key:
             self.provider.connect()
 
