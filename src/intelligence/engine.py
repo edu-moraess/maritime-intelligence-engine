@@ -211,10 +211,34 @@ class MaritimeIntelligenceEngine:
             temporal_status=temporal_status,
         )
 
+    def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
+        """Expose live and restored historical targets through one vessel view."""
+        live = {vessel.mmsi: vessel for vessel in self.provider.fetch_vessels()}
+        now = datetime.now(timezone.utc)
+        for mmsi, track in tracks.items():
+            if mmsi in live or not track:
+                continue
+            latest = max(track, key=lambda observation: observation.received_at)
+            live[mmsi] = VesselSnapshot(
+                mmsi=mmsi,
+                latitude=latest.latitude,
+                longitude=latest.longitude,
+                last_received=latest.received_at,
+                sog_knots=latest.sog_knots,
+                cog_degrees=latest.cog_degrees,
+                heading_degrees=latest.heading_degrees,
+                vessel_name=latest.vessel_name,
+                message_count=len(track),
+                stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
+                ais_timestamp_second=latest.ais_timestamp_second,
+                observed_at=latest.observed_at,
+            )
+        return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)
+
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
-        vessels = self.provider.fetch_vessels()
         tracks = self.store.tracks()
+        vessels = self._merged_vessels(tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         return EngineSnapshot(
             observations=observations,
