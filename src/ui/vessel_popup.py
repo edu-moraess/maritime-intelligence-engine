@@ -1,146 +1,355 @@
-"""Vessel operational intelligence card."""
+"""Vessel operational intelligence card powered by Vessel Intelligence Profile v1."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from math import fabs
+from typing import Any
 
 import streamlit as st
 
+from src.intelligence.profile import (
+    VesselIntelligenceProfile,
+    build_vessel_intelligence_profile,
+)
 from src.ui.presentation import metric_strip, notice, panel_title
 
 
-def _safe_float(value):
+def _optional_historical_profile(mmsi: str, engine: Any | None) -> Any | None:
+    """Load persisted historical profile when Etapa 2 + persistence are available.
+
+    Returns None when history is unavailable. Never fabricates historical data.
+    Compatible with main (stub build_vessel_profile) and Etapa 2
+    (load_vessel_observations + session_count).
+    """
+    if engine is None:
+        return None
+    settings = getattr(engine, "settings", None)
+    if settings is None:
+        return None
+    database_url = getattr(settings, "database_url", None)
+    enabled = getattr(settings, "historical_persistence_enabled", False)
+    if not database_url or not enabled:
+        return None
     try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _heading_delta(values):
-    clean = [v for v in (_safe_float(x) for x in values) if v is not None]
-    if len(clean) < 2:
-        return None
-    return max(min(fabs(b - a), 360.0 - fabs(b - a)) for a, b in zip(clean, clean[1:]))
-
-
-def _signal_age(received_at):
-    if received_at is None:
+        from src.historical.profile import build_vessel_profile
+        from src.historical.reader import load_vessel_observations  # type: ignore
+    except ImportError:
+        try:
+            from src.historical.profile import build_vessel_profile
+        except ImportError:
+            return None
         return None
     try:
-        stamp = received_at if received_at.tzinfo else received_at.replace(tzinfo=timezone.utc)
-        return max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
-    except (TypeError, ValueError):
+        observations, session_count = load_vessel_observations(database_url, mmsi)
+    except TypeError:
         return None
+    except Exception:
+        return None
+    try:
+        return build_vessel_profile(
+            mmsi,
+            observations,
+            session_count=session_count,
+        )
+    except TypeError:
+        return build_vessel_profile(mmsi, observations)
 
 
-def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True):
-    """Render an AIS-derived target profile; visual enrichment is explicitly lazy-loaded."""
+def build_profile_for_ui(
+    vessel: Any,
+    snapshot: Any,
+    *,
+    engine: Any | None = None,
+) -> VesselIntelligenceProfile:
+    """Assemble a VesselIntelligenceProfile from live snapshot + optional history."""
+    mmsi = str(vessel.mmsi)
+    observations = [
+        o
+        for o in (getattr(snapshot, "observations", None) or [])
+        if str(getattr(o, "mmsi", "")) == mmsi
+    ]
+    findings = [
+        f
+        for f in (getattr(snapshot, "findings", None) or [])
+        if str(getattr(f, "mmsi", "")) == mmsi
+    ]
+    historical = _optional_historical_profile(mmsi, engine)
+    stale = 180
+    if engine is not None and getattr(engine, "settings", None) is not None:
+        stale = int(getattr(engine.settings, "stale_after_seconds", 180) or 180)
+    return build_vessel_intelligence_profile(
+        mmsi,
+        observations,
+        vessel=vessel,
+        session_findings=findings,
+        historical_profile=historical,
+        historical_findings=(),
+        stale_after_seconds=float(stale),
+    )
+
+
+def render_vessel_quick_intelligence(
+    vessel,
+    snapshot,
+    *,
+    show_gemini_hook: bool = True,
+    engine=None,
+):
+    """Render an AIS-derived target profile; LLM remains optional and external."""
     panel_title("Vessel Intelligence", "selected target")
     if vessel is None:
-        notice("Select a target on the tactical map or fleet view to inspect its operational profile.")
+        notice(
+            "Select a target on the tactical map or fleet view to inspect "
+            "its operational profile."
+        )
         return
 
-    mmsi = str(vessel.mmsi)
-    name = str(getattr(vessel, "vessel_name", None) or getattr(vessel, "name", None) or "UNKNOWN VESSEL")
-    observations = [o for o in (snapshot.observations or []) if str(getattr(o, "mmsi", "")) == mmsi]
-    findings = [f for f in (snapshot.findings or []) if str(getattr(f, "mmsi", "")) == mmsi]
-    reports = len(observations)
+    profile = build_profile_for_ui(vessel, snapshot, engine=engine)
+    identity = profile.identity
+    telemetry = profile.telemetry
+    historical = profile.historical
+    movement = profile.movement
+    anomalies = profile.anomalies
+    confidence = profile.confidence
 
+    name = identity.vessel_name or "UNKNOWN VESSEL"
     st.markdown(
-        f"<div style='margin:.1rem 0 .7rem'><div style='font-family:Inter,sans-serif;font-size:1rem;font-weight:650;color:#d9e6e9'>{name}</div>"
-        f"<div style='font-family:IBM Plex Mono,monospace;font-size:.66rem;color:#79939b;letter-spacing:.06em;margin-top:.15rem'>MMSI {mmsi}</div></div>",
+        f"<div style='margin:.1rem 0 .7rem'>"
+        f"<div style='font-family:Inter,sans-serif;font-size:1rem;font-weight:650;"
+        f"color:#d9e6e9'>{name}</div>"
+        f"<div style='font-family:IBM Plex Mono,monospace;font-size:.66rem;"
+        f"color:#79939b;letter-spacing:.06em;margin-top:.15rem'>"
+        f"MMSI {identity.mmsi}</div></div>",
         unsafe_allow_html=True,
     )
 
-    sog = _safe_float(getattr(vessel, "sog_knots", None))
-    cog = _safe_float(getattr(vessel, "cog_degrees", None))
-    hdg = _safe_float(getattr(vessel, "heading_degrees", None))
-    lat = _safe_float(getattr(vessel, "latitude", None))
-    lon = _safe_float(getattr(vessel, "longitude", None))
-    nav_status = getattr(vessel, "navigational_status", None)
+    st.markdown("### Identity")
+    identity_metrics = {
+        "MMSI": identity.mmsi,
+        "NAME": identity.vessel_name or "—",
+        "IMO": identity.imo or "—",
+        "CALLSIGN": identity.callsign or "—",
+        "NAV STATUS": (
+            str(identity.navigational_status)
+            if identity.navigational_status is not None
+            else "—"
+        ),
+    }
+    metric_strip(identity_metrics)
+    st.caption(f"Provenance · {identity.provenance}")
 
-    speeds = [_safe_float(getattr(o, "sog_knots", None)) for o in observations]
-    speeds = [x for x in speeds if x is not None]
-    avg_sog = sum(speeds) / len(speeds) if speeds else None
-    max_sog = max(speeds) if speeds else None
-    heading_delta = _heading_delta([getattr(o, "heading_degrees", None) for o in observations])
-    latest_received = max((getattr(o, "received_at", None) for o in observations), default=getattr(vessel, "last_received", None))
-    signal_age = _signal_age(latest_received)
-
-    metric_strip({
-        "SOG": f"{sog:.1f} kn" if sog is not None else "—",
-        "COG": f"{cog:.0f}°" if cog is not None else "—",
-        "HDG": f"{hdg:.0f}°" if hdg is not None else "—",
-        "REPORTS": reports,
-    })
-
-    if lat is not None and lon is not None:
-        st.markdown(
-            f"<div class='small-note' style='margin:.15rem 0 .65rem'>POSITION · <span class='mono'>{lat:.5f}, {lon:.5f}</span></div>",
-            unsafe_allow_html=True,
+    st.markdown("### Current Telemetry")
+    st.caption("LIVE · latest valid session observation")
+    if not telemetry.available:
+        notice("No valid session observation for this MMSI.", "yellow")
+    else:
+        metric_strip(
+            {
+                "SOG": (
+                    f"{telemetry.sog_knots:.1f} kn"
+                    if telemetry.sog_knots is not None
+                    else "—"
+                ),
+                "COG": (
+                    f"{telemetry.cog_degrees:.0f}°"
+                    if telemetry.cog_degrees is not None
+                    else "—"
+                ),
+                "HDG": (
+                    f"{telemetry.heading_degrees:.0f}°"
+                    if telemetry.heading_degrees is not None
+                    else "—"
+                ),
+                "REPORTS": telemetry.observation_count,
+            }
+        )
+        if telemetry.latitude is not None and telemetry.longitude is not None:
+            st.markdown(
+                f"<div class='small-note' style='margin:.15rem 0 .65rem'>"
+                f"POSITION · <span class='mono'>"
+                f"{telemetry.latitude:.5f}, {telemetry.longitude:.5f}"
+                f"</span></div>",
+                unsafe_allow_html=True,
+            )
+        metric_strip(
+            {
+                "NAV STATUS": (
+                    str(telemetry.navigational_status)
+                    if telemetry.navigational_status is not None
+                    else "—"
+                ),
+                "SIGNAL AGE": (
+                    f"{telemetry.signal_age_seconds:.0f} s"
+                    if telemetry.signal_age_seconds is not None
+                    else "—"
+                ),
+            }
         )
 
-    st.markdown("### Operational Status")
-    metric_strip({
-        "NAV STATUS": str(nav_status) if nav_status is not None else "UNKNOWN",
-        "SIGNAL AGE": f"{signal_age:.0f} s" if signal_age is not None else "—",
-        "DATA CONFIDENCE": "HIGH" if reports >= 3 else "LIMITED" if reports >= 2 else "LOW",
-        "OBSERVATION COVERAGE": f"{reports} reports",
-    })
-
-    st.markdown("### Movement Profile")
-    if reports >= 2:
-        movement_state = "MOVING" if (avg_sog or 0) > 0.5 else "STOPPED"
-        metric_strip({
-            "STATE": movement_state,
-            "AVG SOG": f"{avg_sog:.1f} kn" if avg_sog is not None else "—",
-            "MAX SOG": f"{max_sog:.1f} kn" if max_sog is not None else "—",
-            "HEADING VARIATION": f"{heading_delta:.0f}°" if heading_delta is not None else "—",
-        })
-        st.markdown("<div class='small-note' style='margin-top:.4rem'>Trajectory metrics are derived only from observations captured in the current AIS session.</div>", unsafe_allow_html=True)
+    st.markdown("### Historical Profile")
+    st.caption("HISTORICAL · persisted real AIS only")
+    if not historical.available or historical.status == "N/A":
+        notice("N/A — no persisted historical profile for this MMSI.", "gray")
     else:
-        notice("INSUFFICIENT OBSERVATIONS · movement profile requires at least 2 AIS observations for this target.", "yellow")
+        metric_strip(
+            {
+                "STATUS": historical.status,
+                "OBSERVATIONS": historical.observation_count,
+                "SESSIONS": historical.session_count,
+            }
+        )
+        metric_strip(
+            {
+                "FIRST SEEN": (
+                    historical.first_seen_at.isoformat()
+                    if historical.first_seen_at
+                    else "—"
+                ),
+                "LAST SEEN": (
+                    historical.last_seen_at.isoformat()
+                    if historical.last_seen_at
+                    else "—"
+                ),
+                "DISTANCE": (
+                    f"{historical.distance_km:.2f} km"
+                    if historical.distance_km is not None
+                    else "—"
+                ),
+                "AVG SOG": (
+                    f"{historical.average_sog_knots:.1f} kn"
+                    if historical.average_sog_knots is not None
+                    else "—"
+                ),
+                "MAX SOG": (
+                    f"{historical.max_sog_knots:.1f} kn"
+                    if historical.max_sog_knots is not None
+                    else "—"
+                ),
+            }
+        )
+
+    st.markdown("### Movement")
+    st.caption("DERIVED · current session positions only")
+    if movement.status == "INSUFFICIENT_DATA":
+        notice(
+            "MOVEMENT = INSUFFICIENT_DATA · at least 2 valid session "
+            "positions are required.",
+            "yellow",
+        )
+    else:
+        metric_strip(
+            {
+                "DISTANCE": (
+                    f"{movement.distance_km:.2f} km"
+                    if movement.distance_km is not None
+                    else "—"
+                ),
+                "AVG SOG": (
+                    f"{movement.average_sog_knots:.1f} kn"
+                    if movement.average_sog_knots is not None
+                    else "—"
+                ),
+                "MAX SOG": (
+                    f"{movement.max_sog_knots:.1f} kn"
+                    if movement.max_sog_knots is not None
+                    else "—"
+                ),
+                "HDG Δ": (
+                    f"{movement.heading_change_degrees:.0f}°"
+                    if movement.heading_change_degrees is not None
+                    else "—"
+                ),
+                "SOG Δ": (
+                    f"{movement.speed_change_knots:.1f} kn"
+                    if movement.speed_change_knots is not None
+                    else "—"
+                ),
+            }
+        )
 
     st.markdown("### Behavioral Signals")
     embedding = getattr(snapshot, "embeddings", None)
-    if reports >= 3 and embedding is not None and mmsi in embedding.mmsis:
+    mmsi = identity.mmsi
+    reports = profile.session_observation_count
+    if reports >= 3 and embedding is not None and mmsi in getattr(embedding, "mmsis", []):
         idx = embedding.mmsis.index(mmsi)
         cluster = int(embedding.clusters[idx])
         behavior_score = float(embedding.anomaly_scores[idx])
-        metric_strip({
-            "BEHAVIOR SCORE": f"{behavior_score:.2f}",
-            "CLUSTER": str(cluster),
-            "MODEL": "PCA + KMEANS",
-        })
-        st.markdown("<div class='small-note' style='margin-top:.4rem'>Behavior score is a session-relative ranking signal, not a probability or calibrated confidence.</div>", unsafe_allow_html=True)
+        metric_strip(
+            {
+                "BEHAVIOR SCORE": f"{behavior_score:.2f}",
+                "CLUSTER": str(cluster),
+                "MODEL": "PCA + KMEANS",
+            }
+        )
+        st.caption(
+            "Session-relative ranking signal only — not a calibrated probability."
+        )
     else:
-        notice("INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least 3 independent real AIS trajectories.", "yellow")
+        notice(
+            "INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least "
+            "3 independent real AIS trajectories in-session.",
+            "yellow",
+        )
 
-    st.markdown("### Anomaly Assessment")
-    if findings:
-        top = max(findings, key=lambda f: float(getattr(f, "score", 0) or 0))
-        category = str(getattr(top, "category", "behavioral signal"))
+    st.markdown("### Anomalies")
+    st.markdown("**Current session**")
+    if anomalies.current_session:
+        top = max(
+            anomalies.current_session,
+            key=lambda f: float(getattr(f, "score", 0) or 0),
+        )
         score = float(getattr(top, "score", 0) or 0)
-        confidence = _safe_float(getattr(top, "confidence", None))
-        explanation = str(getattr(top, "explanation", "Observed movement deviates from the session baseline."))
         severity = "HIGH" if score >= 0.78 else "MEDIUM" if score >= 0.5 else "LOW"
-        metric_strip({
-            "SEVERITY": severity,
-            "SCORE": f"{score:.2f}",
-            "CONFIDENCE": f"{confidence:.2f}" if confidence is not None else "NOT PROVIDED",
-        })
-        notice(f"{category.upper()} · {explanation}", "red")
+        conf = getattr(top, "confidence", None)
+        metric_strip(
+            {
+                "SEVERITY": severity,
+                "SCORE": f"{score:.2f}",
+                "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT PROVIDED",
+                "CATEGORY": str(getattr(top, "category", "—")),
+            }
+        )
+        notice(str(getattr(top, "explanation", "")), "red")
     else:
-        notice("No behavioral anomaly is currently associated with this target in the observed session.", "green")
+        notice("No current-session anomaly associated with this MMSI.", "green")
+
+    st.markdown("**Historical**")
+    if anomalies.historical:
+        top_h = max(
+            anomalies.historical,
+            key=lambda f: float(getattr(f, "score", 0) or 0),
+        )
+        notice(
+            f"{getattr(top_h, 'category', 'anomaly').upper()} · "
+            f"{getattr(top_h, 'explanation', '')}",
+            "yellow",
+        )
+    else:
+        notice("N/A — no historical anomaly records for this MMSI.", "gray")
+
+    st.markdown("### Confidence")
+    st.caption("DERIVED · deterministic rules (no ML)")
+    metric_strip({"LEVEL": confidence.level})
+    for reason in confidence.reasons:
+        st.caption(f"· {reason}")
 
     photo_key = f"vessel_photo:{mmsi}"
     photo = st.session_state.get(photo_key)
     if photo:
         st.markdown("### Visual Identification")
-        st.image(photo.image_bytes, caption=f"Visual identification · {photo.license_name} · {photo.author}", use_container_width=True)
-    elif st.button("Load visual identification", key=f"load_photo:{mmsi}", use_container_width=True):
+        st.image(
+            photo.image_bytes,
+            caption=f"Visual identification · {photo.license_name} · {photo.author}",
+            use_container_width=True,
+        )
+    elif st.button(
+        "Load visual identification",
+        key=f"load_photo:{mmsi}",
+        use_container_width=True,
+    ):
         try:
             from src.enrichment.vessel_photo import resolve_vessel_photo
+
             with st.spinner("Resolving verified vessel image…"):
                 photo = resolve_vessel_photo(mmsi)
             if photo:
@@ -149,7 +358,11 @@ def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True)
             else:
                 notice("No verified vessel image was found for this MMSI.", "yellow")
         except Exception:
-            notice("Visual identification is temporarily unavailable. AIS intelligence remains available.", "yellow")
+            notice(
+                "Visual identification is temporarily unavailable. "
+                "AIS intelligence remains available.",
+                "yellow",
+            )
 
     if show_gemini_hook:
         st.session_state["quick_intel_mmsi"] = mmsi
