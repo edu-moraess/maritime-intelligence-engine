@@ -4,9 +4,109 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.historical.profile import build_vessel_profile
+from src.historical.reader import load_vessel_observations
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.intelligence.llm import build_vessel_context, create_gemini_client
 from src.ui.presentation import metric_strip, notice, panel_title
+
+
+def _render_historical_profile(
+    engine: MaritimeIntelligenceEngine,
+    vessel,
+) -> None:
+    """Render persisted history separately from current-session telemetry."""
+    st.write("")
+    panel_title("Historical vessel profile", "persisted real AIS")
+
+    database_url = getattr(engine.settings, "database_url", None)
+    persistence_enabled = getattr(
+        engine.settings,
+        "historical_persistence_enabled",
+        False,
+    )
+    if not database_url or not persistence_enabled:
+        notice(
+            "Historical vessel history is unavailable because historical "
+            "persistence is not enabled or DATABASE_URL is not configured.",
+            "gray",
+        )
+        return
+
+    observations, session_count = load_vessel_observations(
+        database_url,
+        vessel.mmsi,
+    )
+    profile = build_vessel_profile(
+        vessel.mmsi,
+        observations,
+        session_count=session_count,
+    )
+
+    metric_strip(
+        {
+            "STATUS": profile.status,
+            "OBSERVATIONS": profile.observation_count,
+            "SESSIONS": profile.session_count,
+            "TRACK POINTS": profile.track_points,
+        }
+    )
+
+    if profile.status == "N/A":
+        notice(
+            "No persisted real AIS observations were found for this MMSI.",
+            "gray",
+        )
+        return
+
+    left, right = st.columns(2, gap="medium")
+    with left:
+        st.write(
+            f"**First observed:** "
+            f"{profile.first_seen_at.isoformat() if profile.first_seen_at else 'N/A'}"
+        )
+        st.write(
+            f"**Last observed:** "
+            f"{profile.last_seen_at.isoformat() if profile.last_seen_at else 'N/A'}"
+        )
+        st.write(
+            "**Distance traveled:** "
+            + (
+                f"{profile.distance_km:.2f} km"
+                if profile.distance_km is not None
+                else "N/A — at least 2 persisted positions required"
+            )
+        )
+    with right:
+        st.write(
+            "**Average SOG:** "
+            + (
+                f"{profile.average_sog_knots:.1f} kn"
+                if profile.average_sog_knots is not None
+                else "N/A"
+            )
+        )
+        st.write(
+            "**Maximum SOG:** "
+            + (
+                f"{profile.max_sog_knots:.1f} kn"
+                if profile.max_sog_knots is not None
+                else "N/A"
+            )
+        )
+
+    if profile.status == "PARTIAL":
+        notice(
+            "Historical profile is partial: only one persisted real AIS "
+            "position is available, so trajectory distance is not estimated.",
+            "gray",
+        )
+    else:
+        notice(
+            "Historical metrics above are computed only from persisted real "
+            "AIS observations and are separate from current-session telemetry.",
+            "green",
+        )
 
 
 def render_gemini_vessel_panel(
@@ -15,7 +115,9 @@ def render_gemini_vessel_panel(
     vessel,
     track: list,
 ) -> None:
-    """On-demand Gemini multimodal interpretation (never auto-called)."""
+    """Render historical context plus optional Gemini interpretation."""
+    _render_historical_profile(engine, vessel)
+
     st.write("")
     panel_title(
         "Gemini multimodal intelligence",
@@ -58,7 +160,6 @@ def render_gemini_vessel_panel(
                 snapshot,
                 track=track,
             )
-            # Optional image slot — no external scraping in this phase.
             image_bytes = st.session_state.get(
                 f"gemini_image_{vessel.mmsi}"
             )
