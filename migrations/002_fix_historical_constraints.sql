@@ -14,6 +14,9 @@ ALTER TABLE ais_observations
     DROP CONSTRAINT IF EXISTS ais_observations_ais_timestamp_second_check;
 
 ALTER TABLE ais_observations
+    DROP CONSTRAINT IF EXISTS ais_observations_ais_timestamp_second_normal_check;
+
+ALTER TABLE ais_observations
     ADD CONSTRAINT ais_observations_ais_timestamp_second_normal_check
     CHECK (ais_timestamp_second BETWEEN 0 AND 59);
 
@@ -21,6 +24,9 @@ ALTER TABLE ais_observations
     DROP CONSTRAINT IF EXISTS ais_observations_payload_hash_key;
 
 DROP INDEX IF EXISTS ais_observations_payload_hash_key;
+
+ALTER TABLE ais_observations
+    DROP CONSTRAINT IF EXISTS ais_observations_session_payload_hash_key;
 
 ALTER TABLE ais_observations
     ADD CONSTRAINT ais_observations_session_payload_hash_key
