@@ -1,7 +1,6 @@
 """Tactical maritime map helpers (presentation only)."""
 from __future__ import annotations
 from datetime import datetime, timezone
-from hashlib import sha1
 from math import cos, radians, sin
 
 import pydeck as pdk
@@ -10,24 +9,77 @@ _ORIGINAL_PYDECK_LAYER = pdk.Layer
 
 
 def _stable_layer_id(args, kwargs):
-    if kwargs.get("id"):
-        return kwargs["id"]
+    """Return a deterministic semantic id for each tactical layer.
+
+    Layer identity must survive Streamlit reruns.  Using the layer's data
+    payload in the id would remount deck.gl layers whenever AIS observations
+    change, while using only the generic layer type can collide when several
+    Scatterplot/Path layers coexist.  Prefer the layer's rendering role and
+    fall back to its accessor configuration for deterministic uniqueness.
+    """
+    explicit_id = kwargs.get("id")
+    if explicit_id:
+        return str(explicit_id)
+
     layer_type = str(args[0] if args else kwargs.get("type", "layer"))
-    identity = {
-        "type": layer_type,
-        "get_position": kwargs.get("get_position"),
-        "get_source_position": kwargs.get("get_source_position"),
-        "get_target_position": kwargs.get("get_target_position"),
-        "get_fill_color": kwargs.get("get_fill_color"),
-        "get_line_color": kwargs.get("get_line_color"),
-        "get_radius": kwargs.get("get_radius"),
-        "get_width": kwargs.get("get_width"),
-        "get_path": kwargs.get("get_path"),
-        "get_polygon": kwargs.get("get_polygon"),
-        "pickable": kwargs.get("pickable"),
-    }
-    digest = sha1(repr(identity).encode("utf-8")).hexdigest()[:12]
-    return f"mie-{layer_type.lower()}-{digest}"
+    get_position = kwargs.get("get_position")
+    get_source_position = kwargs.get("get_source_position")
+    get_target_position = kwargs.get("get_target_position")
+    get_fill_color = kwargs.get("get_fill_color")
+    get_line_color = kwargs.get("get_line_color")
+    get_radius = kwargs.get("get_radius")
+    get_width = kwargs.get("get_width")
+    get_path = kwargs.get("get_path")
+    get_polygon = kwargs.get("get_polygon")
+
+    if get_polygon == "polygon":
+        role = "vessel-shape"
+    elif get_fill_color == "halo_color":
+        role = "vessel-halo"
+    elif get_fill_color == "ring_color":
+        role = "anomaly-ring"
+    elif get_radius == "core_radius":
+        role = "vessel-hit"
+    elif get_fill_color == [0, 0, 0, 0] and get_radius == 780:
+        role = "selected-ring"
+    elif get_fill_color == [0, 0, 0, 0] and get_radius == 620:
+        role = "anomaly-ring-overlay"
+    elif get_source_position is not None and get_target_position is not None:
+        role = "heading-vector"
+    elif get_path == "path":
+        role = "track-path" if get_line_color == "color" else "bbox-path"
+    elif get_radius == 750:
+        role = "speed-field"
+    elif get_radius == "radius" and get_fill_color == [233, 184, 87, 55]:
+        role = "traffic-hexbin"
+    elif get_radius == "radius" and get_fill_color == [239, 107, 115, 55]:
+        role = "anomaly-hotspot"
+    elif get_fill_color == [53, 194, 201, 30] and get_radius == 900:
+        role = "density"
+    else:
+        role = "layer"
+
+    # The role is the primary identity.  Accessors are only a deterministic
+    # discriminator for unforeseen layers and never include mutable data.
+    discriminator = repr(
+        (
+            layer_type,
+            get_position,
+            get_source_position,
+            get_target_position,
+            get_fill_color,
+            get_line_color,
+            get_radius,
+            get_width,
+            get_path,
+            get_polygon,
+            kwargs.get("pickable"),
+        )
+    )
+
+    from hashlib import sha1
+    digest = sha1(discriminator.encode("utf-8")).hexdigest()[:8]
+    return f"mie-{role}-{digest}"
 
 
 def _layer_with_stable_id(*args, **kwargs):
@@ -35,9 +87,9 @@ def _layer_with_stable_id(*args, **kwargs):
     return _ORIGINAL_PYDECK_LAYER(*args, **kwargs)
 
 
-# The operational map is selectable. Every layer therefore receives a stable
-# id, including optional layers, so Streamlit can reconcile the chart safely
-# across reruns without React/DOM churn.
+# The operational map is selectable. Every layer receives a deterministic
+# identity, including optional layers, so Streamlit can reconcile the chart
+# safely across reruns without changing layer identity when AIS data changes.
 pdk.Layer = _layer_with_stable_id
 
 STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":[239,107,115,235],"CRITICAL":[220,50,60,245],"SELECTED":[255,255,255,250],"STALE":[121,147,155,180]}
