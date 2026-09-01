@@ -14,47 +14,35 @@ def render_temporal_diagnostics(engine: MaritimeIntelligenceEngine) -> None:
     panel_title("Temporal Diagnostics", "real AIS track coverage")
 
     diagnostics = analyze_temporal_tracks(engine.store.tracks())
+    eligible_tracks = diagnostics.tracks_by_min_points.get(4, 0)
 
-    if diagnostics.nonempty_tracks == 0:
+    if eligible_tracks == 0:
         metric_strip(
             {
-                "TRACKS": "0",
-                "MEDIAN POINTS": "—",
+                "TRACKS ≥4": "0",
+                "MEDIAN POINTS": diagnostics.median_points or "—",
                 "MEDIAN DURATION": "—",
-                "MAX GAP": "—",
+                "MAX GAP": _format_seconds(diagnostics.max_gap_seconds),
             }
         )
         notice(
-            "No valid temporal track has enough real AIS observations yet. "
-            "Diagnostics will populate as vessels receive repeated reports.",
+            "No temporal track has at least 4 validated real AIS observations "
+            "yet. Diagnostics will populate as vessels receive repeated reports.",
             "gray",
         )
+        _render_thresholds(diagnostics)
         return
-
-    def _seconds(value: float | None) -> str:
-        if value is None:
-            return "—"
-        if value < 60:
-            return f"{value:.1f} s"
-        return f"{value / 60:.1f} min"
 
     metric_strip(
         {
-            "TRACKS": f"{diagnostics.nonempty_tracks}/{diagnostics.total_tracks}",
+            "TRACKS ≥4": f"{eligible_tracks}/{diagnostics.total_tracks}",
             "MEDIAN POINTS": diagnostics.median_points,
-            "MEDIAN DURATION": _seconds(diagnostics.median_duration_seconds),
-            "MAX GAP": _seconds(diagnostics.max_gap_seconds),
+            "MEDIAN DURATION": _format_seconds(diagnostics.median_duration_seconds),
+            "MAX GAP": _format_seconds(diagnostics.max_gap_seconds),
         }
     )
 
-    threshold_rows = [
-        {
-            "Minimum points": threshold,
-            "Eligible tracks": diagnostics.tracks_by_min_points.get(threshold, 0),
-        }
-        for threshold in sorted(diagnostics.tracks_by_min_points)
-    ]
-    st.dataframe(pd.DataFrame(threshold_rows), hide_index=True, width="stretch")
+    _render_thresholds(diagnostics)
 
     window_rows = [
         {
@@ -66,9 +54,27 @@ def render_temporal_diagnostics(engine: MaritimeIntelligenceEngine) -> None:
     ]
     st.dataframe(pd.DataFrame(window_rows), hide_index=True, width="stretch")
 
-    gap_count = sum(diagnostics.gaps_over_threshold.values())
     notice(
-        f"Receive-time gaps above the diagnostic threshold: {gap_count}. "
+        f"Receive-time gaps above the diagnostic threshold: {diagnostics.gaps_over_threshold}. "
         "Window counts are based only on validated real AIS observations.",
         "green",
     )
+
+
+def _render_thresholds(diagnostics) -> None:
+    threshold_rows = [
+        {
+            "Minimum points": threshold,
+            "Eligible tracks": diagnostics.tracks_by_min_points.get(threshold, 0),
+        }
+        for threshold in sorted(diagnostics.tracks_by_min_points)
+    ]
+    st.dataframe(pd.DataFrame(threshold_rows), hide_index=True, width="stretch")
+
+
+def _format_seconds(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if value < 60:
+        return f"{value:.1f} s"
+    return f"{value / 60:.1f} min"
