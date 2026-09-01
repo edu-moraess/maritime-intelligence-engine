@@ -35,6 +35,7 @@ def load_recent_observations(
             cursor.execute(
                 """
                 SELECT
+                    o.session_id,
                     o.mmsi,
                     ST_Y(o.geom) AS latitude,
                     ST_X(o.geom) AS longitude,
@@ -70,50 +71,11 @@ def load_recent_observations(
             )
             rows = cursor.fetchall()
 
-        observations: list[AISObservation] = []
-        for row in reversed(rows):
-            (
-                mmsi,
-                latitude,
-                longitude,
-                received_at,
-                ais_timestamp_second,
-                observed_at,
-                sog_knots,
-                cog_degrees,
-                heading_degrees,
-                vessel_name,
-                navigational_status,
-            ) = row
-            if not isinstance(received_at, datetime):
-                continue
-            observations.append(
-                AISObservation(
-                    mmsi=str(mmsi),
-                    latitude=float(latitude),
-                    longitude=float(longitude),
-                    received_at=received_at,
-                    sog_knots=_float_or_none(sog_knots),
-                    cog_degrees=_float_or_none(cog_degrees),
-                    heading_degrees=_float_or_none(heading_degrees),
-                    vessel_name=(str(vessel_name).strip() if vessel_name else None),
-                    message_type="PositionReport",
-                    valid=True,
-                    navigational_status=(
-                        int(navigational_status)
-                        if navigational_status is not None
-                        else None
-                    ),
-                    ais_timestamp_second=(
-                        int(ais_timestamp_second)
-                        if ais_timestamp_second is not None
-                        else None
-                    ),
-                    observed_at=observed_at,
-                    raw={},
-                )
-            )
-        return observations
+        return [
+            _observation_from_row(row)
+            for row in reversed(rows)
+            if isinstance(row[4], datetime)
+        ]
     except Exception:
         return []
     finally:
@@ -122,6 +84,106 @@ def load_recent_observations(
                 connection.close()
             except Exception:
                 pass
+
+
+def load_vessel_observations(
+    database_url: str | None,
+    mmsi: str,
+    *,
+    limit: int = 5000,
+    connect_fn: Callable[[str], Any] | None = None,
+) -> tuple[list[AISObservation], int]:
+    """Load one vessel's persisted history and its distinct session count.
+
+    The query is read-only and scoped to a single MMSI. Session identity is
+    carried in ``raw['session_id']`` solely as provenance for the profile
+    layer; it is never treated as provider payload or live telemetry.
+    """
+    if not database_url or not mmsi or limit <= 0:
+        return [], 0
+
+    connection = None
+    try:
+        connector = connect_fn or _default_connect
+        connection = connector(database_url)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    o.session_id,
+                    o.mmsi,
+                    ST_Y(o.geom) AS latitude,
+                    ST_X(o.geom) AS longitude,
+                    o.received_at,
+                    o.ais_timestamp_second,
+                    o.observed_at,
+                    o.sog_knots,
+                    o.cog_degrees,
+                    o.heading_degrees,
+                    o.vessel_name,
+                    o.navigational_status
+                FROM ais_observations AS o
+                WHERE o.valid = TRUE
+                  AND o.mmsi = %s
+                ORDER BY o.received_at ASC
+                LIMIT %s
+                """,
+                (str(mmsi), int(limit)),
+            )
+            rows = cursor.fetchall()
+
+        observations = [
+            _observation_from_row(row)
+            for row in rows
+            if isinstance(row[4], datetime)
+        ]
+        session_count = len({str(row[0]) for row in rows if row[0] is not None})
+        return observations, session_count
+    except Exception:
+        return [], 0
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+
+def _observation_from_row(row: tuple[Any, ...]) -> AISObservation:
+    (
+        session_id,
+        mmsi,
+        latitude,
+        longitude,
+        received_at,
+        ais_timestamp_second,
+        observed_at,
+        sog_knots,
+        cog_degrees,
+        heading_degrees,
+        vessel_name,
+        navigational_status,
+    ) = row
+    return AISObservation(
+        mmsi=str(mmsi),
+        latitude=float(latitude),
+        longitude=float(longitude),
+        received_at=received_at,
+        sog_knots=_float_or_none(sog_knots),
+        cog_degrees=_float_or_none(cog_degrees),
+        heading_degrees=_float_or_none(heading_degrees),
+        vessel_name=(str(vessel_name).strip() if vessel_name else None),
+        message_type="PositionReport",
+        valid=True,
+        navigational_status=(
+            int(navigational_status) if navigational_status is not None else None
+        ),
+        ais_timestamp_second=(
+            int(ais_timestamp_second) if ais_timestamp_second is not None else None
+        ),
+        observed_at=observed_at,
+        raw={"session_id": str(session_id)} if session_id is not None else {},
+    )
 
 
 def _default_connect(database_url: str) -> Any:
