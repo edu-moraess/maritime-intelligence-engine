@@ -41,6 +41,11 @@ from src.ui.presentation import (
 )
 
 
+# ----------------------------------------------------------------------
+# OVERVIEW
+# ----------------------------------------------------------------------
+
+
 def render_overview(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -69,6 +74,10 @@ def render_overview(
         gap="small",
     )
 
+    # ------------------------------------------------------------------
+    # LEFT — MAP FILTERS
+    # ------------------------------------------------------------------
+
     with left:
         panel_title(
             "Filters",
@@ -89,6 +98,10 @@ def render_overview(
             value=False,
             key="overview_only_fresh",
         )
+
+    # ------------------------------------------------------------------
+    # CENTER — OPERATIONAL MAP
+    # ------------------------------------------------------------------
 
     with center:
         panel_title(
@@ -256,6 +269,11 @@ def render_overview(
         )
 
 
+# ----------------------------------------------------------------------
+# VESSELS
+# ----------------------------------------------------------------------
+
+
 def render_vessels(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -381,6 +399,11 @@ def render_vessels(
         _vessel_compact(
             selected_vessel
         )
+
+
+# ----------------------------------------------------------------------
+# VESSEL INTELLIGENCE
+# ----------------------------------------------------------------------
 
 
 def render_vessel_intelligence(
@@ -523,6 +546,11 @@ def render_vessel_intelligence(
     )
 
 
+# ----------------------------------------------------------------------
+# TRAJECTORY ANALYSIS
+# ----------------------------------------------------------------------
+
+
 def render_trajectory_analysis(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -595,6 +623,11 @@ def render_trajectory_analysis(
             track,
             selected.mmsi,
         )
+
+
+# ----------------------------------------------------------------------
+# BEHAVIOR
+# ----------------------------------------------------------------------
 
 
 def render_behavior(
