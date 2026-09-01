@@ -249,17 +249,17 @@ class PostgresHistoricalWriter(HistoricalWriter):
             )
             self.last_result = result
             return result
-        except Exception:
+        except Exception as exc:
             self._rollback_and_close()
             self._status = "HISTORICAL DATABASE UNAVAILABLE"
-            LOGGER.error("Historical AIS persistence failed; live session retained in memory.")
+            LOGGER.exception("Historical persistence failed")
             result = HistoricalWriteResult(
                 status=self.status,
                 session_id=None,
                 persisted_observations=0,
                 duplicate_observations=0,
                 skipped_invalid=skipped_invalid,
-                reason="Historical persistence failed; live AIS session was retained in memory.",
+                reason=f"Historical persistence failed ({type(exc).__name__}): {exc}",
             )
             self.last_result = result
             return result
