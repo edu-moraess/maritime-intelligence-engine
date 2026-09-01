@@ -19,23 +19,23 @@ CSS = """
   --text:#d9e6e9; --muted:#79939b; --cyan:#35c2c9; --green:#51c79b;
   --amber:#e9b857; --red:#ef6b73;
 }
-html, body, [class*="css"] { font-family: Inter, sans-serif; }
+html, body, [class*=\"css\"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
-[data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
-header[data-testid="stHeader"] { background: transparent; }
+[data-testid=\"stSidebar\"] { background: #091820; border-right: 1px solid var(--line); }
+header[data-testid=\"stHeader\"] { background: transparent; }
 h1, h2, h3 { letter-spacing: -0.02em; }
 h1 { font-size: 1.35rem !important; margin-bottom: .15rem !important; }
 h2 { font-size: 1.0rem !important; margin-top: .35rem !important; margin-bottom: .35rem !important; }
 h3 { font-size: .88rem !important; margin-top: .4rem !important; margin-bottom: .25rem !important; }
-[data-testid="stMetric"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: .45rem .55rem; }
-[data-testid="stMetricLabel"] { color: var(--muted); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; }
-[data-testid="stMetricValue"] { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: .95rem; }
-[data-testid="stDataFrame"] { border: 1px solid var(--line); }
-div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, textarea { background: #0b1a21; border-color: var(--line); }
+[data-testid=\"stMetric\"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: .45rem .55rem; }
+[data-testid=\"stMetricLabel\"] { color: var(--muted); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; }
+[data-testid=\"stMetricValue\"] { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: .95rem; }
+[data-testid=\"stDataFrame\"] { border: 1px solid var(--line); }
+div[data-baseweb=\"select\"] > div, div[data-baseweb=\"input\"] > div, textarea { background: #0b1a21; border-color: var(--line); }
 .stButton > button { border: 1px solid var(--line); background: #0e232c; color: var(--text); border-radius: 3px; font-weight: 600; }
 .stButton > button:hover { border-color: var(--cyan); color: var(--cyan); }
-div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+div[data-testid=\"stExpander\"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
 .operational-header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding:.1rem 0 .55rem; margin-bottom:.55rem; }
 .brand { font-weight:700; letter-spacing:.12em; font-size:.82rem; color:var(--text); }
 .brand small { color:var(--muted); font-weight:500; letter-spacing:.04em; margin-left:.5rem; }
@@ -99,6 +99,21 @@ div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(
   margin:.55rem 0 .25rem; border-top:1px solid var(--line); padding-top:.45rem;
 }
 .section-kicker:first-child { border-top:none; padding-top:0; margin-top:.15rem; }
+.side-header { margin:0 0 .75rem; padding-bottom:.55rem; border-bottom:1px solid var(--line); }
+.side-header .brand { font-size:.92rem; letter-spacing:.14em; }
+.side-subtitle { color:var(--muted); font:500 .62rem Inter,sans-serif; letter-spacing:.12em; margin:.2rem 0 .45rem; }
+.side-status { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
+.side-provider { color:var(--muted); font:500 .62rem 'IBM Plex Mono',monospace; letter-spacing:.08em; }
+.side-section-title {
+  color:var(--muted); font-size:.58rem; letter-spacing:.12em; text-transform:uppercase;
+  margin:.85rem 0 .4rem; padding-top:.55rem; border-top:1px solid var(--line);
+}
+.side-section-title:first-of-type { margin-top:.35rem; }
+.side-section-label {
+  color:var(--muted); font-size:.58rem; letter-spacing:.1em; text-transform:uppercase;
+  margin:.55rem 0 .25rem;
+}
+.side-muted { color:var(--muted) !important; font-size:.68rem !important; margin:.2rem 0 .15rem; }
 @media (max-width: 980px) {
   .ops-bar { grid-template-columns: 1fr; }
   .ops-meta { text-align:left; }
