@@ -265,6 +265,7 @@ def render_overview(
             selected,
             snapshot,
             show_gemini_hook=True,
+            engine=engine,
         )
 
 
