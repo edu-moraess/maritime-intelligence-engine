@@ -285,51 +285,47 @@ def _render_sidebar(
     bool,
     bool,
 ]:
-    """Render the operational sidebar and return user selections."""
+    """Render the operational control console sidebar and return user selections.
+
+    Presentation-only grouping (MISSION / DATA / ANALYSIS / SYSTEM). Widget
+    keys, defaults, and control flow are unchanged from the previous sidebar.
+    """
 
     region_changed = False
 
     with st.sidebar:
-        # --------------------------------------------------------------
-        # BRAND
-        # --------------------------------------------------------------
+        conn = _connection_state(settings)
+        conn_upper = str(conn).upper()
+        if conn_upper in {"LIVE AIS", "LIVE"}:
+            pill_cls = "status-live"
+        elif "CONNECT" in conn_upper:
+            pill_cls = "status-connecting"
+        else:
+            pill_cls = "status-disconnected"
 
         st.markdown(
-            "<div class='brand'>"
-            "MIE "
-            "<span style='color:#79939b'>/ OPERATIONS</span>"
+            "<div class='side-header'>"
+            "<div class='brand'>MIE</div>"
+            "<div class='side-subtitle'>MARITIME INTELLIGENCE</div>"
+            f"<div class='side-status'>"
+            f"<span class='status-pill {pill_cls}'>{conn}</span>"
+            f"<span class='side-provider'>AISSTREAM</span>"
+            f"</div>"
             "</div>",
             unsafe_allow_html=True,
         )
 
         st.markdown(
-            "<div class='small-note' "
-            "style='margin:.25rem 0 .9rem'>"
-            "Real AIS intelligence workspace"
-            "</div>",
+            "<div class='side-section-title'>MISSION CONTEXT</div>",
             unsafe_allow_html=True,
         )
 
-        # --------------------------------------------------------------
-        # SESSION / CONTROL
-        # --------------------------------------------------------------
-
-        st.markdown(
-            "<div class='data-label'>"
-            "SESSION / CONTROL"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        duration_options = list(
-            COLLECTION_DURATION_OPTIONS
-        )
+        duration_options = list(COLLECTION_DURATION_OPTIONS)
 
         duration_index = min(
             range(len(duration_options)),
             key=lambda index: abs(
-                duration_options[index]
-                - settings.collection_seconds
+                duration_options[index] - settings.collection_seconds
             ),
         )
 
@@ -344,17 +340,12 @@ def _render_sidebar(
             label_visibility="collapsed",
         )
 
-        if (
-            float(selected_duration)
-            != settings.collection_seconds
-        ):
+        if float(selected_duration) != settings.collection_seconds:
             settings = _with_bbox(
                 settings,
                 settings.bbox,
                 settings.config_error,
-                collection_seconds=float(
-                    selected_duration
-                ),
+                collection_seconds=float(selected_duration),
             )
 
         collect = st.button(
@@ -369,15 +360,8 @@ def _render_sidebar(
             width="stretch",
         )
 
-        # --------------------------------------------------------------
-        # REGION
-        # --------------------------------------------------------------
-
         st.markdown(
-            "<div class='data-label' "
-            "style='margin-top:.8rem'>"
-            "REGION"
-            "</div>",
+            "<div class='side-section-label'>Region</div>",
             unsafe_allow_html=True,
         )
 
@@ -390,18 +374,12 @@ def _render_sidebar(
                 settings.bbox,
             )
 
-            current_region = region_name_for_bbox(
-                active_bbox
-            )
+            current_region = region_name_for_bbox(active_bbox)
 
             if current_region in REGION_OPTIONS:
-                preset_index = REGION_OPTIONS.index(
-                    current_region
-                )
+                preset_index = REGION_OPTIONS.index(current_region)
             else:
-                preset_index = REGION_OPTIONS.index(
-                    "Custom"
-                )
+                preset_index = REGION_OPTIONS.index("Custom")
 
             selected_region = st.selectbox(
                 "AIS region preset",
@@ -410,14 +388,8 @@ def _render_sidebar(
                 key="region_preset",
             )
 
-            # ----------------------------------------------------------
-            # PRESET REGION
-            # ----------------------------------------------------------
-
             if selected_region != "Custom":
-                candidate_bbox = REGION_PRESETS[
-                    selected_region
-                ]
+                candidate_bbox = REGION_PRESETS[selected_region]
 
                 for key, value in zip(
                     (
@@ -431,13 +403,8 @@ def _render_sidebar(
                     st.session_state[key] = value
 
                 st.caption(
-                    f"{selected_region} · "
-                    f"{format_bbox(candidate_bbox)}"
+                    f"{selected_region} · {format_bbox(candidate_bbox)}"
                 )
-
-            # ----------------------------------------------------------
-            # CUSTOM REGION
-            # ----------------------------------------------------------
 
             else:
                 st.caption(
@@ -447,9 +414,7 @@ def _render_sidebar(
 
                 min_lat = st.number_input(
                     "Min Latitude",
-                    value=float(
-                        active_bbox[0][0]
-                    ),
+                    value=float(active_bbox[0][0]),
                     min_value=-90.0,
                     max_value=90.0,
                     step=0.01,
@@ -459,9 +424,7 @@ def _render_sidebar(
 
                 min_lon = st.number_input(
                     "Min Longitude",
-                    value=float(
-                        active_bbox[0][1]
-                    ),
+                    value=float(active_bbox[0][1]),
                     min_value=-180.0,
                     max_value=180.0,
                     step=0.01,
@@ -471,9 +434,7 @@ def _render_sidebar(
 
                 max_lat = st.number_input(
                     "Max Latitude",
-                    value=float(
-                        active_bbox[1][0]
-                    ),
+                    value=float(active_bbox[1][0]),
                     min_value=-90.0,
                     max_value=90.0,
                     step=0.01,
@@ -483,9 +444,7 @@ def _render_sidebar(
 
                 max_lon = st.number_input(
                     "Max Longitude",
-                    value=float(
-                        active_bbox[1][1]
-                    ),
+                    value=float(active_bbox[1][1]),
                     min_value=-180.0,
                     max_value=180.0,
                     step=0.01,
@@ -498,26 +457,18 @@ def _render_sidebar(
                     (max_lat, max_lon),
                 )
 
-            # ----------------------------------------------------------
-            # VALIDATE REGION
-            # ----------------------------------------------------------
-
             region_error: str | None = None
 
             try:
-                _validate_bbox(
-                    candidate_bbox
-                )
+                _validate_bbox(candidate_bbox)
             except ValueError as exc:
                 region_error = str(exc)
                 st.error(region_error)
 
             if region_error is None:
-                previous_bbox = (
-                    st.session_state.get(
-                        "active_bbox",
-                        settings.bbox,
-                    )
+                previous_bbox = st.session_state.get(
+                    "active_bbox",
+                    settings.bbox,
                 )
 
                 region_changed = (
@@ -525,9 +476,7 @@ def _render_sidebar(
                     != _normalize_bbox(previous_bbox)
                 )
 
-                st.session_state.active_bbox = (
-                    candidate_bbox
-                )
+                st.session_state.active_bbox = candidate_bbox
 
                 if candidate_bbox != settings.bbox:
                     settings = _with_bbox(
@@ -550,34 +499,8 @@ def _render_sidebar(
                     region_error,
                 )
 
-        # --------------------------------------------------------------
-        # CONNECTION
-        # --------------------------------------------------------------
-
         st.markdown(
-            "<div class='data-label' "
-            "style='margin-top:.8rem'>"
-            "CONNECTION"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            f"<div class='data-value'>"
-            f"{_connection_state(settings)}"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-        # --------------------------------------------------------------
-        # HISTORICAL
-        # --------------------------------------------------------------
-
-        st.markdown(
-            "<div class='data-label' "
-            "style='margin-top:.8rem'>"
-            "HISTORICAL"
-            "</div>",
+            "<div class='side-section-title'>DATA</div>",
             unsafe_allow_html=True,
         )
 
@@ -605,63 +528,23 @@ def _render_sidebar(
             )
 
         if settings.database_url is None:
-            historical_state = (
-                "HISTORICAL DATABASE NOT CONFIGURED"
-            )
+            historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
         elif settings.historical_persistence_enabled:
-            historical_state = (
-                "HISTORICAL PERSISTENCE ENABLED"
-            )
+            historical_state = "HISTORICAL PERSISTENCE ENABLED"
         else:
-            historical_state = (
-                "HISTORICAL PERSISTENCE OFF"
-            )
+            historical_state = "HISTORICAL PERSISTENCE OFF"
 
         st.markdown(
-            f"<div class='data-value'>"
-            f"{historical_state}"
-            f"</div>",
+            f"<div class='data-value side-muted'>{historical_state}</div>",
             unsafe_allow_html=True,
         )
 
-        # --------------------------------------------------------------
-        # DISPLAY
-        # --------------------------------------------------------------
-
         st.markdown(
-            "<div class='data-label' "
-            "style='margin-top:.8rem'>"
-            "DISPLAY"
-            "</div>",
+            "<div class='side-section-title'>ANALYSIS</div>",
             unsafe_allow_html=True,
         )
 
-        st.selectbox(
-            "Operator timezone",
-            OPERATOR_TIMEZONE_OPTIONS,
-            index=0,
-            key="operator_timezone",
-            format_func=lambda value: (
-                f"Operator time · {value}"
-            ),
-            label_visibility="collapsed",
-        )
-
-        # --------------------------------------------------------------
-        # WORKSPACE
-        # --------------------------------------------------------------
-
-        st.markdown(
-            "<div class='data-label' "
-            "style='margin-top:.8rem'>"
-            "WORKSPACE"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        modules = list(
-            NAVIGATION
-        )
+        modules = list(NAVIGATION)
 
         module = st.radio(
             "Workspace module",
@@ -679,9 +562,25 @@ def _render_sidebar(
                 f"{module} subarea",
                 views,
                 label_visibility="collapsed",
-                key=(
-                    f"workspace_subarea_{module}"
+                key=f"workspace_subarea_{module}",
+            )
+
+        with st.expander("SYSTEM", expanded=False):
+            st.markdown(
+                f"<div class='data-label'>Connection</div>"
+                f"<div class='data-value'>{conn}</div>",
+                unsafe_allow_html=True,
+            )
+
+            st.selectbox(
+                "Operator timezone",
+                OPERATOR_TIMEZONE_OPTIONS,
+                index=0,
+                key="operator_timezone",
+                format_func=lambda value: (
+                    f"Operator time · {value}"
                 ),
+                label_visibility="collapsed",
             )
 
     return (
@@ -711,17 +610,9 @@ def main() -> None:
         region_changed,
     ) = _render_sidebar(settings)
 
-    # --------------------------------------------------------------
-    # ENGINE
-    # --------------------------------------------------------------
-
     engine = _engine_for(
         settings
     )
-
-    # --------------------------------------------------------------
-    # REGION CHANGE
-    # --------------------------------------------------------------
 
     if region_changed:
         notice(
@@ -730,10 +621,6 @@ def main() -> None:
             "discarded. Run Collect Real AIS to open "
             "the new subscription."
         )
-
-    # --------------------------------------------------------------
-    # CLEAR SESSION
-    # --------------------------------------------------------------
 
     if clear:
         engine.clear_session_data()
@@ -744,10 +631,6 @@ def main() -> None:
         )
 
         st.rerun()
-
-    # --------------------------------------------------------------
-    # REAL AIS COLLECTION
-    # --------------------------------------------------------------
 
     if collect:
         with st.spinner(
@@ -775,24 +658,12 @@ def main() -> None:
                 "in this collection window."
             )
 
-    # --------------------------------------------------------------
-    # SNAPSHOT
-    # --------------------------------------------------------------
-
     snapshot = engine.snapshot()
-
-    # --------------------------------------------------------------
-    # HEADER
-    # --------------------------------------------------------------
 
     render_header(
         snapshot.status,
         page,
     )
-
-    # --------------------------------------------------------------
-    # GLOBAL AIS STATUS
-    # --------------------------------------------------------------
 
     if snapshot.status.state != "LIVE AIS":
         status_type = (
@@ -813,10 +684,6 @@ def main() -> None:
             ),
             status_type,
         )
-
-    # --------------------------------------------------------------
-    # PAGE ROUTING
-    # --------------------------------------------------------------
 
     if page == "Overview":
         render_overview(
@@ -888,10 +755,6 @@ def main() -> None:
             settings,
         )
 
-
-# ----------------------------------------------------------------------
-# ENTRY POINT
-# ----------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
