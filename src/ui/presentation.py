@@ -179,7 +179,7 @@ _PROVENANCE_CLASS = {
 
 
 def provenance_badge(kind: str) -> str:
-    """Return HTML for a standardized provenance badge (LIVE / HISTORICAL / DERIVED / \u2026)."""
+    """Return HTML for a standardized provenance badge (LIVE / HISTORICAL / DERIVED / …)."""
     label = (kind or "").strip().upper().replace("_", " ")
     if label == "INSUFFICIENTDATA":
         label = "INSUFFICIENT DATA"
@@ -201,24 +201,38 @@ def render_ops_bar(
     anomalies: int | str,
     collection: str,
     provenance: str = "AIS REAL ONLY",
+    avg_speed: str | None = None,
+    last_message: str | None = None,
 ) -> None:
-    """Compact operational top strip: LIVE \u2192 region \u2192 counts \u2192 meta."""
-    state = (live_state or "\u2014").upper()
+    """Compact operational top strip: LIVE → region → counts → meta."""
+    state = (live_state or "—").upper()
     is_live = state in {"LIVE AIS", "LIVE"}
     pill_cls = "status-live" if is_live else "status-connecting" if "CONNECT" in state else "status-disconnected"
     region_label = region or "CUSTOM / UNKNOWN"
+    extra = ""
+    if avg_speed is not None:
+        extra += (
+            f'<div class="ops-metric"><div class="lbl">Avg speed</div>'
+            f'<div class="val">{escape(str(avg_speed))}</div></div>'
+        )
+    if last_message is not None:
+        extra += (
+            f'<div class="ops-metric"><div class="lbl">Last message</div>'
+            f'<div class="val">{escape(str(last_message))}</div></div>'
+        )
     st.markdown(
-        f"""<div class=\"ops-bar\">
-  <div class=\"ops-live\">
-    <span class=\"status-pill {pill_cls}\">{escape(state if is_live else state)}</span>
-    <span class=\"region\">{escape(str(region_label))}</span>
+        f"""<div class="ops-bar">
+  <div class="ops-live">
+    <span class="status-pill {pill_cls}">{escape(state if is_live else state)}</span>
+    <span class="region">{escape(str(region_label))}</span>
   </div>
-  <div class=\"ops-metrics\">
-    <div class=\"ops-metric\"><div class=\"lbl\">Vessels</div><div class=\"val\">{escape(str(vessels))}</div></div>
-    <div class=\"ops-metric\"><div class=\"lbl\">Messages</div><div class=\"val\">{escape(str(messages))}</div></div>
-    <div class=\"ops-metric\"><div class=\"lbl\">Anomalies</div><div class=\"val\">{escape(str(anomalies))}</div></div>
+  <div class="ops-metrics">
+    <div class="ops-metric"><div class="lbl">Vessels</div><div class="val">{escape(str(vessels))}</div></div>
+    <div class="ops-metric"><div class="lbl">Messages</div><div class="val">{escape(str(messages))}</div></div>
+    <div class="ops-metric"><div class="lbl">Anomalies</div><div class="val">{escape(str(anomalies))}</div></div>
+    {extra}
   </div>
-  <div class=\"ops-meta\">{escape(str(collection))}<br/>{escape(str(provenance))}</div>
+  <div class="ops-meta">{escape(str(collection))}<br/>{escape(str(provenance))}</div>
 </div>""",
         unsafe_allow_html=True,
     )
@@ -243,7 +257,7 @@ def render_intelligence_status(items: list[tuple[str, str]]) -> None:
     for label, status in items:
         cls = _intel_chip_class(status)
         chips.append(
-            f"<span class='intel-chip {cls}'>{escape(label)} \u00b7 {escape(str(status))}</span>"
+            f"<span class='intel-chip {cls}'>{escape(label)} · {escape(str(status))}</span>"
         )
     st.markdown(
         "<div class='intel-status'><span class='title'>Intelligence status</span>"
