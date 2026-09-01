@@ -1,9 +1,10 @@
-"""Full-width operational overview renderer."""
+"""Full-width operational overview renderer — Operations Workstation layout."""
 
 from __future__ import annotations
 
 import streamlit as st
 
+from src.config.regions import region_name_for_bbox
 from src.config.settings import AppSettings
 from src.geospatial.map_data import vessel_rows
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
@@ -15,7 +16,11 @@ from src.ui.pages_helpers import (
     _selected_vessel,
     _utc,
 )
-from src.ui.presentation import empty_state, metric_strip, panel_title
+from src.ui.presentation import (
+    empty_state,
+    panel_title,
+    render_ops_bar,
+)
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 
@@ -24,27 +29,32 @@ def render_overview(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    """Render the operational workspace with a full-width map."""
+    """Render the operational workspace with map-first hierarchy."""
     summary = snapshot.summary
 
-    metric_strip(
-        {
-            "ACTIVE VESSELS": summary["active_vessels"],
-            "MESSAGES": f"{summary['messages']:,}",
-            "ANOMALIES": summary["anomalies"],
-            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
-            "LAST MESSAGE": _utc(snapshot.status.last_received_at),
-        }
+    region = region_name_for_bbox(settings.bbox) or "CUSTOM"
+    duration = (
+        f"Collection {snapshot.last_collection_seconds:.1f}s"
+        if snapshot.last_collection_seconds > 0
+        else "Collection —"
+    )
+
+    render_ops_bar(
+        live_state=snapshot.status.state,
+        region=region,
+        vessels=summary["active_vessels"],
+        messages=f"{summary['messages']:,}",
+        anomalies=summary["anomalies"],
+        collection=duration,
+        provenance="AIS REAL ONLY",
+        avg_speed=f"{summary['average_speed_knots']:.1f} kn",
+        last_message=_utc(snapshot.status.last_received_at),
     )
 
     _render_readiness(snapshot)
-    st.write("")
 
-    # Controls deliberately live outside the map. This prevents the control
-    # panel from consuming the horizontal space reserved for the map itself.
-    with st.container(border=True):
-        panel_title("Map configuration", "operator")
-
+    # Map controls collapsed by default to maximize map area.
+    with st.expander("MAP CONTROLS", expanded=False):
         row_one = st.columns(4, gap="small")
         with row_one[0]:
             min_speed = st.slider(
@@ -112,9 +122,7 @@ def render_overview(
             key="map_show_anomaly_hotspots",
         )
         st.caption(
-            "All visualization layers are derived from real AIS observations "
-            "available in the current session. No synthetic traffic or "
-            "fallback data is generated."
+            "Layers use only real AIS observations in the current session."
         )
 
     rows = vessel_rows(snapshot.vessels)
@@ -130,29 +138,35 @@ def render_overview(
     if only_fresh:
         rows = [row for row in rows if not row.get("stale", False)]
 
-    panel_title("Operational map", f"{len(rows)} targets")
+    # Map primary + target panel secondary
+    map_col, intel_col = st.columns([2.35, 1.0], gap="small")
 
-    if not rows:
-        empty_state(_no_real_data_reason(snapshot.status.reason))
-    else:
-        _render_vessel_map(
-            rows=rows,
-            snapshot=snapshot,
-            settings=settings,
-            show_heading=show_heading,
-            show_trails=show_trails,
-            show_anomalies=show_anomalies,
-            show_density=show_density,
-            show_hexbin=show_hexbin,
-            show_speed_field=show_speed_field,
-            show_anomaly_hotspots=show_anomaly_hotspots,
-            map_style=map_style,
+    with map_col:
+        panel_title("Operational map", f"{len(rows)} targets")
+        if not rows:
+            empty_state(_no_real_data_reason(snapshot.status.reason))
+        else:
+            _render_vessel_map(
+                rows=rows,
+                snapshot=snapshot,
+                settings=settings,
+                show_heading=show_heading,
+                show_trails=show_trails,
+                show_anomalies=show_anomalies,
+                show_density=show_density,
+                show_hexbin=show_hexbin,
+                show_speed_field=show_speed_field,
+                show_anomaly_hotspots=show_anomaly_hotspots,
+                map_style=map_style,
+                show_operational_strip=False,
+            )
+
+    with intel_col:
+        selected = _selected_vessel(snapshot.vessels)
+        render_vessel_quick_intelligence(
+            selected,
+            snapshot,
+            show_gemini_hook=True,
+            engine=engine,
         )
         st.caption("Operational intelligence derived from live AIS observations.")
-
-    selected = _selected_vessel(snapshot.vessels)
-    render_vessel_quick_intelligence(
-        selected,
-        snapshot,
-        show_gemini_hook=True,
-    )
