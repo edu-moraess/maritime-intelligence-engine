@@ -80,12 +80,12 @@ def _selected_vessel(vessels: list[VesselSnapshot]) -> VesselSnapshot | None:
 def _vessel_label(mmsi: str, vessels: list[VesselSnapshot]) -> str:
     vessel = next((vessel for vessel in vessels if vessel.mmsi == mmsi), None)
     display_name = ((vessel.vessel_name or "").strip() or "UNKNOWN") if vessel is not None else "UNKNOWN"
-    return f"{mmsi} \u00b7 {display_name}"
+    return f"{mmsi} · {display_name}"
 
 
 def _utc(value) -> str:
     if value is None:
-        return "\u2014"
+        return "—"
     if hasattr(value, "to_pydatetime"):
         value = value.to_pydatetime()
     if value.tzinfo is None:
@@ -127,9 +127,9 @@ def _vessel_compact(vessel: VesselSnapshot) -> None:
     )
     rows = [
         ("Position", f"{vessel.latitude:.5f}, {vessel.longitude:.5f}"),
-        ("SOG", f"{vessel.sog_knots:.1f} kn" if vessel.sog_knots is not None else "\u2014"),
-        ("COG", f"{vessel.cog_degrees:.1f}\u00b0" if vessel.cog_degrees is not None else "\u2014"),
-        ("Heading", f"{vessel.heading_degrees:.0f}\u00b0" if vessel.heading_degrees is not None else "\u2014"),
+        ("SOG", f"{vessel.sog_knots:.1f} kn" if vessel.sog_knots is not None else "—"),
+        ("COG", f"{vessel.cog_degrees:.1f}°" if vessel.cog_degrees is not None else "—"),
+        ("Heading", f"{vessel.heading_degrees:.0f}°" if vessel.heading_degrees is not None else "—"),
         ("Last update", _utc(vessel.last_received)),
         ("State", "STALE" if vessel.stale else "ACTIVE"),
     ]
@@ -174,12 +174,12 @@ def _render_speed_chart(track: list) -> None:
     fig.add_trace(go.Scatter(
         x=frame["received_at"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2",
         line={"color": "#e9b857", "dash": "dot"}, connectgaps=False,
-        hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}\u00b0<extra></extra>",
+        hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}°<extra></extra>",
     ))
     layout = _plot_layout("Observed SOG and COG history", "UTC timestamp", "SOG (knots)")
     layout.update({
         "height": 300,
-        "yaxis2": {"title": "COG (\u00b0)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"},
+        "yaxis2": {"title": "COG (°)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"},
         "legend": {"orientation": "h", "y": 1.12},
     })
     fig.update_layout(**layout)
@@ -230,6 +230,7 @@ def _render_vessel_map(
     show_speed_field: bool = False,
     show_anomaly_hotspots: bool = False,
     map_style: str = "Dark Matter",
+    show_operational_strip: bool = True,
 ) -> None:
     if not rows:
         empty_state("No real AIS position reports are available for the operational map.", "NO REAL AIS POSITION DATA")
@@ -335,13 +336,23 @@ def _render_vessel_map(
     except Exception:
         pass
 
-    st.markdown(operational_strip(live_state=live_state, targets=len(rows), tracks=tracks_count, anomalies=len(anomaly_mmsis), region=str(region).upper()), unsafe_allow_html=True)
+    if show_operational_strip:
+        st.markdown(
+            operational_strip(
+                live_state=live_state,
+                targets=len(rows),
+                tracks=tracks_count,
+                anomalies=len(anomaly_mmsis),
+                region=str(region).upper(),
+            ),
+            unsafe_allow_html=True,
+        )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
     event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
     _apply_map_selection(event)
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
-        f"<span>N \u25b2</span><span>LAT {center_lat:.4f} \u00b7 LON {center_lon:.4f}</span><span>TARGETS {len(rows)}</span></div>",
+        f"<span>N ▲</span><span>LAT {center_lat:.4f} · LON {center_lon:.4f}</span><span>TARGETS {len(rows)}</span></div>",
         unsafe_allow_html=True,
     )
