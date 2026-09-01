@@ -218,7 +218,6 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
     st.pydeck_chart(deck, width="stretch")
 
 
-@st.fragment
 def _render_vessel_map(
     rows: list[dict],
     snapshot: EngineSnapshot,
