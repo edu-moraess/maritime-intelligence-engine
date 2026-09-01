@@ -49,9 +49,9 @@ def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
     observations = [
         obs
         for obs in getattr(snapshot, "observations", []) or []
-        if getattr(obs, "mmsi", None) == mmsi
+        if str(getattr(obs, "mmsi", "")) == str(mmsi)
     ]
-    profile = build_behavioral_profile(mmsi, observations)
+    profile = build_behavioral_profile(str(mmsi), observations)
 
     st.markdown("### Behavioral Intelligence")
     metric_strip({
@@ -128,27 +128,51 @@ def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
 
 
 def render_vessel_quick_intelligence(vessel, snapshot, *, show_gemini_hook=True):
+    """Render an AIS-derived target profile; visual enrichment is explicitly lazy-loaded."""
+    panel_title("Vessel Intelligence", "selected target")
     if vessel is None:
-        notice("Select a vessel on the map or list to inspect operational intelligence.", "yellow")
+        notice("Select a target on the tactical map or fleet view to inspect its operational profile.")
         return
 
     mmsi = str(vessel.mmsi)
-    findings = [f for f in getattr(snapshot, "findings", []) if getattr(f, "mmsi", None) == mmsi]
-    reports = int(getattr(vessel, "message_count", 0) or 0)
-    avg_sog = _safe_float(getattr(vessel, "sog_knots", None))
-    max_sog = avg_sog
-    heading_delta = None
-    nav_status = getattr(vessel, "navigational_status", None)
-    signal_age = _signal_age(getattr(vessel, "last_received", None))
-
-    panel_title("Target intelligence", mmsi)
+    name = str(getattr(vessel, "vessel_name", None) or getattr(vessel, "name", None) or "UNKNOWN VESSEL")
+    observations = [o for o in (snapshot.observations or []) if str(getattr(o, "mmsi", "")) == mmsi]
+    findings = [f for f in (snapshot.findings or []) if str(getattr(f, "mmsi", "")) == mmsi]
+    reports = len(observations)
 
     st.markdown(
-        f"<div class='data-label'>IDENTITY</div>"
-        f"<div style='font-size:1.05rem;font-weight:600;margin:.15rem 0 .45rem'>"
-        f"{getattr(vessel, 'vessel_name', None) or 'UNKNOWN VESSEL'}</div>",
+        f"<div style='margin:.1rem 0 .7rem'><div style='font-family:Inter,sans-serif;font-size:1rem;font-weight:650;color:#d9e6e9'>{name}</div>"
+        f"<div style='font-family:IBM Plex Mono,monospace;font-size:.66rem;color:#79939b;letter-spacing:.06em;margin-top:.15rem'>MMSI {mmsi}</div></div>",
         unsafe_allow_html=True,
     )
+
+    sog = _safe_float(getattr(vessel, "sog_knots", None))
+    cog = _safe_float(getattr(vessel, "cog_degrees", None))
+    hdg = _safe_float(getattr(vessel, "heading_degrees", None))
+    lat = _safe_float(getattr(vessel, "latitude", None))
+    lon = _safe_float(getattr(vessel, "longitude", None))
+    nav_status = getattr(vessel, "navigational_status", None)
+
+    speeds = [_safe_float(getattr(o, "sog_knots", None)) for o in observations]
+    speeds = [x for x in speeds if x is not None]
+    avg_sog = sum(speeds) / len(speeds) if speeds else None
+    max_sog = max(speeds) if speeds else None
+    heading_delta = _heading_delta([getattr(o, "heading_degrees", None) for o in observations])
+    latest_received = max((getattr(o, "received_at", None) for o in observations), default=getattr(vessel, "last_received", None))
+    signal_age = _signal_age(latest_received)
+
+    metric_strip({
+        "SOG": f"{sog:.1f} kn" if sog is not None else "—",
+        "COG": f"{cog:.0f}°" if cog is not None else "—",
+        "HDG": f"{hdg:.0f}°" if hdg is not None else "—",
+        "REPORTS": reports,
+    })
+
+    if lat is not None and lon is not None:
+        st.markdown(
+            f"<div class='small-note' style='margin:.15rem 0 .65rem'>POSITION · <span class='mono'>{lat:.5f}, {lon:.5f}</span></div>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("### Operational Status")
     metric_strip({
