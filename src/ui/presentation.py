@@ -49,6 +49,21 @@ div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, textarea { ba
 .notice-red { border-left-color:var(--red); background:#1b1014; color:#e8b3b8; }
 .notice-green { border-left-color:var(--green); background:#0e1c19; color:#b5ddc7; }
 .small-note { color:var(--muted); font-size:.7rem; line-height:1.4; }
+.side-header { margin:0 0 .75rem; padding-bottom:.55rem; border-bottom:1px solid var(--line); }
+.side-header .brand { font-size:.92rem; letter-spacing:.14em; }
+.side-subtitle { color:var(--muted); font:500 .62rem Inter,sans-serif; letter-spacing:.12em; margin:.2rem 0 .45rem; }
+.side-status { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
+.side-provider { color:var(--muted); font:500 .62rem 'IBM Plex Mono',monospace; letter-spacing:.08em; }
+.side-section-title {
+  color:var(--muted); font-size:.58rem; letter-spacing:.12em; text-transform:uppercase;
+  margin:.85rem 0 .4rem; padding-top:.55rem; border-top:1px solid var(--line);
+}
+.side-section-title:first-of-type { margin-top:.35rem; }
+.side-section-label {
+  color:var(--muted); font-size:.58rem; letter-spacing:.1em; text-transform:uppercase;
+  margin:.55rem 0 .25rem;
+}
+.side-muted { color:var(--muted) !important; font-size:.68rem !important; margin:.2rem 0 .15rem; }
 @media (max-width: 760px) { .block-container { padding:.75rem .65rem 2rem; } .operational-header { align-items:flex-start; gap:.5rem; } .brand small { display:block; margin:.15rem 0 0; } }
 </style>
 """
