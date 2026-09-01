@@ -47,6 +47,8 @@ def render_overview(
         anomalies=summary["anomalies"],
         collection=duration,
         provenance="AIS REAL ONLY",
+        avg_speed=f"{summary['average_speed_knots']:.1f} kn",
+        last_message=_utc(snapshot.status.last_received_at),
     )
 
     _render_readiness(snapshot)
@@ -156,6 +158,7 @@ def render_overview(
                 show_speed_field=show_speed_field,
                 show_anomaly_hotspots=show_anomaly_hotspots,
                 map_style=map_style,
+                show_operational_strip=False,
             )
 
     with intel_col:
