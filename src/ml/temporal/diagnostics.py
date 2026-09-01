@@ -1,8 +1,8 @@
 """Diagnostics for the temporal quality of real AIS tracks.
 
-This module is intentionally independent from the temporal model and UI. It
-measures the source observations available to a temporal learner without
-changing sequence construction, training, or inference behavior.
+This module measures source coverage and provides a conservative selector for
+temporal model scales. It never fabricates observations or interpolates a
+track unless the selected scale has enough real source points.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from src.ml.temporal.types import MAX_TIME_DELTA_SECONDS
 
 DEFAULT_POINT_THRESHOLDS: tuple[int, ...] = (4, 8, 16, 32)
 DEFAULT_WINDOW_LENGTHS: tuple[int, ...] = (8, 16, 32)
+ADAPTIVE_SEQUENCE_LENGTHS: tuple[int, ...] = (32, 16, 8)
 
 
 @dataclass(frozen=True)
@@ -60,12 +61,7 @@ def analyze_temporal_tracks(
     window_lengths: Sequence[int] = DEFAULT_WINDOW_LENGTHS,
     gap_threshold_seconds: float = MAX_TIME_DELTA_SECONDS,
 ) -> TemporalTrackDiagnostics:
-    """Summarize temporal coverage without modifying the supplied tracks.
-
-    Durations and intervals use ``AISObservation.received_at`` because it is
-    the trusted absolute timestamp in the domain model. AIS ``Timestamp``
-    seconds are not interpreted as absolute time here.
-    """
+    """Summarize temporal coverage without modifying the supplied tracks."""
     items = list(tracks.items()) if isinstance(tracks, dict) else list(tracks)
     thresholds = tuple(sorted({int(value) for value in point_thresholds if int(value) > 0}))
     lengths = tuple(sorted({int(value) for value in window_lengths if int(value) > 0}))
@@ -83,10 +79,8 @@ def analyze_temporal_tracks(
             continue
         n = len(track)
         point_counts.append(n)
-        duration = (track[-1].received_at - track[0].received_at).total_seconds()
-        duration = max(0.0, float(duration))
+        duration = max(0.0, float((track[-1].received_at - track[0].received_at).total_seconds()))
         durations.append(duration)
-
         for previous, current in zip(track, track[1:]):
             delta = (current.received_at - previous.received_at).total_seconds()
             if delta < 0:
@@ -98,14 +92,8 @@ def analyze_temporal_tracks(
                 max_gap = delta if max_gap is None else max(max_gap, delta)
 
     by_threshold = {threshold: sum(n >= threshold for n in point_counts) for threshold in thresholds}
-    sliding = {
-        length: sum(max(0, n - length + 1) for n in point_counts)
-        for length in lengths
-    }
-    non_overlapping = {
-        length: sum(n // length for n in point_counts)
-        for length in lengths
-    }
+    sliding = {length: sum(max(0, n - length + 1) for n in point_counts) for length in lengths}
+    non_overlapping = {length: sum(n // length for n in point_counts) for length in lengths}
 
     return TemporalTrackDiagnostics(
         total_tracks=len(items),
@@ -126,3 +114,23 @@ def analyze_temporal_tracks(
         sliding_windows=sliding,
         non_overlapping_windows=non_overlapping,
     )
+
+
+def select_adaptive_sequence_length(
+    tracks: dict[str, list[AISObservation]] | Sequence[tuple[str, list[AISObservation]]],
+    *,
+    minimum_tracks: int,
+    candidate_lengths: Sequence[int] = ADAPTIVE_SEQUENCE_LENGTHS,
+) -> int | None:
+    """Choose the longest scale supported by enough real AIS tracks.
+
+    A track qualifies for a scale only when it contains at least that many
+    valid observations. This prevents resampling a short track into a longer
+    sequence and falsely implying temporal evidence that was never observed.
+    """
+    diagnostics = analyze_temporal_tracks(tracks, point_thresholds=candidate_lengths, window_lengths=())
+    required = max(1, int(minimum_tracks))
+    for length in sorted({int(value) for value in candidate_lengths if int(value) > 0}, reverse=True):
+        if diagnostics.tracks_by_min_points.get(length, 0) >= required:
+            return length
+    return None
