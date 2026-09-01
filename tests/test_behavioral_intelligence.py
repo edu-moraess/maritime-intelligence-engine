@@ -303,3 +303,126 @@ def test_invalid_flag_excluded():
     ]
     profile = build_behavioral_profile("123456789", track)
     assert profile.evidence.valid_position_count == 2
+
+
+def test_classification_maneuvering_unambiguous():
+    """Course change ≥40° AND speed variation ≥1.5, with good consistency/efficiency.
+
+    Must not trip IRREGULAR (σ SOG < 4, consistency high, efficiency high).
+    """
+    track = [
+        _obs(t=0, lat=-23.0, lon=-43.0, sog=5.0, cog=0.0, hdg=0.0),
+        _obs(t=60, lat=-23.008, lon=-43.0, sog=8.0, cog=45.0, hdg=45.0),
+        _obs(t=120, lat=-23.016, lon=-43.002, sog=5.0, cog=90.0, hdg=90.0),
+    ]
+    profile = build_behavioral_profile("123456789", track)
+    assert profile.classification == "MANEUVERING"
+    assert profile.course.total_course_change is not None
+    assert profile.course.total_course_change >= 40.0
+    assert profile.speed.sog_std is not None and profile.speed.sog_std >= 1.5
+    assert profile.speed.sog_std < 4.0
+    assert profile.course.heading_cog_consistency == pytest.approx(1.0, abs=1e-6)
+
+
+def test_classification_irregular_unambiguous():
+    """High SOG std (≥4) and heading/COG consistency ≤0.45 → IRREGULAR."""
+    track = [
+        _obs(t=0, sog=2.0, cog=0.0, hdg=180.0),
+        _obs(t=60, lat=-23.01, lon=-43.0, sog=12.0, cog=90.0, hdg=270.0),
+        _obs(t=120, lat=-23.02, lon=-43.01, sog=3.0, cog=180.0, hdg=0.0),
+        _obs(t=180, lat=-23.01, lon=-43.02, sog=15.0, cog=270.0, hdg=90.0),
+    ]
+    profile = build_behavioral_profile("123456789", track)
+    assert profile.classification == "IRREGULAR"
+    assert profile.speed.sog_std is not None and profile.speed.sog_std >= 4.0
+    assert profile.course.heading_cog_consistency is not None
+    assert profile.course.heading_cog_consistency <= 0.45
+
+
+def test_irregular_priority_over_maneuvering():
+    """Track that satisfies both IRREGULAR and MANEUVERING signals → IRREGULAR wins."""
+    track = [
+        _obs(t=0, sog=2.0, cog=0.0, hdg=180.0),
+        _obs(t=60, lat=-23.01, lon=-43.0, sog=12.0, cog=90.0, hdg=270.0),
+        _obs(t=120, lat=-23.02, lon=-43.01, sog=3.0, cog=180.0, hdg=0.0),
+        _obs(t=180, lat=-23.01, lon=-43.02, sog=15.0, cog=270.0, hdg=90.0),
+    ]
+    profile = build_behavioral_profile("123456789", track)
+    assert profile.classification == "IRREGULAR"
+    assert profile.course.total_course_change is not None
+    assert profile.course.total_course_change >= 40.0
+    assert profile.speed.sog_std is not None and profile.speed.sog_std >= 1.5
+
+
+def test_course_change_rate_degrees_per_minute():
+    """30° change over 60 s → 30 °/min (unit is degrees per minute)."""
+    track = [
+        _obs(t=0, sog=8.0, cog=0.0, hdg=0.0),
+        _obs(t=60, lat=-23.01, lon=-43.0, sog=8.0, cog=30.0, hdg=30.0),
+    ]
+    course = extract_course_features(track)
+    assert course.total_course_change == pytest.approx(30.0, abs=1e-6)
+    assert course.course_change_rate == pytest.approx(30.0, abs=1e-6)
+
+
+def test_heading_cog_consistency_numeric():
+    aligned = extract_course_features([
+        _obs(t=0, cog=90.0, hdg=90.0),
+        _obs(t=60, lat=-23.01, lon=-43.0, cog=90.0, hdg=90.0),
+    ])
+    assert aligned.heading_cog_consistency == pytest.approx(1.0, abs=1e-6)
+
+    opposite = extract_course_features([
+        _obs(t=0, cog=0.0, hdg=180.0),
+    ])
+    assert opposite.heading_cog_consistency == pytest.approx(0.0, abs=1e-6)
+
+    quarter = extract_course_features([
+        _obs(t=0, cog=0.0, hdg=90.0),
+    ])
+    assert quarter.heading_cog_consistency == pytest.approx(0.5, abs=1e-6)
+
+
+def test_speed_variation_numeric():
+    track = [
+        _obs(t=0, sog=5.0),
+        _obs(t=60, lat=-23.01, lon=-43.0, sog=11.0),
+    ]
+    speed = extract_speed_features(track)
+    assert speed.speed_variation == pytest.approx(6.0, abs=1e-6)
+
+
+def test_naive_and_missing_timestamps_excluded():
+    """Naive / missing received_at must not enter cleaned trajectory or features."""
+    from types import SimpleNamespace
+
+    aware = _obs(t=0, sog=10.0, cog=0.0)
+    aware2 = _obs(t=60, lat=-23.01, lon=-43.0, sog=10.0, cog=10.0)
+
+    naive = SimpleNamespace(
+        mmsi="123456789",
+        latitude=-23.005,
+        longitude=-43.0,
+        received_at=datetime(2026, 1, 1, 12, 0, 30),
+        sog_knots=99.0,
+        cog_degrees=180.0,
+        heading_degrees=180.0,
+        valid=True,
+    )
+    missing_ts = SimpleNamespace(
+        mmsi="123456789",
+        latitude=-23.006,
+        longitude=-43.0,
+        received_at=None,
+        sog_knots=88.0,
+        cog_degrees=270.0,
+        heading_degrees=270.0,
+        valid=True,
+    )
+
+    cleaned = _clean_observations([aware, naive, missing_ts, aware2])
+    assert len(cleaned) == 2
+    assert all(o.received_at.tzinfo is not None for o in cleaned)
+    speed = extract_speed_features(cleaned)
+    assert speed.maximum_sog == pytest.approx(10.0, abs=1e-6)
+    assert speed.speed_variation is None or speed.speed_variation == pytest.approx(0.0, abs=1e-6)
