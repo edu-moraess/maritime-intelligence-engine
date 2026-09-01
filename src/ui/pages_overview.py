@@ -138,35 +138,31 @@ def render_overview(
     if only_fresh:
         rows = [row for row in rows if not row.get("stale", False)]
 
-    # Map primary + target panel secondary
-    map_col, intel_col = st.columns([2.35, 1.0], gap="small")
-
-    with map_col:
-        panel_title("Operational map", f"{len(rows)} targets")
-        if not rows:
-            empty_state(_no_real_data_reason(snapshot.status.reason))
-        else:
-            _render_vessel_map(
-                rows=rows,
-                snapshot=snapshot,
-                settings=settings,
-                show_heading=show_heading,
-                show_trails=show_trails,
-                show_anomalies=show_anomalies,
-                show_density=show_density,
-                show_hexbin=show_hexbin,
-                show_speed_field=show_speed_field,
-                show_anomaly_hotspots=show_anomaly_hotspots,
-                map_style=map_style,
-                show_operational_strip=False,
-            )
-
-    with intel_col:
-        selected = _selected_vessel(snapshot.vessels)
-        render_vessel_quick_intelligence(
-            selected,
-            snapshot,
-            show_gemini_hook=True,
-            engine=engine,
+    # Full-width operational map; vessel intelligence follows below.
+    panel_title("Operational map", f"{len(rows)} targets")
+    if not rows:
+        empty_state(_no_real_data_reason(snapshot.status.reason))
+    else:
+        _render_vessel_map(
+            rows=rows,
+            snapshot=snapshot,
+            settings=settings,
+            show_heading=show_heading,
+            show_trails=show_trails,
+            show_anomalies=show_anomalies,
+            show_density=show_density,
+            show_hexbin=show_hexbin,
+            show_speed_field=show_speed_field,
+            show_anomaly_hotspots=show_anomaly_hotspots,
+            map_style=map_style,
+            show_operational_strip=False,
         )
-        st.caption("Operational intelligence derived from live AIS observations.")
+
+    selected = _selected_vessel(snapshot.vessels)
+    render_vessel_quick_intelligence(
+        selected,
+        snapshot,
+        show_gemini_hook=True,
+        engine=engine,
+    )
+    st.caption("Operational intelligence derived from live AIS observations.")
