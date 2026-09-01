@@ -2,7 +2,7 @@
 -- 001 created the inline PostgreSQL names used below:
 --   ais_observations_payload_hash_key
 --   ais_observations_ais_timestamp_second_check
--- Existing 60–63 values are special AIS states, not ordinary seconds; they are
+-- Existing 60–63 values are special AIS states, not ordinary seconds, they are
 -- nulled rather than converted or mapped to an absolute timestamp.
 
 UPDATE ais_observations

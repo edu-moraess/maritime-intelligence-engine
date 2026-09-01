@@ -440,25 +440,59 @@ def _execute_sql_script(cursor: Any, script: str) -> None:
 
     psycopg supports a single statement reliably across versions; migrations
     are therefore split here rather than relying on multi-statement execution.
-    The splitter ignores semicolons inside quoted SQL literals/identifiers.
+    The splitter ignores semicolons inside quoted SQL literals/identifiers and
+    SQL comments, while preserving the original script text passed to the DB.
     """
     statement: list[str] = []
     in_single_quote = False
     in_double_quote = False
+    in_line_comment = False
+    in_block_comment = False
     index = 0
     while index < len(script):
         character = script[index]
+        next_character = script[index + 1] if index + 1 < len(script) else ""
+
+        if in_line_comment:
+            statement.append(character)
+            if character in "\r\n":
+                in_line_comment = False
+            index += 1
+            continue
+
+        if in_block_comment:
+            statement.append(character)
+            if character == "*" and next_character == "/":
+                statement.append(next_character)
+                in_block_comment = False
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if not in_single_quote and not in_double_quote:
+            if character == "-" and next_character == "-":
+                statement.extend((character, next_character))
+                in_line_comment = True
+                index += 2
+                continue
+            if character == "/" and next_character == "*":
+                statement.extend((character, next_character))
+                in_block_comment = True
+                index += 2
+                continue
+
         if character == "'" and not in_double_quote:
             statement.append(character)
-            if in_single_quote and index + 1 < len(script) and script[index + 1] == "'":
-                statement.append(script[index + 1])
+            if in_single_quote and next_character == "'":
+                statement.append(next_character)
                 index += 2
                 continue
             in_single_quote = not in_single_quote
         elif character == '"' and not in_single_quote:
             statement.append(character)
-            if in_double_quote and index + 1 < len(script) and script[index + 1] == '"':
-                statement.append(script[index + 1])
+            if in_double_quote and next_character == '"':
+                statement.append(next_character)
                 index += 2
                 continue
             in_double_quote = not in_double_quote
@@ -470,6 +504,7 @@ def _execute_sql_script(cursor: Any, script: str) -> None:
         else:
             statement.append(character)
         index += 1
+
     sql = "".join(statement).strip()
     if sql:
         cursor.execute(sql)
