@@ -234,41 +234,14 @@ def _engine_for(
 
 def _connection_state(
     settings: AppSettings,
+    engine: MaritimeIntelligenceEngine,
 ) -> str:
-    """Return the current user-facing AIS connection state."""
+    """Return the user-facing state from the current engine snapshot."""
 
     if not settings.aisstream_api_key:
         return "NOT CONFIGURED"
 
-    existing_engine = st.session_state.get(
-        "engine"
-    )
-
-    if existing_engine is None:
-        return "DISCONNECTED"
-
-    existing_settings = getattr(
-        existing_engine,
-        "settings",
-        None,
-    )
-
-    if existing_settings is None:
-        return "DISCONNECTED"
-
-    if existing_settings.bbox != settings.bbox:
-        return "DISCONNECTED"
-
-    state = existing_engine.provider.status.state
-
-    if state in {
-        "LIVE AIS",
-        "CONNECTING",
-        "DISCONNECTED",
-    }:
-        return state
-
-    return "DISCONNECTED"
+    return engine.snapshot().status.state
 
 
 # ----------------------------------------------------------------------
@@ -294,26 +267,7 @@ def _render_sidebar(
     region_changed = False
 
     with st.sidebar:
-        conn = _connection_state(settings)
-        conn_upper = str(conn).upper()
-        if conn_upper in {"LIVE AIS", "LIVE"}:
-            pill_cls = "status-live"
-        elif "CONNECT" in conn_upper:
-            pill_cls = "status-connecting"
-        else:
-            pill_cls = "status-disconnected"
-
-        st.markdown(
-            "<div class='side-header'>"
-            "<div class='brand'>MIE</div>"
-            "<div class='side-subtitle'>MARITIME INTELLIGENCE</div>"
-            f"<div class='side-status'>"
-            f"<span class='status-pill {pill_cls}'>{conn}</span>"
-            f"<span class='side-provider'>AISSTREAM</span>"
-            f"</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        connection_placeholder = st.empty()
 
         st.markdown(
             "<div class='side-section-title'>MISSION CONTEXT</div>",
@@ -565,6 +519,28 @@ def _render_sidebar(
                 key=f"workspace_subarea_{module}",
             )
 
+        # Resolve the final engine after region controls have been applied,
+        # then render the indicator from the same snapshot used by SYSTEM.
+        engine = _engine_for(settings)
+        conn = _connection_state(settings, engine)
+        conn_upper = str(conn).upper()
+        if conn_upper in {"LIVE AIS", "LIVE"}:
+            pill_cls = "status-live"
+        elif "CONNECT" in conn_upper:
+            pill_cls = "status-connecting"
+        else:
+            pill_cls = "status-disconnected"
+        connection_placeholder.markdown(
+            "<div class='side-header'>"
+            "<div class='brand'>MIE</div>"
+            "<div class='side-subtitle'>MARITIME INTELLIGENCE</div>"
+            f"<div class='side-status'>"
+            f"<span class='status-pill {pill_cls}'>{conn}</span>"
+            f"<span class='side-provider'>AISSTREAM</span>"
+            f"</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
         with st.expander("SYSTEM", expanded=False):
             st.markdown(
                 f"<div class='data-label'>Connection</div>"
