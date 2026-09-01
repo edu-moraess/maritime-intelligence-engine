@@ -19,23 +19,23 @@ CSS = """
   --text:#d9e6e9; --muted:#79939b; --cyan:#35c2c9; --green:#51c79b;
   --amber:#e9b857; --red:#ef6b73;
 }
-html, body, [class*=\"css\"] { font-family: Inter, sans-serif; }
+html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
-[data-testid=\"stSidebar\"] { background: #091820; border-right: 1px solid var(--line); }
-header[data-testid=\"stHeader\"] { background: transparent; }
+[data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
+header[data-testid="stHeader"] { background: transparent; }
 h1, h2, h3 { letter-spacing: -0.02em; }
 h1 { font-size: 1.35rem !important; margin-bottom: .15rem !important; }
 h2 { font-size: 1.0rem !important; margin-top: .35rem !important; margin-bottom: .35rem !important; }
 h3 { font-size: .88rem !important; margin-top: .4rem !important; margin-bottom: .25rem !important; }
-[data-testid=\"stMetric\"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: .45rem .55rem; }
-[data-testid=\"stMetricLabel\"] { color: var(--muted); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; }
-[data-testid=\"stMetricValue\"] { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: .95rem; }
-[data-testid=\"stDataFrame\"] { border: 1px solid var(--line); }
-div[data-baseweb=\"select\"] > div, div[data-baseweb=\"input\"] > div, textarea { background: #0b1a21; border-color: var(--line); }
+[data-testid="stMetric"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: .45rem .55rem; }
+[data-testid="stMetricLabel"] { color: var(--muted); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; }
+[data-testid="stMetricValue"] { color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: .95rem; }
+[data-testid="stDataFrame"] { border: 1px solid var(--line); }
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, textarea { background: #0b1a21; border-color: var(--line); }
 .stButton > button { border: 1px solid var(--line); background: #0e232c; color: var(--text); border-radius: 3px; font-weight: 600; }
 .stButton > button:hover { border-color: var(--cyan); color: var(--cyan); }
-div[data-testid=\"stExpander\"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
+div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
 .operational-header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding:.1rem 0 .55rem; margin-bottom:.55rem; }
 .brand { font-weight:700; letter-spacing:.12em; font-size:.82rem; color:var(--text); }
 .brand small { color:var(--muted); font-weight:500; letter-spacing:.04em; margin-left:.5rem; }
