@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import streamlit as st
+
 from src.intelligence.engine import EngineSnapshot
 from src.ui.presentation import render_intelligence_status
 
@@ -16,20 +18,29 @@ from src.ui._pages_map_impl import (  # noqa: F401
     _render_similarity_search,
     _track_readiness_reason,
 )
-from src.ui._pages_map_render import (  # noqa: F401
-    _apply_map_selection,
-    _plot_layout,
-    _render_anomaly_map,
-    _render_speed_chart,
-    _render_track_chart,
-    _render_vessel_map,
-    _select_vessel,
-    _selected_vessel,
-    _utc,
-    _vessel_compact,
-    _vessel_label,
-    engine_tracks,
-)
+
+# The map renderer's selection callback must trigger a normal page rerun so
+# panels outside the map fragment can observe the newly selected vessel.
+# Scope this decorator override to import-time only.
+_original_fragment = st.fragment
+st.fragment = lambda func: func
+try:
+    from src.ui._pages_map_render import (  # noqa: F401
+        _apply_map_selection,
+        _plot_layout,
+        _render_anomaly_map,
+        _render_speed_chart,
+        _render_track_chart,
+        _render_vessel_map,
+        _select_vessel,
+        _selected_vessel,
+        _utc,
+        _vessel_compact,
+        _vessel_label,
+        engine_tracks,
+    )
+finally:
+    st.fragment = _original_fragment
 
 
 def _render_readiness(
