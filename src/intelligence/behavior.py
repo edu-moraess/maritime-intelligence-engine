@@ -25,7 +25,6 @@ from src.processing.quality import haversine_km
 
 STOPPED_SOG_KNOTS = 0.5
 SLOW_SOG_KNOTS = 3.0
-UNDERWAY_SOG_KNOTS = 3.0
 
 # Maneuvering requires multiple signals, not a single course jump.
 MANEUVER_TOTAL_COURSE_CHANGE_DEG = 40.0
@@ -197,7 +196,7 @@ def _circular_mean_deg(angles: Sequence[float]) -> float | None:
 def _clean_observations(
     observations: Iterable[AISObservation],
 ) -> list[AISObservation]:
-    """Sort by time, drop invalid coords/timestamps, keep first of duplicate times."""
+    """Sort by time, drop invalid coords/timestamps; on duplicate timestamps keep the last record."""
     cleaned: list[AISObservation] = []
     for obs in observations:
         if not getattr(obs, "valid", True):
