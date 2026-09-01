@@ -29,7 +29,7 @@ def render_overview(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    """Render the operational workspace with map-first hierarchy."""
+    """Render the operational workspace with a full-width map-first hierarchy."""
     summary = snapshot.summary
 
     region = region_name_for_bbox(settings.bbox) or "CUSTOM"
@@ -53,7 +53,8 @@ def render_overview(
 
     _render_readiness(snapshot)
 
-    # Map controls collapsed by default to maximize map area.
+    # Keep controls compact and outside the map so the operational map retains
+    # the full available horizontal workspace.
     with st.expander("MAP CONTROLS", expanded=False):
         row_one = st.columns(4, gap="small")
         with row_one[0]:
@@ -138,35 +139,33 @@ def render_overview(
     if only_fresh:
         rows = [row for row in rows if not row.get("stale", False)]
 
-    # Map primary + target panel secondary
-    map_col, intel_col = st.columns([2.35, 1.0], gap="small")
-
-    with map_col:
-        panel_title("Operational map", f"{len(rows)} targets")
-        if not rows:
-            empty_state(_no_real_data_reason(snapshot.status.reason))
-        else:
-            _render_vessel_map(
-                rows=rows,
-                snapshot=snapshot,
-                settings=settings,
-                show_heading=show_heading,
-                show_trails=show_trails,
-                show_anomalies=show_anomalies,
-                show_density=show_density,
-                show_hexbin=show_hexbin,
-                show_speed_field=show_speed_field,
-                show_anomaly_hotspots=show_anomaly_hotspots,
-                map_style=map_style,
-                show_operational_strip=False,
-            )
-
-    with intel_col:
-        selected = _selected_vessel(snapshot.vessels)
-        render_vessel_quick_intelligence(
-            selected,
-            snapshot,
-            show_gemini_hook=True,
-            engine=engine,
+    # Keep the operational map full-width, as in the previous layout. The
+    # selected vessel intelligence panel follows below instead of consuming
+    # horizontal map space.
+    panel_title("Operational map", f"{len(rows)} targets")
+    if not rows:
+        empty_state(_no_real_data_reason(snapshot.status.reason))
+    else:
+        _render_vessel_map(
+            rows=rows,
+            snapshot=snapshot,
+            settings=settings,
+            show_heading=show_heading,
+            show_trails=show_trails,
+            show_anomalies=show_anomalies,
+            show_density=show_density,
+            show_hexbin=show_hexbin,
+            show_speed_field=show_speed_field,
+            show_anomaly_hotspots=show_anomaly_hotspots,
+            map_style=map_style,
+            show_operational_strip=False,
         )
-        st.caption("Operational intelligence derived from live AIS observations.")
+
+    selected = _selected_vessel(snapshot.vessels)
+    render_vessel_quick_intelligence(
+        selected,
+        snapshot,
+        show_gemini_hook=True,
+        engine=engine,
+    )
+    st.caption("Operational intelligence derived from live AIS observations.")
