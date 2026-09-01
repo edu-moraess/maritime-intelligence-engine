@@ -210,7 +210,7 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
         initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=7.5),
         layers=[pdk.Layer(
             "ScatterplotLayer", data=rows, get_position=["longitude", "latitude"],
-            get_fill_color=[239, 107, 115, 220], get_radius=700,
+            get_fill_color=[239, cab107, 115, 220], get_radius=700,
             radius_min_pixels=5, radius_max_pixels=14, pickable=True,
         )],
         tooltip={"html": "<b>{category}</b><br/>MMSI {mmsi}<br/>Score {score}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
@@ -349,7 +349,7 @@ def _render_vessel_map(
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
-    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
+    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="ignore")
     _apply_map_selection(event)
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
