@@ -29,7 +29,7 @@ def render_overview(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    """Render the operational workspace with map-first hierarchy."""
+    """Render the operational workspace with a full-width map-first hierarchy."""
     summary = snapshot.summary
 
     region = region_name_for_bbox(settings.bbox) or "CUSTOM"
@@ -53,7 +53,8 @@ def render_overview(
 
     _render_readiness(snapshot)
 
-    # Map controls collapsed by default to maximize map area.
+    # Keep controls compact and outside the map so the operational map retains
+    # the full available horizontal workspace.
     with st.expander("MAP CONTROLS", expanded=False):
         row_one = st.columns(4, gap="small")
         with row_one[0]:
@@ -138,7 +139,9 @@ def render_overview(
     if only_fresh:
         rows = [row for row in rows if not row.get("stale", False)]
 
-    # Full-width operational map; vessel intelligence follows below.
+    # Keep the operational map full-width, as in the previous layout. The
+    # selected vessel intelligence panel follows below instead of consuming
+    # horizontal map space.
     panel_title("Operational map", f"{len(rows)} targets")
     if not rows:
         empty_state(_no_real_data_reason(snapshot.status.reason))

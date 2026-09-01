@@ -643,20 +643,38 @@ def main() -> None:
             )
 
         if received:
-            st.success(
+            st.session_state["collection_result"] = (
+                "success",
                 "Collection elapsed "
                 f"{engine.last_collection_seconds:.1f} s · "
                 f"received {received:,} real AIS "
-                "position report(s)."
+                "position report(s).",
             )
         else:
-            st.warning(
+            st.session_state["collection_result"] = (
+                "warning",
                 "Collection elapsed "
                 f"{engine.last_collection_seconds:.1f} s · "
                 "REAL AIS DATA UNAVAILABLE — "
                 "no real observations were received "
-                "in this collection window."
+                "in this collection window.",
             )
+
+        # The sidebar is rendered before collection. Rerun once so its
+        # connection indicator observes the provider state produced by the
+        # completed collection instead of the pre-collection state.
+        st.rerun()
+
+    collection_result = st.session_state.pop(
+        "collection_result",
+        None,
+    )
+    if collection_result:
+        result_type, result_message = collection_result
+        if result_type == "success":
+            st.success(result_message)
+        else:
+            st.warning(result_message)
 
     snapshot = engine.snapshot()
 
