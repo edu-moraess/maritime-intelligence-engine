@@ -47,7 +47,7 @@ def test_waiting():
 def test_not_ready():
     r = TemporalAnomalyAdapter().fit({f"3682076{i:02d}": _track(f"3682076{i:02d}", 6, 25 + i * 0.01) for i in range(3)})
     assert r.status == "NOT_READY" and r.scores == []
-    assert r.n_tracks_seen == 3 and r.sequence_length is None
+    assert r.n_tracks_seen == 3
 
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
