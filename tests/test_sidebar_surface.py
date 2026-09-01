@@ -42,8 +42,8 @@ def test_sidebar_session_state_keys_preserved():
     assert missing == [], f"missing sidebar keys: {missing}"
 
 
-def test_collection_duration_options_unchanged():
-    assert COLLECTION_DURATION_OPTIONS == (30, 60, 120, 180)
+def test_collection_duration_options_include_temporal_windows():
+    assert COLLECTION_DURATION_OPTIONS == (30, 60, 120, 180, 300, 600, 900)
 
 
 def test_navigation_structure_stable():
