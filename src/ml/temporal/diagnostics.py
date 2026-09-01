@@ -7,7 +7,6 @@ changing sequence construction, training, or inference behavior.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 from statistics import mean, median
 from typing import Sequence
 
