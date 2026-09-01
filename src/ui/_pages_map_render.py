@@ -210,7 +210,7 @@ def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -
         initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=7.5),
         layers=[pdk.Layer(
             "ScatterplotLayer", data=rows, get_position=["longitude", "latitude"],
-            get_fill_color=[239, cab107, 115, 220], get_radius=700,
+            get_fill_color=[239, 107, 115, 220], get_radius=700,
             radius_min_pixels=5, radius_max_pixels=14, pickable=True,
         )],
         tooltip={"html": "<b>{category}</b><br/>MMSI {mmsi}<br/>Score {score}", "style": {"backgroundColor": "#0d1c24", "color": "#d9e6e9"}},
@@ -305,7 +305,7 @@ def _render_vessel_map(
             layers.append(pdk.Layer("ScatterplotLayer", data=selected_rows, get_position=["longitude", "latitude"], get_fill_color=[0, 0, 0, 0], get_radius=780, radius_min_pixels=14, radius_max_pixels=24, stroked=True, filled=False, get_line_color=[255, 255, 255, 235], line_width_min_pixels=2, pickable=False))
 
     if show_anomalies and anomaly_mmsis:
-        anomaly_rows = [r for r in rows if str(r.get("mmsi")) in anomaly_mmsis and (not selected_mmsi or str(r.get("mmsi")) != str(selected_mmsi))]
+        anomaly_rows = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
         if anomaly_rows:
             layers.append(pdk.Layer("ScatterplotLayer", data=anomaly_rows, get_position=["longitude", "latitude"], get_fill_color=[0, 0, 0, 0], get_radius=620, radius_min_pixels=11, radius_max_pixels=20, stroked=True, filled=False, get_line_color="ring_color", line_width_min_pixels=2, pickable=False))
 
