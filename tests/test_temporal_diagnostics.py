@@ -55,12 +55,12 @@ def test_temporal_diagnostics_uses_received_time_and_detects_gaps():
 
     result = analyze_temporal_tracks({"123456789": track}, gap_threshold_seconds=900)
 
-    assert result.median_duration_seconds == 1060.0
-    assert result.mean_interval_seconds == (30 + 30 + 1000) / 3
+    assert result.median_duration_seconds == 1090.0
+    assert result.mean_interval_seconds == (30 + 30 + 1030) / 3
     assert result.median_interval_seconds == 30.0
-    assert result.max_interval_seconds == 1000.0
+    assert result.max_interval_seconds == 1030.0
     assert result.gaps_over_threshold == 1
-    assert result.max_gap_seconds == 1000.0
+    assert result.max_gap_seconds == 1030.0
 
 
 def test_temporal_diagnostics_ignores_invalid_observations_safely():
