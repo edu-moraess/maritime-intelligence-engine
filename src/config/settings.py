@@ -55,6 +55,11 @@ class AppSettings:
     database_url: str | None = None
     historical_persistence_enabled: bool = False
 
+    def __post_init__(self) -> None:
+        """Keep legacy single-bbox construction compatible with dual monitoring."""
+        if self.monitoring_bboxes == (DEFAULT_BBOX,) and self.bbox != DEFAULT_BBOX:
+            object.__setattr__(self, "monitoring_bboxes", (self.bbox,))
+
     @classmethod
     def from_runtime(cls, secrets: Any | None = None) -> "AppSettings":
         values = {
