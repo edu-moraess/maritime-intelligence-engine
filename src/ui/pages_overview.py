@@ -26,8 +26,8 @@ from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 _WORKSTATION_CSS = """
 <style>
-/* Keep the operational map full-width while optional intelligence floats above it. */
-[data-testid="stVerticalBlock"]:has(.st-key-tactical-vessel-panel) {
+/* Keep the operational map full-width while selected-vessel intelligence floats above it. */
+.st-key-tactical-vessel-panel {
     position: fixed !important;
     top: 7.7rem;
     right: 1.25rem;
@@ -43,12 +43,12 @@ _WORKSTATION_CSS = """
     backdrop-filter: blur(10px);
 }
 
-[data-testid="stVerticalBlock"]:has(.st-key-tactical-vessel-panel) .stExpander {
+.st-key-tactical-vessel-panel .stExpander {
     border-color: #1b3640;
 }
 
 @media (max-width: 900px) {
-    [data-testid="stVerticalBlock"]:has(.st-key-tactical-vessel-panel) {
+    .st-key-tactical-vessel-panel {
         position: static !important;
         width: auto;
         max-height: none;
@@ -61,7 +61,6 @@ _WORKSTATION_CSS = """
 
 def _render_map_controls(
     *,
-    settings: AppSettings,
 ) -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
     """Render compact map controls without consuming map width."""
     with st.popover("MAP CONTROLS", icon="☰", use_container_width=False):
@@ -121,7 +120,6 @@ def _render_map_controls(
         )
         st.caption("Real AIS observations only. Controls float above the map and do not reduce its width.")
 
-    del settings
     return (
         min_speed,
         only_fresh,
@@ -177,7 +175,7 @@ def render_overview(
         show_hexbin,
         show_speed_field,
         show_anomaly_hotspots,
-    ) = _render_map_controls(settings=settings)
+    ) = _render_map_controls()
 
     rows = vessel_rows(snapshot.vessels)
 
