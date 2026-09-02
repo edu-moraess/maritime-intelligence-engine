@@ -798,137 +798,68 @@ No universal intent inference
 
 Behavioral anomalies indicate patterns that may deserve investigation. They do not establish vessel intent or malicious activity.
 
-No synthetic fallback
+---
 
-When real AIS data is unavailable, the system does not substitute simulated traffic.
+25. Temporal Intelligence
+
+Temporal intelligence is an evidence-gated parallel analytical path built from the same validated AIS tracks used by the rest of the system.
+
+The temporal path is:
+
+Real AIS tracks
+      ↓
+Validated temporal coverage
+      ↓
+Temporal diagnostics
+      ↓
+Adaptive scale selection
+      ↓
+Temporal sequence construction
+      ↓
+TCN Autoencoder
+      ↓
+Reconstruction error
+      ↓
+Session-relative deep anomaly ranking
+
+The selector considers the candidate scales in descending order:
+
+T=32
+  ↓ if unsupported
+T=16
+  ↓ if unsupported
+T=8
+  ↓ if unsupported
+NOT_READY
+
+A scale is supported only when the minimum required number of tracks contains at least that many validated real AIS observations. The default minimum remains the existing deep-model requirement of 8 usable tracks.
+
+This means a dense session may use T=32, while a sparse session such as the observed Houston Ship Channel session can use T=8. If fewer than 8 tracks support T=8, the temporal model remains NOT_READY.
+
+The selector does not interpolate, stretch, duplicate, or synthesize observations to satisfy a requested sequence length.
+
+Temporal diagnostics also expose:
+
+- tracks meeting minimum point thresholds;
+- median and maximum track duration;
+- receive-time intervals and maximum gaps;
+- sliding-window availability;
+- non-overlapping window availability.
+
+These diagnostics establish the evidence boundary before model training. They should be considered alongside model output rather than treated as a model-performance metric.
+
+`deep_anomaly_score` remains a session-relative ranking and is not a calibrated probability or a universal maritime behavior classification.
 
 ---
 
-25. Future Architecture
+26. Evolution Boundary
 
-The long-term architecture can evolve from AIS-focused behavioral intelligence toward multimodal maritime intelligence.
+The current temporal architecture deliberately separates three questions:
 
-                         Maritime Environment
-                                  │
-             ┌────────────────────┼────────────────────┐
-             ▼                    ▼                    ▼
-            AIS                 VIDEO                 SAR
-             │                    │                    │
-             ▼                    ▼                    ▼
-       Vessel Telemetry      Computer Vision      Remote Sensing
-             │                    │                    │
-             └────────────────────┼────────────────────┘
-                                  ▼
-                            Sensor Fusion
-                                  │
-                                  ▼
-                       Behavioral Intelligence
-                                  │
-                                  ▼
-                         Context / Risk Layer
-                                  │
-                                  ▼
-                            Human Analyst
+1. Is there enough real temporal evidence to train?
+2. Which supported temporal scale is appropriate for the current session?
+3. Does the resulting temporal score generalize beyond the current session?
 
-Potential future sources include:
+The first two are implemented. The third is not yet validated.
 
-- computer vision;
-- satellite imagery;
-- weather;
-- infrastructure information;
-- additional geospatial datasets.
-
-These represent architectural directions, not current capabilities unless explicitly implemented.
-
----
-
-26. Architectural Evolution
-
-The intended evolution is:
-
-                    CURRENT
-                       │
-                       ▼
-              Real-Time AIS
-                       │
-                       ▼
-              Vessel Tracking
-                       │
-                       ▼
-            Trajectory Intelligence
-                       │
-                       ▼
-          Session-Relative Behavior
-                       │
-                       ▼
-             Explainable Findings
-                       │
-                       ▼
-                  OPERATOR
-
-Toward:
-
-                    FUTURE
-                       │
-                       ▼
-             Multi-Source Maritime Data
-                       │
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-           AIS       Vision      SAR
-            │          │          │
-            └──────────┼──────────┘
-                       ▼
-                  Sensor Fusion
-                       │
-                       ▼
-             Historical Baselines
-                       │
-                       ▼
-           Context-Aware Intelligence
-                       │
-                       ▼
-                  OPERATOR
-
----
-
-27. Documentation Map
-
-The architecture document describes the system structure.
-
-Additional technical evidence is maintained separately:
-
-Document| Purpose
-""AUDIT.md"" (AUDIT.md)| Technical audit findings and engineering corrections
-""VALIDATION.md"" (VALIDATION.md)| Automated and runtime validation evidence
-""STREAMLIT_DEPLOY.md"" (STREAMLIT_DEPLOY.md)| Streamlit Community Cloud deployment procedure
-"temporal_reference_*.md"| Temporal integrity reference
-"validation_runtime_*.md"| Runtime validation evidence
-
-This separation prevents architectural documentation from becoming mixed with historical audit records or deployment logs.
-
----
-
-28. Final Architectural Principle
-
-MIE is built around a simple chain:
-
-REAL DATA
-    ↓
-TRUSTED OBSERVATIONS
-    ↓
-TRAJECTORIES
-    ↓
-BEHAVIORAL FEATURES
-    ↓
-ANALYTICS
-    ↓
-EXPLAINABLE FINDINGS
-    ↓
-HUMAN INVESTIGATION
-
-The purpose of the architecture is not merely to display vessels on a map.
-
-It is to establish a technical foundation for transforming real maritime telemetry into structured, explainable, and operationally useful behavioral intelligence.
-
-«Observe. Validate. Analyze. Explain. Investigate.»
+Future work should therefore prioritize controlled temporal validation, historical baselines, and cross-region evaluation before increasing model complexity.

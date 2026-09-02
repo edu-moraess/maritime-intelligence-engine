@@ -1,21 +1,16 @@
-Maritime Intelligence Engine (MIE)
+# Maritime Intelligence Engine (MIE)
 
-Real-Time Maritime Behavioral Intelligence
+## Real-Time Maritime Behavioral Intelligence
 
-"MIE Architecture" (docs/architecture-diagram.png)
+Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest **real AIS telemetry**, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
 
-Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest real AIS telemetry, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
-
-«Real AIS. Real trajectories. No synthetic vessels. No fabricated results.»
+> **Real AIS. Real trajectories. No synthetic vessels. No fabricated results.**
 
 ---
 
-Overview
+## What MIE does
 
-AIS provides information about where vessels are and how they are moving.
-
-MIE is designed to go further by transforming vessel telemetry into behavioral context and analytical signals.
-
+```text
 Real AIS
    ↓
 Ingestion
@@ -30,23 +25,18 @@ Feature Engineering
    ↓
 Behavioral Analytics
    ↓
+Temporal Intelligence
+   ↓
 Explainable Findings
    ↓
 Operational Intelligence
+```
 
-The central question is not only:
+The central question is not only **where a vessel is**, but also how it is moving, how its behavior compares with observed traffic, and which patterns deserve further investigation.
 
-«Where is the vessel?»
+## Core capabilities
 
-but also:
-
-«How is it moving, how does its behavior compare with the observed traffic, and which patterns deserve further investigation?»
-
----
-
-Core Capabilities
-
-📡 Real-Time AIS Ingestion
+### Real-time AIS
 
 - AISStream WebSocket integration
 - Real vessel telemetry
@@ -55,160 +45,128 @@ Core Capabilities
 - Explicit connection and collection states
 - Session-based collection
 
-🚢 Vessel Tracking
+### Vessel and trajectory intelligence
 
 - MMSI-based vessel tracking
 - Position history
-- Speed over ground
-- Course over ground
-- Heading
+- SOG / COG / heading
+- Track duration and continuity
+- Movement and trajectory features
 - Vessel-level investigation
-- Trajectory reconstruction
+- Interactive geospatial visualization
 
-🧭 Trajectory Intelligence
+### Behavioral analytics
 
-MIE transforms sequential AIS observations into vessel movement histories and analytical features.
+- PCA dimensionality reduction
+- KMeans behavioral grouping
+- Isolation Forest anomaly detection
+- Explainable behavioral rules
+- Session-relative analytical signals
 
-Examples include:
+### Temporal intelligence
 
-- displacement
-- elapsed time
-- computed speed
-- heading changes
-- course changes
-- track duration
-- movement continuity
-- signal gaps
+MIE now measures the real temporal coverage available before applying deep temporal learning.
 
-🤖 Behavioral Analytics
+```text
+Real AIS tracks
+      ↓
+Temporal diagnostics
+      ↓
+T=32 ── if enough real observations
+      ↓ otherwise
+T=16 ── if enough real observations
+      ↓ otherwise
+T=8  ── if enough real observations
+      ↓ otherwise
+NOT_READY
+```
 
-The current analytical pipeline uses unsupervised methods to explore behavioral structure in observed maritime traffic.
+The temporal path uses a TCN Autoencoder. The adaptive selector chooses the longest supported scale using only validated real AIS observations. Short tracks are never stretched, interpolated, or fabricated into longer temporal evidence.
 
-Trajectory Features
-        ↓
-Standardization
-        ↓
-PCA
-   ┌────┴────┐
-   ▼         ▼
-KMeans   Isolation Forest
-   │         │
-   └────┬────┘
-        ▼
-Behavioral Signals
+### Temporal evidence observed in live AIS
 
-Current analytical components include:
+A Houston Ship Channel session produced approximately 974 seconds of observed collection, 549 persisted real position reports, and 181 active vessels. The temporal diagnostics found:
 
-- PCA for dimensionality reduction
-- KMeans for behavioral grouping
-- Isolation Forest for anomaly detection
+- 69 tracks with ≥4 points;
+- 11 tracks with ≥8 points;
+- 0 tracks with ≥16 points;
+- 0 tracks with ≥32 points;
+- 17 sliding T=8 windows;
+- 11 non-overlapping T=8 windows;
+- median track duration of 7.0 minutes;
+- maximum receive-time gap of 24.7 minutes.
 
-🔎 Explainable Findings
+Previous Danish Straits sessions produced materially denser temporal coverage, including 263 tracks with ≥4 points. This demonstrates that temporal model availability is **region- and session-dependent**.
 
-Machine-learning outputs are complemented by interpretable behavioral rules.
+The current development therefore treats temporal coverage as an explicit evidence boundary rather than assuming that T=32 is universally available.
 
-Potential signals include:
+### Explainable findings
 
-- unusual speed
-- prolonged stops
-- signal gaps
-- significant heading changes
-- unusual trajectory characteristics
+Anomaly scores and behavioral rules are treated as signals for investigation, not proof of malicious intent, criminal activity, or hostile behavior.
 
-An anomaly is treated as a signal for investigation, not as proof of malicious intent.
+### Historical persistence
 
-🗺️ Geospatial Intelligence
+PostgreSQL/PostGIS provides an optional historical persistence layer for real validated AIS observations. Persistence is decoupled from live ingestion and is idempotent.
 
-The operational workspace provides:
-
-- live vessel positions
-- trajectory visualization
-- geographic filtering
-- Bounding Box control
-- vessel selection
-- behavioral visualization
-- heading visualization
-- operational status
-
-📊 Data Quality
-
-Data quality is part of the intelligence pipeline.
+### Data quality
 
 The system validates conditions including:
 
-- MMSI validity
-- geographic bounds
-- speed plausibility
-- temporal consistency
-- duplicate observations
-- geographic jumps
-- stale observations
-- insufficient analytical data
+- MMSI validity;
+- geographic bounds;
+- speed plausibility;
+- temporal consistency;
+- duplicate observations;
+- geographic jumps;
+- stale observations;
+- insufficient analytical evidence.
 
-When real AIS data is unavailable, MIE does not fabricate vessels or trajectories.
-
----
-
-Architecture
-
-MIE follows a layered architecture.
-
-"MIE Architecture" (docs/architecture-diagram.png)
-
-For the complete technical design, see ""docs/architecture.md"" (docs/architecture.md).
-
-                         AISStream
-                            │
-                            ▼
-                     AIS Ingestion
-                            │
-                            ▼
-                  Validation & Integrity
-                            │
-                            ▼
-                     AISObservation
-                            │
-                            ▼
-                      Session Store
-                            │
-                            ▼
-                    Trajectory Engine
-                            │
-                            ▼
-                   Feature Engineering
-                            │
-                            ▼
-                  Behavioral Analytics
-                            │
-                            ▼
-                   Intelligence Layer
-                       /          \
-                      ▼            ▼
-                Streamlit      PostgreSQL
-                   / Maps         │
-                                 ▼
-                              PostGIS
-
-The architecture intentionally separates:
-
-- data acquisition
-- validation
-- domain representation
-- session state
-- trajectory processing
-- machine learning
-- intelligence
-- persistence
-- visualization
+When real AIS data is unavailable, MIE exposes an unavailable/insufficient-data state instead of generating fictional traffic.
 
 ---
 
-Real Data Principle
+## Architecture
 
-MIE is designed around real AIS observations.
+```text
+AISStream WebSocket
+        ↓
+Real AIS ingestion
+        ↓
+Validation & integrity
+        ↓
+AISObservation
+        ↓
+Session Store
+        ↓
+Trajectory Engine
+        ↓
+Feature Engineering
+        ↓
+ ┌───────────────────────────────┐
+ │ Behavioral Analytics          │
+ │ PCA / KMeans / IsolationForest│
+ └───────────────┬───────────────┘
+                 ↓
+       Temporal Diagnostics
+                 ↓
+        Adaptive TCN-AE
+                 ↓
+      Intelligence / Findings
+          ↙              ↘
+     Streamlit       PostgreSQL/PostGIS
+```
 
-The system does not generate synthetic vessels or artificial trajectories to make the operational interface appear populated.
+The architecture intentionally separates data acquisition, validation, domain representation, session state, trajectory processing, machine learning, intelligence, persistence, and visualization.
 
+For the detailed architecture, see `docs/architecture.md`.
+
+---
+
+## Real Data Principle
+
+MIE is built around real AIS observations.
+
+```text
 Real AIS
    ↓
 Validated Observation
@@ -218,339 +176,231 @@ Real Track
 Real Features
    ↓
 Analytical Signal
+```
 
-If the required data is unavailable, the system exposes that limitation instead.
+If the required data is unavailable, the system does not substitute simulated vessels or fabricated trajectories.
 
-This principle is fundamental to the project.
+This principle applies to temporal learning as well: a model cannot claim a long temporal sequence when the source observations do not support it.
 
 ---
 
-Operational State
+## Operational semantics
 
-MIE explicitly distinguishes between data availability, infrastructure state, and analytical sufficiency.
+MIE explicitly distinguishes infrastructure state, data availability, and analytical sufficiency.
 
+```text
 AIS disconnected
       ≠
 No vessels exist
 
-Historical database unavailable
-      ≠
-Live AIS unavailable
-
 Insufficient observations
       ≠
-No anomaly exists
+Normal behavior
 
 Anomaly score
       ≠
 Threat classification
 
-This prevents infrastructure or data limitations from being misinterpreted as intelligence findings.
+Session-relative score
+      ≠
+Universal behavior probability
+```
+
+`deep_anomaly_score` is currently a session-relative ranking, not a calibrated probability.
 
 ---
 
-Temporal Integrity
+## Technology stack
 
-MIE uses UTC as its canonical temporal reference.
-
-The architecture distinguishes between:
-
-- Receive Time
-- AIS Timestamp
-- Trusted Absolute Observation Time
-
-The system does not fabricate absolute observation timestamps or network latency when the available AIS data does not support those conclusions.
-
----
-
-Vessel Intelligence
-
-The Vessel Intelligence layer combines:
-
-Vessel Identity
-       +
-Telemetry
-       +
-Trajectory
-       +
-Behavioral Features
-       +
-Analytical Findings
-
-This allows the operator to move from the global maritime operating picture toward an individual vessel investigation.
+| Layer | Technology |
+|---|---|
+| Language | Python |
+| Interface | Streamlit |
+| AIS Transport | WebSocket / AISStream |
+| Data Processing | Pandas / NumPy |
+| Machine Learning | Scikit-learn / PyTorch |
+| Dimensionality Reduction | PCA |
+| Clustering | KMeans |
+| Anomaly Detection | Isolation Forest |
+| Temporal Model | TCN Autoencoder |
+| Visualization | Plotly / PyDeck |
+| Database | PostgreSQL |
+| Geospatial Database | PostGIS |
+| Containers | Docker |
+| Testing | Pytest |
 
 ---
 
-Historical Persistence
+## Validation
 
-PostgreSQL/PostGIS provides an optional historical persistence layer.
-
-                     Real AIS
-                        │
-                        ▼
-                  Session Store
-                   /          \
-                  /            \
-                 ▼              ▼
-          Live Analysis    PostgreSQL
-                                │
-                                ▼
-                             PostGIS
-
-Historical persistence is intentionally decoupled from live ingestion so that a historical database failure does not need to terminate live AIS analysis.
-
-Historical storage provides the foundation for future capabilities such as:
-
-- long-term vessel history
-- behavioral baselines
-- route analysis
-- recurring behavior detection
-- historical anomaly comparison
-
----
-
-Technology Stack
-
-Layer| Technology
-Language| Python
-Interface| Streamlit
-AIS Transport| WebSocket / AISStream
-Data Processing| Pandas / NumPy
-Machine Learning| Scikit-learn
-Dimensionality Reduction| PCA
-Clustering| KMeans
-Anomaly Detection| Isolation Forest
-Visualization| Plotly / PyDeck
-Database| PostgreSQL
-Geospatial Database| PostGIS
-Containers| Docker
-Testing| Pytest
-
----
-
-Installation
-
-Clone
-
-git clone https://github.com/edu-moraess/maritime-intelligence-engine.git
-cd maritime-intelligence-engine
-
-Create virtual environment
-
-python -m venv .venv
-
-Linux / macOS:
-
-source .venv/bin/activate
-
-Windows:
-
-.venv\Scripts\activate
-
-Install dependencies
-
-pip install -r requirements.txt
-
-Configure AIS credentials
-
-Configure the required AISStream credentials using the supported environment or Streamlit Secrets configuration.
-
-Never commit API keys or database credentials to the repository.
-
-Run
-
-streamlit run app.py
-
----
-
-Validation
-
-MIE includes automated and runtime validation covering core system behavior.
-
-Examples include:
-
-- AIS parsing
-- configuration validation
-- geographic bounds
-- temporal semantics
-- trajectory logic
-- data-quality checks
-- bounded session storage
-- system diagnostics
-- application compilation
+The repository contains automated tests for ingestion, configuration, trajectory processing, data quality, persistence, temporal semantics, temporal diagnostics, and analytical safeguards.
 
 Run:
 
+```bash
 pytest -q
+```
 
-For detailed validation evidence, see ""docs/VALIDATION.md"" (docs/VALIDATION.md).
+Temporal diagnostics specifically verify:
 
-For technical audit information, see ""docs/AUDIT.md"" (docs/AUDIT.md).
+- minimum-point coverage;
+- receive-time duration and gaps;
+- sliding and non-overlapping windows;
+- adaptive selection of T=8/T=16/T=32;
+- rejection when temporal coverage is insufficient.
 
-For deployment instructions, see ""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md).
+Live AIS validation is performed separately against the deployed Streamlit application using real AISStream observations.
+
+See:
+
+- `docs/VALIDATION.md`
+- `docs/PROJECT_STATUS.md`
+- `docs/AUDIT.md`
+- `docs/architecture.md`
+- `docs/STREAMLIT_DEPLOY.md`
 
 ---
 
-Current Scope
+## Current scope
 
-Implemented
+### Implemented
 
 - Real-time AIS ingestion
 - AISStream WebSocket integration
-- Bounding Box filtering
+- 30 maritime monitoring region presets
+- Bounding Box validation
 - Vessel tracking
 - Session-based collection
 - Trajectory reconstruction
 - Behavioral feature engineering
-- PCA
-- KMeans
-- Isolation Forest
+- PCA / KMeans / Isolation Forest
 - Explainable behavioral rules
 - Vessel Intelligence
+- Tactical geospatial visualization
 - Data Quality monitoring
 - Temporal integrity controls
-- Interactive geospatial visualization
-- Optional PostgreSQL/PostGIS persistence
+- Temporal track diagnostics
+- TCN temporal autoencoder
+- Adaptive temporal scale selection (T=8/T=16/T=32)
+- PostgreSQL/PostGIS historical persistence
+- Idempotent historical observation persistence
 
-In Development
+### In development / research
 
-- AIS "ShipStaticData" enrichment
-- Vessel metadata enrichment
-- Expanded vessel identity intelligence
 - Historical behavioral baselines
-- Long-term behavioral analysis
+- Long-term vessel profiles
+- Quantitative temporal model validation
+- Context-aware anomaly scoring
+- Weather and ocean context
+- Event intelligence
+- Multimodal maritime intelligence
 
 ---
 
-Limitations
+## Current research position
 
-AIS Dependency
+The immediate goal is not simply to make the temporal model more complex. The project is establishing an evidence-driven temporal foundation:
 
-An AIS-only system cannot automatically detect vessels that are not transmitting usable AIS information.
+1. measure real track coverage;
+2. select the longest supported temporal scale;
+3. preserve source provenance;
+4. validate temporal scores quantitatively;
+5. build historical behavioral baselines;
+6. add environmental context;
+7. combine behavioral, trajectory, temporal, and environmental evidence;
+8. use LLMs as an interpretation layer rather than as the raw anomaly detector.
 
-Session-Relative Analysis
+### Current limitation
 
-Current behavioral models operate relative to the observed analytical session.
+AIS coverage is not uniform. Short collection windows may provide many active vessels but relatively few repeated observations per vessel. Long temporal sequences therefore cannot be assumed to exist in every region.
 
-They should not be interpreted as a universal maritime behavior classifier.
-
-No Intent Inference
-
-Behavioral anomalies are analytical signals.
-
-They do not establish:
-
-- malicious intent
-- criminal activity
-- hostile behavior
-- vessel identity beyond available AIS information
-
-No Synthetic Fallback
-
-When real AIS data is unavailable, MIE does not replace it with simulated vessel traffic.
+The system should prefer `NOT_READY` or a shorter supported temporal scale over unsupported temporal evidence.
 
 ---
 
-Roadmap
+## Roadmap
 
+```text
 Real-Time AIS
-      │
-      ▼
-Ship Static Data
-      │
-      ▼
+      ↓
+Temporal Coverage Diagnostics
+      ↓
+Adaptive Temporal Intelligence
+      ↓
 Historical Behavioral Baselines
-      │
-      ▼
+      ↓
 Context-Aware Behavioral Intelligence
-      │
-      ▼
+      ↓
 Advanced Geospatial Intelligence
-      │
-      ▼
+      ↓
 Multimodal Maritime Intelligence
-      │
       ├── AIS
       ├── Computer Vision
       ├── SAR
-      ├── Weather
+      ├── Weather / Ocean
       └── External Geospatial Data
+```
 
-The long-term direction is to evolve from AIS-focused behavioral analysis toward a multimodal maritime intelligence architecture.
-
-Future data sources shown above are architectural directions and are not represented as current capabilities unless implemented.
-
----
-
-Why MIE?
-
-MIE is not simply an AIS map.
-
-It combines several engineering disciplines into a single end-to-end system:
-
-- Real-Time Data Engineering
-- WebSocket Streaming
-- Geospatial Computing
-- Trajectory Reconstruction
-- Feature Engineering
-- Unsupervised Machine Learning
-- Anomaly Detection
-- Data Quality Engineering
-- Database Engineering
-- Operational Visualization
-- System Diagnostics
-- Explainable Intelligence
-
-The objective is to transform:
-
-Raw Maritime Telemetry
-          ↓
-Structured Movement Data
-          ↓
-Behavioral Representation
-          ↓
-Analytical Signals
-          ↓
-Operational Intelligence
+Future data sources are architectural directions and are not represented as current capabilities unless implemented.
 
 ---
 
-Design Philosophy
+## Design philosophy
 
-«Observe → Validate → Analyze → Explain → Investigate»
+> **Observe → Validate → Analyze → Explain → Investigate**
 
-The platform is designed to help an analyst understand maritime movement, not to replace human judgment.
-
----
-
-Documentation
-
-Document| Description
-""docs/architecture.md"" (docs/architecture.md)| Complete technical architecture
-""docs/AUDIT.md"" (docs/AUDIT.md)| Technical audit and engineering decisions
-""docs/VALIDATION.md"" (docs/VALIDATION.md)| Automated and runtime validation
-""docs/STREAMLIT_DEPLOY.md"" (docs/STREAMLIT_DEPLOY.md)| Streamlit deployment documentation
+The platform is designed to support human investigation rather than replace human judgment.
 
 ---
 
-License
+## Installation
 
-This project is licensed under the MIT License.
+```bash
+git clone https://github.com/edu-moraess/maritime-intelligence-engine.git
+cd maritime-intelligence-engine
+python -m venv .venv
+```
 
-See ""LICENSE"" (LICENSE) for the complete license text.
+Linux / macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Windows:
+
+```powershell
+.venv\Scripts\activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Configure the required AISStream credentials through the deployment environment or Streamlit Secrets. Never commit API keys or database credentials.
+
+Run:
+
+```bash
+streamlit run app.py
+```
 
 ---
 
-Author
+## Author
 
-Carlos Eduardo Moraes
-
+**Carlos Eduardo Moraes**  
 Quantitative Developer · Data Science · Computer Engineering
 
 ---
 
-Maritime Intelligence Engine
+## License
 
-Real AIS → Trusted Data → Trajectories → Behavior → Intelligence
+MIT License. See `LICENSE` for the complete license text.
 
-Built as an engineering and research platform for real-time maritime behavioral intelligence.
+---
+
+**Maritime Intelligence Engine**  
+*Real AIS → Trusted Data → Trajectories → Behavior → Intelligence*

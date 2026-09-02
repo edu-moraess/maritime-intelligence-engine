@@ -46,7 +46,8 @@ def test_waiting():
 
 def test_not_ready():
     r = TemporalAnomalyAdapter().fit({f"3682076{i:02d}": _track(f"3682076{i:02d}", 6, 25 + i * 0.01) for i in range(3)})
-    assert r.status == "NOT_READY" and r.scores == [] and r.n_tracks_usable == 3
+    assert r.status == "NOT_READY" and r.scores == []
+    assert r.n_tracks_seen == 3
 
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
@@ -62,10 +63,11 @@ def test_tcn_forward_contract():
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
 def test_adapter_ready():
-    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 6, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
+    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     r = TemporalAnomalyAdapter().fit(tracks)
     assert r.status == "READY" and r.training_completed and r.inference_available
     assert r.method == "TCN Temporal Autoencoder"
+    assert r.sequence_length == 8
     assert r.model_state is not None and r.scaler_mean is not None and r.scaler_scale is not None
     assert len(r.scores) == MINIMUM_TRACKS_FOR_DEEP_MODEL
     assert all(0.0 <= s.deep_anomaly_score <= 1.0 for s in r.scores)
@@ -77,10 +79,11 @@ def test_engine_ready():
     e = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
     rows = []
     for v in range(MINIMUM_TRACKS_FOR_DEEP_MODEL):
-        rows.extend(_track(f"3682076{v:02d}", 6, 25 + v * 0.02))
+        rows.extend(_track(f"3682076{v:02d}", 8, 25 + v * 0.02))
     e.store.extend(rows); e._recompute(); s = e.snapshot()
     assert s.temporal is not None and s.temporal.status == "READY"
     assert s.temporal.method == "TCN Temporal Autoencoder"
+    assert s.temporal.sequence_length == 8
     assert s.temporal.training_completed and s.temporal.inference_available and s.temporal.model_state is not None
     assert all(0 <= x.deep_anomaly_score <= 1 for x in s.temporal.scores)
     assert s.embeddings is not None and s.readiness.temporal_status == "READY"

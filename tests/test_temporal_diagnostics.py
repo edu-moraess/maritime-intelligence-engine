@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.ingestion.models import AISObservation
-from src.ml.temporal.diagnostics import analyze_temporal_tracks
+from src.ml.temporal.diagnostics import analyze_temporal_tracks, select_adaptive_sequence_length
 
 
 def _track(mmsi: str, n: int, spacing_seconds: int = 30):
@@ -40,6 +40,21 @@ def test_temporal_diagnostics_counts_thresholds_and_windows():
     assert result.max_points == 40
     assert result.sliding_windows == {8: 45, 16: 18, 32: 9}
     assert result.non_overlapping_windows == {8: 8, 16: 3, 32: 1}
+
+
+def test_adaptive_selector_prefers_longest_supported_scale():
+    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 16 if i < 8 else 8) for i in range(10)}
+    assert select_adaptive_sequence_length(tracks, minimum_tracks=8) == 16
+
+
+def test_adaptive_selector_uses_short_scale_when_long_sequences_are_sparse():
+    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 8 if i < 11 else 4) for i in range(12)}
+    assert select_adaptive_sequence_length(tracks, minimum_tracks=8) == 8
+
+
+def test_adaptive_selector_rejects_insufficient_temporal_coverage():
+    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 4) for i in range(7)}
+    assert select_adaptive_sequence_length(tracks, minimum_tracks=8) is None
 
 
 def test_temporal_diagnostics_uses_received_time_and_detects_gaps():
