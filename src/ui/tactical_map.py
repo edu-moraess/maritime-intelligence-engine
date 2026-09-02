@@ -6,16 +6,44 @@ from math import cos, radians, sin
 import pydeck as pdk
 
 STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":[239,107,115,235],"CRITICAL":[220,50,60,245],"SELECTED":[255,255,255,250],"STALE":[121,147,155,180]}
-STATUS_HALO = {"NORMAL":[53,194,201,50],"ATTENTION":[233,184,87,65],"ANOMALY":[239,107,115,85],"CRITICAL":[220,50,60,105],"SELECTED":[255,255,255,95],"STALE":[121,147,155,40]}
-STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,160],"ANOMALY":[239,107,115,200],"CRITICAL":[220,50,60,230],"SELECTED":[255,255,255,240],"STALE":[121,147,155,80]}
-_SHIP_LOCAL = ((0.0,1.6),(0.55,-0.3),(0.45,-1.1),(-0.45,-1.1),(-0.55,-0.3))
-VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.004
+STATUS_HALO = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,35],"CRITICAL":[220,50,60,50],"SELECTED":[255,255,255,65],"STALE":[121,147,155,0]}
+STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,120],"CRITICAL":[220,50,60,150],"SELECTED":[255,255,255,190],"STALE":[121,147,155,0]}
+
+# AIS 6-bit ship-type families. These are intentionally coarse so the map
+# never invents a more specific class than the source data provides.
+SHIP_TYPE_LABELS = {
+    "FISHING": range(30, 31),
+    "TOWING": range(31, 34),
+    "SPECIAL": range(34, 36),
+    "SAILING": range(36, 38),
+    "PLEASURE": range(37, 38),
+    "HIGH_SPEED": range(40, 50),
+    "SERVICE": range(50, 60),
+    "PASSENGER": range(60, 70),
+    "CARGO": range(70, 80),
+    "TANKER": range(80, 90),
+    "OTHER": range(90, 100),
+}
+
+# Local hulls are procedural, lightweight PolygonLayer geometry. Each class
+# gets a restrained silhouette; status color/halo remains separate from type.
+_SHIP_HULLS = {
+    "DEFAULT": ((0.0, 2.0),(0.34,1.38),(0.66,0.86),(0.66,0.20),(0.52,-0.05),(0.52,-0.78),(0.38,-1.18),(-0.38,-1.18),(-0.52,-0.78),(-0.52,-0.05),(-0.66,0.20),(-0.66,0.86),(-0.34,1.38)),
+    "CARGO": ((0.0,2.0),(0.42,1.35),(0.72,0.82),(0.72,-1.05),(0.46,-1.25),(-0.46,-1.25),(-0.72,-1.05),(-0.72,0.82),(-0.42,1.35)),
+    "TANKER": ((0.0,1.9),(0.48,1.35),(0.78,0.72),(0.78,-1.0),(0.55,-1.28),(-0.55,-1.28),(-0.78,-1.0),(-0.78,0.72),(-0.48,1.35)),
+    "PASSENGER": ((0.0,2.0),(0.42,1.45),(0.68,0.9),(0.68,-1.12),(0.38,-1.28),(-0.38,-1.28),(-0.68,-1.12),(-0.68,0.9),(-0.42,1.45)),
+    "TOWING": ((0.0,1.65),(0.42,1.05),(0.62,0.55),(0.62,-0.78),(0.42,-1.05),(-0.42,-1.05),(-0.62,-0.78),(-0.62,0.55),(-0.42,1.05)),
+    "FISHING": ((0.0,1.7),(0.38,1.08),(0.58,0.5),(0.58,-0.92),(0.28,-1.08),(-0.45,-0.92),(-0.58,-0.48),(-0.48,0.55),(-0.3,1.08)),
+    "SAILING": ((0.0,1.85),(0.28,1.25),(0.5,0.72),(0.5,-0.88),(0.28,-1.05),(-0.28,-1.05),(-0.5,-0.88),(-0.5,0.72),(-0.28,1.25)),
+    "PLEASURE": ((0.0,1.65),(0.32,1.05),(0.48,0.45),(0.48,-0.78),(0.25,-1.0),(-0.25,-1.0),(-0.48,-0.78),(-0.48,0.45),(-0.32,1.05)),
+    "HIGH_SPEED": ((0.0,1.9),(0.26,1.25),(0.5,0.65),(0.5,-0.9),(0.28,-1.12),(-0.28,-1.12),(-0.5,-0.9),(-0.5,0.65),(-0.26,1.25)),
+    "SERVICE": ((0.0,1.65),(0.4,1.05),(0.58,0.55),(0.58,-0.85),(0.38,-1.08),(-0.38,-1.08),(-0.58,-0.85),(-0.58,0.55),(-0.4,1.05)),
+    "SPECIAL": ((0.0,1.8),(0.34,1.2),(0.58,0.65),(0.58,-0.92),(0.36,-1.1),(-0.36,-1.1),(-0.58,-0.92),(-0.58,0.65),(-0.34,1.2)),
+    "OTHER": ((0.0,1.8),(0.34,1.28),(0.62,0.78),(0.62,-0.95),(0.36,-1.12),(-0.36,-1.12),(-0.62,-0.95),(-0.62,0.78),(-0.34,1.28)),
+}
+VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.0025
 TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>"
-    "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>"
-    "<div style='color:#79939b;margin-bottom:4px'>MMSI {tooltip_mmsi}</div>"
-    "<div>SOG {tooltip_sog}</div><div>COG {tooltip_cog}</div>"
-    "<div>HDG {tooltip_hdg}</div><div>STATUS {tooltip_status}</div></div>")
+TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>" "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>" "<div style='color:#79939b;margin-bottom:4px'>MMSI {tooltip_mmsi}</div>" "<div>SOG {tooltip_sog}</div><div>COG {tooltip_cog}</div>" "<div>HDG {tooltip_hdg}</div><div>STATUS {tooltip_status}</div></div>")
 TACTICAL_TOOLTIP_STYLE = {"backgroundColor":"rgba(7,17,22,0.96)","color":"#d9e6e9","border":"1px solid #1b3640","padding":"9px 11px"}
 
 def resolve_vessel_course(heading_degrees, cog_degrees):
@@ -51,12 +79,19 @@ def anomaly_mmsi_sets(findings):
         if score >= 0.85 or "critical" in str(getattr(finding, "category", "") or "").lower(): critical.add(mmsi)
     return anomaly, critical
 
-def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG):
+def vessel_type_family(ship_type):
+    try: code = int(ship_type)
+    except (TypeError, ValueError): return "DEFAULT"
+    for family, codes in SHIP_TYPE_LABELS.items():
+        if code in codes: return family
+    return "DEFAULT"
+
+def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG, ship_type=None):
     angle = radians(float(course_deg) if course_deg is not None else 0.0)
     c, s = cos(angle), sin(angle)
     lon_scale = max(0.1, cos(radians(lat)))
     ring = []
-    for x, y in _SHIP_LOCAL:
+    for x, y in _SHIP_HULLS[vessel_type_family(ship_type)]:
         east = (x * c + y * s) * scale_deg
         north = (-x * s + y * c) * scale_deg
         ring.append([max(-180.0, min(180.0, lon + east / lon_scale)), max(-90.0, min(90.0, lat + north))])
@@ -85,10 +120,11 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         lat, lon = float(row["latitude"]), float(row["longitude"])
         course = resolve_course_degrees(row)
         row["course_degrees"] = course
-        scale = SHIP_SCALE_DEG * (1.35 if status=="SELECTED" else 1.2 if status=="CRITICAL" else 1.1 if status=="ANOMALY" else 1.0)
-        row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale)
-        row["halo_radius"] = 180 if status=="SELECTED" else 110
-        row["core_radius"] = 55 if status=="SELECTED" else 40
+        row["ship_type_family"] = vessel_type_family(row.get("ship_type"))
+        scale = SHIP_SCALE_DEG * (1.25 if status=="SELECTED" else 1.1 if status=="CRITICAL" else 1.05 if status=="ANOMALY" else 1.0)
+        row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale, ship_type=row.get("ship_type"))
+        row["halo_radius"] = 100 if status=="SELECTED" else 70
+        row["core_radius"] = 42 if status=="SELECTED" else 28
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
         try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
@@ -135,7 +171,7 @@ def density_points_from_observations(observations, *, max_points=2500):
     return points
 
 AIS_TARGETS_LAYER_ID = "ais-targets"
-VESSEL_HIT_RADIUS = 115
+VESSEL_HIT_RADIUS = 90
 DENSITY_LAYER_TYPE = "ScatterplotLayer"
 DENSITY_FILL_COLOR = [53, 194, 201, 30]
 DENSITY_RADIUS = 900

@@ -17,6 +17,7 @@ from src.ui.tactical_map import (
     resolve_course_degrees,
     resolve_vessel_course,
     ship_polygon,
+    vessel_type_family,
 )
 
 
@@ -58,8 +59,21 @@ def test_anomaly_mmsi_sets():
 
 
 def test_ship_polygon_orientation_differs():
-    north, east = ship_polygon(0.0, 0.0, 0.0, scale_deg=0.02), ship_polygon(0.0, 0.0, 90.0, scale_deg=0.02)
+    north = ship_polygon(0.0, 0.0, 0.0, scale_deg=0.02)
+    east = ship_polygon(0.0, 0.0, 90.0, scale_deg=0.02)
     assert north[0] == north[-1] and north != east
+    assert len(north) == 14
+    assert north[0] != north[1] != north[2]
+
+
+def test_vessel_type_families_are_distinct():
+    assert vessel_type_family(70) == "CARGO"
+    assert vessel_type_family(80) == "TANKER"
+    assert vessel_type_family(60) == "PASSENGER"
+    assert vessel_type_family(52) == "SERVICE"
+    assert vessel_type_family(30) == "FISHING"
+    assert vessel_type_family(None) == "DEFAULT"
+    assert ship_polygon(0.0, 0.0, 0.0, ship_type=70) != ship_polygon(0.0, 0.0, 0.0, ship_type=80)
 
 
 def test_vector_zero_and_positive_sog():
@@ -86,50 +100,18 @@ def test_track_zero_one_two_three_unordered():
 
 def test_enrich_integrity_and_selection_helper():
     rows = [
-        {
-            "mmsi": "111111111",
-            "name": "A",
-            "latitude": 51.1,
-            "longitude": 1.1,
-            "sog_knots": 5.0,
-            "cog_degrees": 90.0,
-            "heading_degrees": 90.0,
-            "stale": False,
-            "message_count": 4,
-        },
-        {
-            "mmsi": "222222222",
-            "name": "B",
-            "latitude": 51.2,
-            "longitude": 1.2,
-            "sog_knots": 0.0,
-            "cog_degrees": None,
-            "heading_degrees": None,
-            "stale": True,
-            "message_count": 1,
-        },
-        {
-            "mmsi": "333333333",
-            "name": "C",
-            "latitude": 51.3,
-            "longitude": 1.3,
-            "sog_knots": 12.0,
-            "cog_degrees": 180.0,
-            "heading_degrees": None,
-            "stale": False,
-            "message_count": 8,
-        },
+        {"mmsi":"111111111","name":"A","latitude":51.1,"longitude":1.1,"sog_knots":5.0,"cog_degrees":90.0,"heading_degrees":90.0,"stale":False,"message_count":4,"ship_type":70},
+        {"mmsi":"222222222","name":"B","latitude":51.2,"longitude":1.2,"sog_knots":0.0,"cog_degrees":None,"heading_degrees":None,"stale":True,"message_count":1,"ship_type":80},
+        {"mmsi":"333333333","name":"C","latitude":51.3,"longitude":1.3,"sog_knots":12.0,"cog_degrees":180.0,"heading_degrees":None,"stale":False,"message_count":8,"ship_type":60},
     ]
-    out = enrich_tactical_rows(
-        rows,
-        selected_mmsi="111111111",
-        anomaly_mmsis={"333333333"},
-        critical_mmsis=set(),
-    )
+    out = enrich_tactical_rows(rows, selected_mmsi="111111111", anomaly_mmsis={"333333333"}, critical_mmsis=set())
     assert len(out) == 3
     assert out[0]["tactical_status"] == "SELECTED"
     assert out[1]["tactical_status"] == "ATTENTION"
     assert out[2]["tactical_status"] == "ANOMALY"
+    assert out[0]["ship_type_family"] == "CARGO"
+    assert out[1]["ship_type_family"] == "TANKER"
+    assert out[2]["ship_type_family"] == "PASSENGER"
     assert out[0]["has_vector"] is True and out[1]["has_vector"] is False
     assert density_points_from_observations([]) == []
     from src.ui.pages_helpers import _apply_map_selection
@@ -151,17 +133,9 @@ def test_enrich_integrity_and_selection_helper():
 
 
 def test_density_points_from_real_observations_only():
-    obs = [
-        SimpleNamespace(latitude=1.26, longitude=103.82),
-        SimpleNamespace(latitude=None, longitude=103.0),
-        SimpleNamespace(latitude=1.27, longitude=103.83),
-        SimpleNamespace(latitude="bad", longitude=1.0),
-    ]
+    obs = [SimpleNamespace(latitude=1.26, longitude=103.82),SimpleNamespace(latitude=None, longitude=103.0),SimpleNamespace(latitude=1.27, longitude=103.83),SimpleNamespace(latitude="bad", longitude=1.0)]
     points = density_points_from_observations(obs)
-    assert points == [
-        {"longitude": 103.82, "latitude": 1.26},
-        {"longitude": 103.83, "latitude": 1.27},
-    ]
+    assert points == [{"longitude":103.82,"latitude":1.26},{"longitude":103.83,"latitude":1.27}]
 
 
 def test_density_layer_spec_empty_returns_none():
@@ -170,94 +144,59 @@ def test_density_layer_spec_empty_returns_none():
 
 
 def test_density_layer_spec_is_webgl_safe_scatterplot():
-    points = [{"longitude": 103.82, "latitude": 1.26}]
+    points = [{"longitude":103.82,"latitude":1.26}]
     spec = build_density_layer_spec(points)
-    assert spec is not None
-    assert spec["type"] == DENSITY_LAYER_TYPE
-    assert spec["type"] != "HeatmapLayer"
-    assert "Heatmap" not in str(spec["type"])
-    assert spec["pickable"] is False
-    assert spec["data"] is points
-    assert spec["get_position"] == ["longitude", "latitude"]
+    assert spec is not None and spec["type"] == DENSITY_LAYER_TYPE and spec["type"] != "HeatmapLayer"
+    assert spec["pickable"] is False and spec["data"] is points and spec["get_position"] == ["longitude","latitude"]
 
 
 def test_density_layer_spec_never_uses_heatmap_type():
-    """Regression: HeatmapLayer causes fragment-shader failures (_ugaussianKDE)."""
-    points = [
-        {"longitude": 103.82, "latitude": 1.26},
-        {"longitude": 103.83, "latitude": 1.27},
-    ]
-    spec = build_density_layer_spec(points)
-    assert spec["type"] == "ScatterplotLayer"
+    points = [{"longitude":103.82,"latitude":1.26},{"longitude":103.83,"latitude":1.27}]
+    assert build_density_layer_spec(points)["type"] == "ScatterplotLayer"
 
 
 def test_density_disabled_produces_no_density_layer_in_map_path():
-    """When show_density is False, density helpers are not required for map integrity."""
     assert build_density_layer_spec(density_points_from_observations([])) is None
 
 
 def test_density_failure_does_not_remove_essential_layer_ids():
-    """Optional density must not participate in selection or replace ais-targets."""
-    points = [{"longitude": 1.0, "latitude": 2.0}]
-    density = build_density_layer_spec(points)
-    assert density is not None
-    assert density.get("pickable") is False
-    assert AIS_TARGETS_LAYER_ID == "ais-targets"
-    assert density.get("id") != AIS_TARGETS_LAYER_ID
+    density = build_density_layer_spec([{"longitude":1.0,"latitude":2.0}])
+    assert density is not None and density.get("pickable") is False and AIS_TARGETS_LAYER_ID == "ais-targets" and density.get("id") != AIS_TARGETS_LAYER_ID
 
 
 def test_selection_only_from_ais_targets_layer():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-
     st.session_state.selected_mmsi = "000000000"
-
     class EventDensity:
         class selection:
-            objects = {"HeatmapLayer": [{"mmsi": "111111111"}], "density": [{"mmsi": "111111111"}]}
-
+            objects = {"HeatmapLayer":[{"mmsi":"111111111"}],"density":[{"mmsi":"111111111"}]}
     class EventPath:
         class selection:
-            objects = {"PathLayer": [{"mmsi": "222222222"}]}
-
+            objects = {"PathLayer":[{"mmsi":"222222222"}]}
     class EventLine:
         class selection:
-            objects = {"LineLayer": [{"mmsi": "333333333"}]}
-
+            objects = {"LineLayer":[{"mmsi":"333333333"}]}
     class EventTargets:
         class selection:
-            objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "564130000"}]}
-
+            objects = {AIS_TARGETS_LAYER_ID:[{"mmsi":"564130000"}]}
     class EventTargetsAltKey:
         class selection:
-            objects = {"ais_targets": [{"mmsi": "564130001"}]}
-
-    _apply_map_selection(EventDensity())
-    assert st.session_state.selected_mmsi == "000000000"
-
-    _apply_map_selection(EventPath())
-    assert st.session_state.selected_mmsi == "000000000"
-
-    _apply_map_selection(EventLine())
-    assert st.session_state.selected_mmsi == "000000000"
-
-    _apply_map_selection(EventTargets())
-    assert st.session_state.selected_mmsi == "564130000"
-
-    _apply_map_selection(EventTargetsAltKey())
-    assert st.session_state.selected_mmsi == "564130001"
+            objects = {"ais_targets":[{"mmsi":"564130001"}]}
+    _apply_map_selection(EventDensity()); assert st.session_state.selected_mmsi == "000000000"
+    _apply_map_selection(EventPath()); assert st.session_state.selected_mmsi == "000000000"
+    _apply_map_selection(EventLine()); assert st.session_state.selected_mmsi == "000000000"
+    _apply_map_selection(EventTargets()); assert st.session_state.selected_mmsi == "564130000"
+    _apply_map_selection(EventTargetsAltKey()); assert st.session_state.selected_mmsi == "564130001"
 
 
 def test_selection_ignores_invalid_mmsi():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-
     st.session_state.selected_mmsi = "111111111"
-
     class EventBad:
         class selection:
-            objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "ABC"}, {"mmsi": "12"}]}
-
+            objects = {AIS_TARGETS_LAYER_ID:[{"mmsi":"ABC"},{"mmsi":"12"}]}
     _apply_map_selection(EventBad())
     assert st.session_state.selected_mmsi == "111111111"
 
@@ -265,14 +204,11 @@ def test_selection_ignores_invalid_mmsi():
 def test_selection_handles_none_and_missing_event():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-
     st.session_state.selected_mmsi = "111111111"
     _apply_map_selection(None)
     assert st.session_state.selected_mmsi == "111111111"
-
     class Empty:
         selection = None
-
     _apply_map_selection(Empty())
     assert st.session_state.selected_mmsi == "111111111"
 
