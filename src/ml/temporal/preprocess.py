@@ -29,7 +29,7 @@ class TemporalSequenceScaler:
         self.scale_: np.ndarray | None = None
         self.n_features_: int | None = None
 
-    def fit(self, sequences: Sequence[np.ndarray]) -> TemporalSequenceScaler:
+    def fit(self, sequences: Sequence[np.ndarray]) -> "TemporalSequenceScaler":
         if not sequences:
             raise ValueError("Cannot fit scaler on empty sequence list.")
         stacked = np.concatenate([np.asarray(s, dtype=np.float64).reshape(-1, s.shape[-1]) for s in sequences], axis=0)
@@ -60,7 +60,7 @@ class TemporalSequenceScaler:
         return self.transform(sequences)
 
     @classmethod
-    def from_stats(cls, mean: np.ndarray, scale: np.ndarray) -> TemporalSequenceScaler:
+    def from_stats(cls, mean: np.ndarray, scale: np.ndarray) -> "TemporalSequenceScaler":
         mean_a = np.asarray(mean, dtype=np.float64).reshape(-1)
         scale_a = np.asarray(scale, dtype=np.float64).reshape(-1)
         if mean_a.shape != scale_a.shape or mean_a.size == 0:
@@ -99,6 +99,15 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
     if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
         return None
 
+    lat_rad = np.deg2rad(lat)
+    mean_lat_rad = float(np.mean(lat_rad))
+    meters_per_degree_lat = 111_132.0
+    meters_per_degree_lon = 111_320.0 * max(np.cos(mean_lat_rad), 1e-6)
+    delta_lat_m = np.zeros(len(frame), dtype=np.float64)
+    delta_lon_m = np.zeros(len(frame), dtype=np.float64)
+    delta_lat_m[1:] = np.diff(lat) * meters_per_degree_lat
+    delta_lon_m[1:] = np.diff(lon) * meters_per_degree_lon
+
     sog = frame["sog_knots"].to_numpy(dtype=np.float64) if "sog_knots" in frame.columns else np.zeros(len(frame))
     sog = np.where(np.isfinite(sog), sog, 0.0)
     sog = np.clip(sog, 0.0, 80.0)
@@ -108,11 +117,6 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
     cog = np.mod(cog, 360.0)
     cog_sin = np.sin(np.deg2rad(cog))
     cog_cos = np.cos(np.deg2rad(cog))
-
-    delta_lat = np.zeros(len(frame), dtype=np.float64)
-    delta_lon = np.zeros(len(frame), dtype=np.float64)
-    delta_lat[1:] = np.diff(lat)
-    delta_lon[1:] = np.diff(lon)
 
     computed_speed = (
         frame["computed_speed_knots"].to_numpy(dtype=np.float64)
@@ -141,8 +145,8 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
 
     mat = np.column_stack(
         [
-            delta_lat,
-            delta_lon,
+            delta_lat_m,
+            delta_lon_m,
             sog,
             cog_sin,
             cog_cos,
@@ -159,19 +163,13 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
 
 
 def _resample_to_length(mat: np.ndarray, target_length: int) -> np.ndarray:
-    n, f = mat.shape
-    if n == target_length:
-        return mat.astype(np.float32)
-    if n == 1:
-        return np.repeat(mat.astype(np.float32), target_length, axis=0)
-    src_idx = np.linspace(0.0, n - 1, num=n)
-    dst_idx = np.linspace(0.0, n - 1, num=target_length)
-    out = np.empty((target_length, f), dtype=np.float64)
-    for j in range(f):
-        out[:, j] = np.interp(dst_idx, src_idx, mat[:, j])
-    if not np.isfinite(out).all():
-        raise ValueError("Non-finite values after interpolation.")
-    return out.astype(np.float32)
+    """Select the latest contiguous real observations; never interpolate AIS."""
+    n, _ = mat.shape
+    if target_length < 1:
+        raise ValueError("target_length must be >= 1")
+    if n < target_length:
+        raise ValueError("Cannot build temporal window without enough real observations.")
+    return mat[-target_length:].astype(np.float32)
 
 
 def build_temporal_sequence(
@@ -182,17 +180,22 @@ def build_temporal_sequence(
     mmsi: str | None = None,
 ) -> TemporalSequence | None:
     obs_list = list(observations)
-    if len(obs_list) < minimum_points:
+    if len(obs_list) < minimum_points or len(obs_list) < sequence_length:
         return None
     mmsi_val = mmsi or str(obs_list[0].mmsi)
     try:
         frame = enrich_track(track_to_frame(obs_list))
     except Exception:
         return None
-    if frame is None or len(frame) < minimum_points:
+    if frame is None or len(frame) < minimum_points or len(frame) < sequence_length:
         return None
-    mat = _build_feature_matrix(frame)
-    if mat is None or mat.shape[0] < minimum_points:
+
+    # Select a contiguous real window before deriving deltas. This keeps every
+    # delta, heading change and time interval semantically tied to its immediate
+    # predecessor inside the actual model window.
+    window_frame = frame.iloc[-int(sequence_length):].copy()
+    mat = _build_feature_matrix(window_frame)
+    if mat is None or mat.shape[0] != sequence_length:
         return None
     try:
         seq = _resample_to_length(mat, int(sequence_length))
@@ -205,7 +208,7 @@ def build_temporal_sequence(
         sequence=seq,
         sequence_length=int(sequence_length),
         feature_names=FEATURE_NAMES,
-        n_source_points=int(mat.shape[0]),
+        n_source_points=int(len(frame)),
     )
 
 
@@ -221,12 +224,7 @@ def build_temporal_sequences(
         items = list(tracks)
     result: list[TemporalSequence] = []
     for mmsi, obs in items:
-        seq = build_temporal_sequence(
-            obs,
-            sequence_length=sequence_length,
-            minimum_points=minimum_points,
-            mmsi=str(mmsi),
-        )
+        seq = build_temporal_sequence(obs, sequence_length=sequence_length, minimum_points=minimum_points, mmsi=str(mmsi))
         if seq is not None:
             result.append(seq)
     return result

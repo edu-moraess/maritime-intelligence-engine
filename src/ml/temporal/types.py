@@ -26,8 +26,10 @@ TEMPORAL_FEATURE_NAMES: tuple[str, ...] = (
 DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
-DEFAULT_NUM_LAYERS = 3
-MAX_TIME_DELTA_SECONDS = 900.0
+# Four dilated blocks (1, 2, 4, 8) give a 61-step receptive field,
+# covering every supported temporal window through T=32.
+DEFAULT_NUM_LAYERS = 4
+MAX_TIME_DELTA_SECONDS = 86400.0
 
 DEFAULT_EPOCHS_MAX = 30
 DEFAULT_LEARNING_RATE = 1e-3

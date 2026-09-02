@@ -30,8 +30,11 @@ class TemporalResidualBlock(nn.Module if nn is not None else object):  # type: i
         padding = (3 - 1) * dilation
         self.conv1 = nn_mod.Conv1d(channels, channels, kernel_size=3, padding=padding, dilation=dilation)
         self.conv2 = nn_mod.Conv1d(channels, channels, kernel_size=3, padding=padding, dilation=dilation)
-        self.norm1 = nn_mod.BatchNorm1d(channels)
-        self.norm2 = nn_mod.BatchNorm1d(channels)
+        # LayerNorm is applied independently at each time step. BatchNorm1d
+        # would aggregate statistics across the temporal axis during training,
+        # allowing future positions to influence a supposedly causal encoder.
+        self.norm1 = nn_mod.LayerNorm(channels)
+        self.norm2 = nn_mod.LayerNorm(channels)
         self.dropout = nn_mod.Dropout(dropout)
         self.activation = nn_mod.GELU()
 
@@ -39,14 +42,18 @@ class TemporalResidualBlock(nn.Module if nn is not None else object):  # type: i
     def _causal_trim(x: Any, padding: int) -> Any:
         return x[..., :-padding] if padding else x
 
+    @staticmethod
+    def _normalize_per_timestep(x: Any, norm: Any) -> Any:
+        return norm(x.transpose(1, 2)).transpose(1, 2)
+
     def forward(self, x: Any) -> Any:
         padding = self.conv1.padding[0]
         residual = x
         y = self._causal_trim(self.conv1(x), padding)
-        y = self.activation(self.norm1(y))
+        y = self.activation(self._normalize_per_timestep(y, self.norm1))
         y = self.dropout(y)
         y = self._causal_trim(self.conv2(y), padding)
-        y = self.activation(self.norm2(y))
+        y = self.activation(self._normalize_per_timestep(y, self.norm2))
         y = self.dropout(y)
         return self.activation(y + residual)
 
@@ -59,16 +66,18 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
         input_dim: int = 8,
         hidden_dim: int = 32,
         latent_dim: int = 16,
-        num_layers: int = 3,
+        num_layers: int = 4,
+        max_sequence_length: int = 128,
     ) -> None:
         _, nn_mod = _require_torch()
         super().__init__()
-        if min(input_dim, hidden_dim, latent_dim, num_layers) < 1:
+        if min(input_dim, hidden_dim, latent_dim, num_layers, max_sequence_length) < 1:
             raise ValueError("model dimensions must be >= 1")
         self.input_dim = int(input_dim)
         self.hidden_dim = int(hidden_dim)
         self.latent_dim = int(latent_dim)
         self.num_layers = int(num_layers)
+        self.max_sequence_length = int(max_sequence_length)
         self.input_projection = nn_mod.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1)
         dilations = [2**i for i in range(self.num_layers)]
         self.encoder = nn_mod.Sequential(
@@ -76,6 +85,7 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
         )
         self.to_latent = nn_mod.Linear(self.hidden_dim, self.latent_dim)
         self.from_latent = nn_mod.Linear(self.latent_dim, self.hidden_dim)
+        self.position_embedding = nn_mod.Parameter(torch.zeros(1, self.hidden_dim, self.max_sequence_length))
         self.decoder = nn_mod.Sequential(
             *(TemporalResidualBlock(self.hidden_dim, d) for d in reversed(dilations))
         )
@@ -84,11 +94,16 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
     def encode(self, x: Any) -> Any:
         y = self.input_projection(x.transpose(1, 2))
         y = self.encoder(y)
-        pooled = y.mean(dim=-1)
+        # With four dilated blocks (1, 2, 4, 8), the receptive field is 61
+        # steps, so the final causal state covers every supported T <= 32.
+        pooled = y[..., -1]
         return self.to_latent(pooled)
 
     def decode(self, z: Any, sequence_length: int) -> Any:
+        if sequence_length > self.max_sequence_length:
+            raise ValueError("sequence_length exceeds model positional capacity")
         hidden = self.from_latent(z).unsqueeze(-1).expand(-1, -1, sequence_length)
+        hidden = hidden + self.position_embedding[..., :sequence_length]
         y = self.decoder(hidden)
         return self.output_projection(y).transpose(1, 2)
 
@@ -97,6 +112,8 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
             raise ValueError(f"Expected (batch, T, F), got {tuple(x.shape)}")
         if x.shape[-1] != self.input_dim:
             raise ValueError(f"Expected input_dim={self.input_dim}, got {x.shape[-1]}")
+        if x.shape[1] > self.max_sequence_length:
+            raise ValueError(f"sequence_length exceeds model positional capacity: {x.shape[1]} > {self.max_sequence_length}")
         z = self.encode(x)
         return self.decode(z, int(x.shape[1])), z
 
@@ -128,6 +145,6 @@ class GRUTemporalAutoencoder(nn.Module if nn is not None else object):  # type: 
 
     def forward(self, x: Any) -> tuple[Any, Any]:
         if x.dim() != 3 or x.shape[-1] != self.input_dim:
-            raise ValueError(f"Expected (batch, T, {self.input_dim}), got {tuple(x.shape)}")
+            raise ValueError(f"Expected (batch, T, {self.input_dim}), got {x.shape}")
         z = self.encode(x)
         return self.decode(z, int(x.shape[1])), z
