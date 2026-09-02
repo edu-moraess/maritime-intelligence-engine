@@ -30,8 +30,11 @@ class TemporalResidualBlock(nn.Module if nn is not None else object):  # type: i
         padding = (3 - 1) * dilation
         self.conv1 = nn_mod.Conv1d(channels, channels, kernel_size=3, padding=padding, dilation=dilation)
         self.conv2 = nn_mod.Conv1d(channels, channels, kernel_size=3, padding=padding, dilation=dilation)
-        self.norm1 = nn_mod.BatchNorm1d(channels)
-        self.norm2 = nn_mod.BatchNorm1d(channels)
+        # LayerNorm is applied independently at each time step. BatchNorm1d
+        # would aggregate statistics across the temporal axis during training,
+        # allowing future positions to influence a supposedly causal encoder.
+        self.norm1 = nn_mod.LayerNorm(channels)
+        self.norm2 = nn_mod.LayerNorm(channels)
         self.dropout = nn_mod.Dropout(dropout)
         self.activation = nn_mod.GELU()
 
@@ -39,14 +42,18 @@ class TemporalResidualBlock(nn.Module if nn is not None else object):  # type: i
     def _causal_trim(x: Any, padding: int) -> Any:
         return x[..., :-padding] if padding else x
 
+    @staticmethod
+    def _normalize_per_timestep(x: Any, norm: Any) -> Any:
+        return norm(x.transpose(1, 2)).transpose(1, 2)
+
     def forward(self, x: Any) -> Any:
         padding = self.conv1.padding[0]
         residual = x
         y = self._causal_trim(self.conv1(x), padding)
-        y = self.activation(self.norm1(y))
+        y = self.activation(self._normalize_per_timestep(y, self.norm1))
         y = self.dropout(y)
         y = self._causal_trim(self.conv2(y), padding)
-        y = self.activation(self.norm2(y))
+        y = self.activation(self._normalize_per_timestep(y, self.norm2))
         y = self.dropout(y)
         return self.activation(y + residual)
 
@@ -59,7 +66,7 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
         input_dim: int = 8,
         hidden_dim: int = 32,
         latent_dim: int = 16,
-        num_layers: int = 3,
+        num_layers: int = 4,
         max_sequence_length: int = 128,
     ) -> None:
         _, nn_mod = _require_torch()
@@ -87,8 +94,8 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
     def encode(self, x: Any) -> Any:
         y = self.input_projection(x.transpose(1, 2))
         y = self.encoder(y)
-        # Causal TCNs encode the full history into the final state. Using the
-        # last state preserves temporal order instead of averaging it away.
+        # With four dilated blocks (1, 2, 4, 8), the receptive field is 61
+        # steps, so the final causal state covers every supported T <= 32.
         pooled = y[..., -1]
         return self.to_latent(pooled)
 
@@ -105,6 +112,8 @@ class TCNAutoencoder(nn.Module if nn is not None else object):  # type: ignore[m
             raise ValueError(f"Expected (batch, T, F), got {tuple(x.shape)}")
         if x.shape[-1] != self.input_dim:
             raise ValueError(f"Expected input_dim={self.input_dim}, got {x.shape[-1]}")
+        if x.shape[1] > self.max_sequence_length:
+            raise ValueError(f"sequence_length exceeds model positional capacity: {x.shape[1]} > {self.max_sequence_length}")
         z = self.encode(x)
         return self.decode(z, int(x.shape[1])), z
 
