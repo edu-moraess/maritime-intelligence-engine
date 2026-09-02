@@ -36,12 +36,16 @@ def _bool_setting(name: str, default: bool = False, secrets: Any | None = None) 
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+RegionBBox = tuple[tuple[float, float], tuple[float, float]]
+
+
 @dataclass(frozen=True)
 class AppSettings:
     """Application settings; no setting creates or substitutes AIS observations."""
 
     aisstream_api_key: str
-    bbox: tuple[tuple[float, float], tuple[float, float]] = DEFAULT_BBOX
+    bbox: RegionBBox = DEFAULT_BBOX
+    monitoring_bboxes: tuple[RegionBBox, ...] = (DEFAULT_BBOX,)
     collection_seconds: float = DEFAULT_COLLECTION_SECONDS
     max_messages: int = 3000
     max_vessels: int = 1000
@@ -93,6 +97,7 @@ class AppSettings:
         return cls(
             aisstream_api_key=_secret_or_env("AISSTREAM_API_KEY", secrets).strip(),
             bbox=bbox,
+            monitoring_bboxes=(bbox,),
             collection_seconds=min(
                 max(float_setting("AIS_COLLECTION_SECONDS", DEFAULT_COLLECTION_SECONDS), MIN_COLLECTION_SECONDS),
                 MAX_COLLECTION_SECONDS,
@@ -108,7 +113,11 @@ class AppSettings:
 
     @property
     def bbox_payload(self) -> list[list[list[float]]]:
-        return [[list(self.bbox[0]), list(self.bbox[1])]]
+        """Serialize every active monitoring region for one AISStream subscription."""
+        return [
+            [list(region[0]), list(region[1])]
+            for region in self.monitoring_bboxes
+        ]
 
     def validate_for_connection(self) -> tuple[bool, str]:
         if self.config_error:
@@ -117,14 +126,17 @@ class AppSettings:
             return False, f"Unsupported provider '{self.provider}'. Only AISStream is enabled."
         if not self.aisstream_api_key:
             return False, "AISSTREAM_API_KEY is not configured."
+        if not self.monitoring_bboxes:
+            return False, "At least one monitoring region is required."
         try:
-            _validate_bbox(self.bbox)
+            for bbox in self.monitoring_bboxes:
+                _validate_bbox(bbox)
         except ValueError as exc:
             return False, str(exc)
         return True, "ready"
 
 
-def _validate_bbox(bbox: tuple[tuple[float, float], tuple[float, float]]) -> None:
+def _validate_bbox(bbox: RegionBBox) -> None:
     try:
         (min_lat, min_lon), (max_lat, max_lon) = bbox
         values = (float(min_lat), float(min_lon), float(max_lat), float(max_lon))
