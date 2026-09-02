@@ -128,19 +128,27 @@ def render_overview(
     ) = _render_map_controls()
 
     rows = vessel_rows(snapshot.vessels)
+    if min_speed > 0:
+        rows = [
+            row
+            for row in rows
+            if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
+        ]
+    if only_fresh:
+        rows = [row for row in rows if not bool(row.get("stale", False))]
+
     _render_vessel_map(
         rows,
+        snapshot=snapshot,
         settings=settings,
-        min_speed=min_speed,
-        only_fresh=only_fresh,
-        map_style=map_style,
-        show_vectors=show_vectors,
+        show_heading=show_vectors,
         show_trails=show_trails,
-        show_behavior=show_behavior,
+        show_anomalies=show_behavior,
         show_density=show_density,
         show_hexbin=show_hexbin,
         show_speed_field=show_speed_field,
         show_anomaly_hotspots=show_anomaly_hotspots,
+        map_style=map_style,
     )
 
     selected = _selected_vessel(snapshot.vessels)
