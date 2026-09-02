@@ -6,10 +6,10 @@ from math import cos, radians, sin
 import pydeck as pdk
 
 STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":[239,107,115,235],"CRITICAL":[220,50,60,245],"SELECTED":[255,255,255,250],"STALE":[121,147,155,180]}
-STATUS_HALO = {"NORMAL":[53,194,201,50],"ATTENTION":[233,184,87,65],"ANOMALY":[239,107,115,85],"CRITICAL":[220,50,60,105],"SELECTED":[255,255,255,95],"STALE":[121,147,155,40]}
-STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,160],"ANOMALY":[239,107,115,200],"CRITICAL":[220,50,60,230],"SELECTED":[255,255,255,240],"STALE":[121,147,155,155]}
+STATUS_HALO = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,35],"CRITICAL":[220,50,60,50],"SELECTED":[255,255,255,65],"STALE":[121,147,155,0]}
+STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,120],"CRITICAL":[220,50,60,150],"SELECTED":[255,255,255,190],"STALE":[121,147,155,0]}
 # A more ship-like hull outline: tapered bow, shoulders, straight stern and a
-# subtle step around the aft quarter.  It remains a single lightweight
+# subtle step around the aft quarter. It remains a single lightweight
 # PolygonLayer primitive so hundreds of real AIS targets stay inexpensive.
 _SHIP_LOCAL = (
     (0.0, 2.0),
@@ -26,7 +26,7 @@ _SHIP_LOCAL = (
     (-0.66, 0.86),
     (-0.34, 1.38),
 )
-VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.0032
+VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.0025
 TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>"
     "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>"
@@ -94,7 +94,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
     enriched = []
     for raw in rows:
         row = dict(raw)
-        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
+        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsi=critical_mmsis) if False else classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
         row["tactical_status"] = status
         row["fill_color"] = list(STATUS_FILL.get(status, STATUS_FILL["NORMAL"]))
         row["halo_color"] = list(STATUS_HALO.get(status, STATUS_HALO["NORMAL"]))
@@ -102,10 +102,10 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         lat, lon = float(row["latitude"]), float(row["longitude"])
         course = resolve_course_degrees(row)
         row["course_degrees"] = course
-        scale = SHIP_SCALE_DEG * (1.25 if status=="SELECTED" else 1.12 if status=="CRITICAL" else 1.06 if status=="ANOMALY" else 1.0)
+        scale = SHIP_SCALE_DEG * (1.25 if status=="SELECTED" else 1.1 if status=="CRITICAL" else 1.05 if status=="ANOMALY" else 1.0)
         row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale)
-        row["halo_radius"] = 150 if status=="SELECTED" else 90
-        row["core_radius"] = 46 if status=="SELECTED" else 34
+        row["halo_radius"] = 100 if status=="SELECTED" else 70
+        row["core_radius"] = 42 if status=="SELECTED" else 28
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
         try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
@@ -152,7 +152,7 @@ def density_points_from_observations(observations, *, max_points=2500):
     return points
 
 AIS_TARGETS_LAYER_ID = "ais-targets"
-VESSEL_HIT_RADIUS = 95
+VESSEL_HIT_RADIUS = 90
 DENSITY_LAYER_TYPE = "ScatterplotLayer"
 DENSITY_FILL_COLOR = [53, 194, 201, 30]
 DENSITY_RADIUS = 900
