@@ -1,8 +1,8 @@
-"""Optional dual-channel page isolated from the MIE core configuration.
+"""Multi-channel mission page isolated from the stable MIE core.
 
-The page owns two normal MaritimeIntelligenceEngine instances. It does not modify
-AppSettings, app.py, the shared navigation, or the single-region engine contract.
-Only real AIS observations are displayed or analyzed.
+The page orchestrates normal MaritimeIntelligenceEngine instances without
+modifying AppSettings, app.py, or the production engine contract.
+Only real AIS PositionReport observations are used.
 """
 
 from __future__ import annotations
@@ -13,184 +13,225 @@ from dataclasses import replace
 import pandas as pd
 import streamlit as st
 
-from src.analytics.dual_channel import sequence_for_track, vessels_in_bbox
+from src.analytics.multi_channel import filter_vessels, sequence_for_track, sequence_metrics
 from src.config.settings import AppSettings
 from src.intelligence.engine import MaritimeIntelligenceEngine
+from src.ml.hybrid import fuse_scores, rank_hybrid
+
 
 REGIONS: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
     "Miami": ((25.603, -80.208), (25.835, -79.879)),
     "English Channel": ((49.800, -5.500), (51.500, 2.500)),
 }
+ALL_CHANNELS = "All Channels"
 
 
-def _settings_for(base: AppSettings, bbox: tuple[tuple[float, float], tuple[float, float]]) -> AppSettings:
-    """Clone normal application settings without changing the shared AppSettings model."""
-    return replace(base, bbox=bbox, historical_persistence_enabled=False)
+def _settings_for(base: AppSettings, region: str) -> AppSettings:
+    return replace(base, bbox=REGIONS[region], historical_persistence_enabled=False)
 
 
-def _engine_key(base: AppSettings, region: str) -> tuple[object, ...]:
-    return (
-        base.aisstream_api_key,
-        region,
-        base.max_messages,
-        base.max_vessels,
-        base.stale_after_seconds,
-    )
-
-
-def _get_engine(base: AppSettings, region: str) -> MaritimeIntelligenceEngine:
-    key = _engine_key(base, region)
-    state_key = f"dual_engine_{region.lower().replace(' ', '_')}"
+def _engine(base: AppSettings, region: str) -> MaritimeIntelligenceEngine:
+    key = (base.aisstream_api_key, region, base.max_messages, base.max_vessels, base.stale_after_seconds)
+    state_key = f"multi_engine_{region.lower().replace(' ', '_')}_v1"
     key_key = f"{state_key}_key"
     existing = st.session_state.get(state_key)
     if existing is None or st.session_state.get(key_key) != key:
         if existing is not None:
             existing.historical_writer.close()
-        existing = MaritimeIntelligenceEngine(_settings_for(base, REGIONS[region]))
+        existing = MaritimeIntelligenceEngine(_settings_for(base, region))
         st.session_state[state_key] = existing
         st.session_state[key_key] = key
     return existing
 
 
-def _collect_pair(first: MaritimeIntelligenceEngine, second: MaritimeIntelligenceEngine, seconds: float) -> tuple[int, int]:
-    """Collect both regions concurrently, each through the unchanged engine contract."""
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="mie-dual") as pool:
-        future_first = pool.submit(first.collect, seconds)
-        future_second = pool.submit(second.collect, seconds)
-        return future_first.result(), future_second.result()
+def _collect(engines: dict[str, MaritimeIntelligenceEngine], seconds: float) -> dict[str, int]:
+    with ThreadPoolExecutor(max_workers=len(engines), thread_name_prefix="mie-multi") as pool:
+        futures = {name: pool.submit(engine.collect, seconds) for name, engine in engines.items()}
+        return {name: future.result() for name, future in futures.items()}
+
+
+def _resolve_channels(selection: list[str]) -> list[str]:
+    if not selection or ALL_CHANNELS in selection:
+        return list(REGIONS)
+    return [name for name in selection if name in REGIONS]
+
+
+def _snapshot_data(engines: dict[str, MaritimeIntelligenceEngine]) -> dict[str, object]:
+    return {name: engine.snapshot() for name, engine in engines.items()}
 
 
 def _vessel_label(vessel) -> str:
-    name = (vessel.vessel_name or "UNKNOWN").strip()
-    return f"{vessel.mmsi} · {name}"
+    return f"{vessel.mmsi} · {(vessel.vessel_name or 'UNKNOWN').strip()}"
 
 
-def _current_state(vessel) -> dict[str, object]:
-    return {
-        "MMSI": vessel.mmsi,
-        "Name": vessel.vessel_name or "UNKNOWN",
-        "Latitude": round(vessel.latitude, 5),
-        "Longitude": round(vessel.longitude, 5),
-        "SOG (kn)": round(vessel.sog_knots, 2) if vessel.sog_knots is not None else None,
-        "COG (°)": round(vessel.cog_degrees, 2) if vessel.cog_degrees is not None else None,
-        "Messages": vessel.message_count,
-    }
+def _hybrid_scores(snapshot) -> list:
+    isolation = {}
+    if snapshot.embeddings is not None:
+        isolation = dict(zip(snapshot.embeddings.mmsis, snapshot.embeddings.anomaly_scores))
+    temporal = {}
+    if snapshot.temporal is not None:
+        temporal = {score.mmsi: score.deep_anomaly_score for score in snapshot.temporal.scores}
+    rules: dict[str, list[float]] = {}
+    for finding in snapshot.findings:
+        rules.setdefault(finding.mmsi, []).append(float(finding.score))
+    mmsis = set(isolation) | set(temporal) | set(rules)
+    return rank_hybrid([
+        fuse_scores(
+            mmsi,
+            isolation_score=float(isolation[mmsi]) if mmsi in isolation else None,
+            temporal_score=float(temporal[mmsi]) if mmsi in temporal else None,
+            rule_scores=rules.get(mmsi),
+        )
+        for mmsi in mmsis
+    ])
 
 
 def main() -> None:
-    st.set_page_config(page_title="Dual-Channel Sequential Analysis", page_icon="⚓", layout="wide")
-    st.title("Dual-Channel Sequential Analysis")
-    st.caption("Optional feature · two independent real-AIS engines · no changes to the MIE core")
+    st.set_page_config(page_title="Multi-Channel Mission", page_icon="⚓", layout="wide")
+    st.title("Multi-Channel Maritime Mission")
+    st.caption("Isolated feature · real AIS only · the stable MIE core is not modified")
 
     base = AppSettings.from_runtime(st.secrets)
     if not base.aisstream_api_key:
         st.error("AISSTREAM_API_KEY is not configured.")
         return
 
-    left, right = st.columns(2)
-    with left:
-        region_a = st.selectbox("Channel A", list(REGIONS), index=0)
-    with right:
-        choices_b = [region for region in REGIONS if region != region_a]
-        region_b = st.selectbox("Channel B", choices_b, index=0)
-
-    duration = st.select_slider(
-        "Collection window (seconds)",
-        options=[30, 60, 120, 180],
-        value=int(base.collection_seconds) if int(base.collection_seconds) in [30, 60, 120, 180] else 60,
+    selected = st.multiselect(
+        "Mission channels",
+        [ALL_CHANNELS, *REGIONS.keys()],
+        default=[ALL_CHANNELS],
+        help="All Channels collects every configured region in the same mission window.",
     )
+    channels = _resolve_channels(selected)
+    duration = st.select_slider("Collection window (seconds)", options=[30, 60, 120, 180, 300, 600, 900], value=900)
 
-    engine_a = _get_engine(base, region_a)
-    engine_b = _get_engine(base, region_b)
-
-    collect_col, clear_col = st.columns(2)
-    with collect_col:
+    engines = {name: _engine(base, name) for name in channels}
+    controls, action = st.columns([3, 1])
+    with controls:
+        st.markdown("### Mission Controls")
+        st.caption(f"{len(channels)} channel(s) selected · {duration}s bounded real-AIS collection")
+    with action:
         collect = st.button("Collect Real AIS", type="primary", use_container_width=True)
-    with clear_col:
-        clear = st.button("Clear Dual Session", use_container_width=True)
-
-    if clear:
-        engine_a.clear_session_data()
-        engine_b.clear_session_data()
-        st.session_state.pop("dual_vessel_a", None)
-        st.session_state.pop("dual_vessel_b", None)
-        st.rerun()
 
     if collect:
-        with st.spinner(f"Collecting {duration}s of real AIS from {region_a} and {region_b}..."):
-            count_a, count_b = _collect_pair(engine_a, engine_b, float(duration))
-        st.success(f"Real AIS received — {region_a}: {count_a} · {region_b}: {count_b}")
+        with st.spinner(f"Collecting {duration}s from {', '.join(channels)}..."):
+            counts = _collect(engines, float(duration))
+        st.success(" · ".join(f"{name}: {count} PositionReports" for name, count in counts.items()))
 
-    snapshot_a = engine_a.snapshot()
-    snapshot_b = engine_b.snapshot()
-    vessels_a = vessels_in_bbox(snapshot_a.vessels, REGIONS[region_a])
-    vessels_b = vessels_in_bbox(snapshot_b.vessels, REGIONS[region_b])
-
-    st.divider()
-    st.subheader("Current operational state")
-    state_a, state_b = st.columns(2)
-    with state_a:
-        st.markdown(f"**{region_a}**")
-        st.metric("Active vessels", snapshot_a.readiness.distinct_vessels)
-        st.caption(f"AIS state: {snapshot_a.status.state} · messages: {snapshot_a.status.messages_received}")
-    with state_b:
-        st.markdown(f"**{region_b}**")
-        st.metric("Active vessels", snapshot_b.readiness.distinct_vessels)
-        st.caption(f"AIS state: {snapshot_b.status.state} · messages: {snapshot_b.status.messages_received}")
-
-    if not vessels_a or not vessels_b:
-        st.info("Collect more real AIS data before selecting one vessel from each channel.")
+    snapshots = _snapshot_data(engines)
+    if not snapshots:
+        st.info("Select at least one configured channel.")
         return
 
-    labels_a = {_vessel_label(v): v.mmsi for v in vessels_a}
-    labels_b = {_vessel_label(v): v.mmsi for v in vessels_b}
-    select_a, select_b = st.columns(2)
-    with select_a:
-        selected_label_a = st.selectbox("Vessel A", list(labels_a), key="dual_vessel_a")
-    with select_b:
-        available_b = [label for label in labels_b if labels_b[label] != labels_a[selected_label_a]]
-        if not available_b:
-            st.warning("Channel B has no distinct vessel available yet.")
-            return
-        selected_label_b = st.selectbox("Vessel B", available_b, key="dual_vessel_b")
-
-    mmsi_a = labels_a[selected_label_a]
-    mmsi_b = labels_b[selected_label_b]
-    seq_a = sequence_for_track(mmsi_a, snapshot_a.observations)
-    seq_b = sequence_for_track(mmsi_b, snapshot_b.observations)
+    st.divider()
+    st.subheader("Mission Overview")
+    overview_rows = []
+    for name, snapshot in snapshots.items():
+        overview_rows.append({
+            "Channel": name,
+            "Active vessels": snapshot.readiness.distinct_vessels,
+            "PositionReports": snapshot.status.position_reports_received,
+            "Accepted": snapshot.status.position_reports_accepted,
+            "Anomalies": snapshot.readiness.anomaly_count,
+            "Tracks ≥2 points": snapshot.readiness.tracks_with_history,
+            "Temporal ML": snapshot.readiness.temporal_status,
+        })
+    st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Vessel comparison")
-    current_a = next(v for v in vessels_a if v.mmsi == mmsi_a)
-    current_b = next(v for v in vessels_b if v.mmsi == mmsi_b)
-    st.dataframe(pd.DataFrame([_current_state(current_a), _current_state(current_b)]), use_container_width=True, hide_index=True)
+    st.subheader("Map Controls")
+    map_col, data_col = st.columns([2, 1])
+    with map_col:
+        channel_filter = st.selectbox("Channel", [ALL_CHANNELS, *channels], key="mission_channel_filter")
+    with data_col:
+        show_anomalies = st.checkbox("Show anomaly vessels", value=True)
 
-    metrics = pd.DataFrame(
-        [
-            {"Metric": "Points", region_a: seq_a.metrics.points, region_b: seq_b.metrics.points},
-            {"Metric": "Duration (s)", region_a: round(seq_a.metrics.duration_seconds, 1), region_b: round(seq_b.metrics.duration_seconds, 1)},
-            {"Metric": "Distance (NM)", region_a: round(seq_a.metrics.distance_nm, 3), region_b: round(seq_b.metrics.distance_nm, 3)},
-            {"Metric": "Average SOG (kn)", region_a: seq_a.metrics.average_sog_knots, region_b: seq_b.metrics.average_sog_knots},
-            {"Metric": "Max SOG (kn)", region_a: seq_a.metrics.max_sog_knots, region_b: seq_b.metrics.max_sog_knots},
-            {"Metric": "Speed change (kn)", region_a: seq_a.metrics.speed_change_knots, region_b: seq_b.metrics.speed_change_knots},
-            {"Metric": "Course change (°)", region_a: seq_a.metrics.course_change_degrees, region_b: seq_b.metrics.course_change_degrees},
-            {"Metric": "Course events ≥15°", region_a: seq_a.metrics.course_change_events, region_b: seq_b.metrics.course_change_events},
-        ]
-    )
-    st.dataframe(metrics, use_container_width=True, hide_index=True)
+    visible_channels = channels if channel_filter == ALL_CHANNELS else [channel_filter]
+    visible_rows = []
+    for name in visible_channels:
+        snapshot = snapshots[name]
+        for vessel in filter_vessels(snapshot.vessels, REGIONS[name]):
+            visible_rows.append({
+                "channel": name,
+                "mmsi": vessel.mmsi,
+                "latitude": vessel.latitude,
+                "longitude": vessel.longitude,
+                "sog_knots": vessel.sog_knots,
+                "cog_degrees": vessel.cog_degrees,
+                "vessel_name": vessel.vessel_name or "UNKNOWN",
+            })
+    visible_df = pd.DataFrame(visible_rows)
+    if not visible_df.empty:
+        st.map(visible_df.rename(columns={"latitude": "lat", "longitude": "lon"})[["lat", "lon"]])
+    else:
+        st.info("No current real AIS vessel position is inside the selected channel region.")
 
-    chart_a = pd.DataFrame(seq_a.samples)
-    chart_b = pd.DataFrame(seq_b.samples)
-    st.subheader("Time-normalized sequence")
-    chart = pd.DataFrame(
-        {
-            region_a: chart_a.set_index("elapsed_seconds")["sog_knots"],
-            region_b: chart_b.set_index("elapsed_seconds")["sog_knots"],
-        }
-    ).sort_index()
-    st.line_chart(chart, y_label="SOG (knots)", x_label="Elapsed seconds")
+    st.subheader("Channel Analytics")
+    analytics_cols = st.columns(max(1, len(visible_channels)))
+    for index, name in enumerate(visible_channels):
+        snapshot = snapshots[name]
+        with analytics_cols[index]:
+            st.markdown(f"**{name}**")
+            st.metric("Vessels", snapshot.readiness.distinct_vessels)
+            st.metric("Anomalies", snapshot.readiness.anomaly_count)
+            st.metric("Avg speed (kn)", round(float(snapshot.summary.get("avg_speed_knots", 0.0)), 2))
 
-    st.caption("Source: live AISStream PositionReport observations only. No synthetic, mock, or fallback data.")
+    st.divider()
+    st.subheader("Hybrid ML — Behavioral Ranking")
+    st.caption("IsolationForest + Temporal Autoencoder + rule evidence. The hybrid score is a session-relative ranking signal, not a probability or calibrated confidence.")
+    hybrid_rows = []
+    for name in visible_channels:
+        for score in _hybrid_scores(snapshots[name])[:10]:
+            hybrid_rows.append({
+                "Channel": name,
+                "MMSI": score.mmsi,
+                "Hybrid score": score.hybrid_score,
+                "IsolationForest": score.isolation_score,
+                "Temporal": score.temporal_score,
+                "Rule score": score.rule_score,
+                "Evidence": ", ".join(score.evidence) or "mixed/low signal",
+            })
+    if hybrid_rows:
+        st.dataframe(pd.DataFrame(hybrid_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Hybrid ranking needs enough real AIS tracks for at least one model signal.")
+
+    st.divider()
+    st.subheader("Vessel Sequential Analysis")
+    available: dict[str, dict[str, str]] = {}
+    for name in visible_channels:
+        vessels = filter_vessels(snapshots[name].vessels, REGIONS[name])
+        available[name] = {_vessel_label(vessel): vessel.mmsi for vessel in vessels}
+    usable = {name: labels for name, labels in available.items() if labels}
+    if not usable:
+        st.info("Collect more real AIS data before selecting a vessel.")
+        return
+
+    channel_for_vessel = st.selectbox("Analysis channel", list(usable), key="sequence_channel")
+    labels = usable[channel_for_vessel]
+    selected_label = st.selectbox("Vessel", list(labels), key="sequence_vessel")
+    selected_mmsi = labels[selected_label]
+    snapshot = snapshots[channel_for_vessel]
+    samples = sequence_for_track(selected_mmsi, snapshot.observations)
+    metrics = sequence_metrics(selected_mmsi, snapshot.observations)
+    st.dataframe(pd.DataFrame([metrics]), use_container_width=True, hide_index=True)
+
+    if samples:
+        seq_df = pd.DataFrame(samples).set_index("elapsed_seconds").sort_index()
+        st.line_chart(seq_df[["sog_knots", "cog_degrees"]], y_label="AIS value", x_label="Elapsed seconds")
+
+    if show_anomalies:
+        findings = [f for name in visible_channels for f in snapshots[name].findings if f.mmsi == selected_mmsi]
+        if findings:
+            st.write("**Observed anomaly evidence**")
+            st.dataframe(pd.DataFrame([{
+                "Time": f.received_at,
+                "Category": f.category,
+                "Score": f.score,
+                "Explanation": f.explanation,
+            } for f in findings]), use_container_width=True, hide_index=True)
+
+    st.caption("All displayed observations originate from live AISStream PositionReport data. No synthetic, mock, or fallback data is generated.")
 
 
 if __name__ == "__main__":
