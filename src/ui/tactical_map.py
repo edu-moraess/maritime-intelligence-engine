@@ -94,7 +94,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
     enriched = []
     for raw in rows:
         row = dict(raw)
-        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsi=critical_mmsis) if False else classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
+        status = classify_vessel_status(row, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
         row["tactical_status"] = status
         row["fill_color"] = list(STATUS_FILL.get(status, STATUS_FILL["NORMAL"]))
         row["halo_color"] = list(STATUS_HALO.get(status, STATUS_HALO["NORMAL"]))
