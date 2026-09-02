@@ -6,6 +6,11 @@ secondaryBackgroundColor = "#0d1c24"
 textColor = "#d9e6e9"
 font = "sans serif"
 
+[client]
+# The app already owns navigation inside the MIE sidebar.
+# Prevent Streamlit's automatic multipage navigation from rendering a second app/menu.
+showSidebarNavigation = false
+
 [server]
 headless = true
 enableCORS = false
