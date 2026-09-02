@@ -35,6 +35,7 @@ MAP_STYLES = {
     "Dark Matter": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     "Positron": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     "Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    "Nautical Chart": "https://tiles.openwaters.io/seamap/style.json",
 }
 
 

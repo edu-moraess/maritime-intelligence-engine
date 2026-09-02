@@ -184,3 +184,8 @@ def render_overview(
         f"Region: {region} · AIS REAL ONLY · "
         "Map controls float above the map without reducing its width."
     )
+    if map_style == "Nautical Chart":
+        st.caption(
+            "Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors "
+            "· CC BY 4.0. Not for navigational use; consult official nautical charts."
+        )
