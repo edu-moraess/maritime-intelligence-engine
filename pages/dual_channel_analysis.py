@@ -124,7 +124,7 @@ def main() -> None:
         idx_a = options_a.index(current_a) if current_a in options_a else 0
         mmsi_a = st.selectbox("Vessel A · Channel A", options_a, index=idx_a, format_func=lambda m: _label(next(v for v in vessels_a if v.mmsi == m)), key="dual_mmsi_a") if options_a else None
     with sel_b:
-        options_b = [v.mmsi for v in vessels_b]
+        options_b = [v.mmsi for v in vessels_b if v.mmsi != mmsi_a]
         current_b = st.session_state.get("dual_mmsi_b")
         idx_b = options_b.index(current_b) if current_b in options_b else 0
         mmsi_b = st.selectbox("Vessel B · Channel B", options_b, index=idx_b, format_func=lambda m: _label(next(v for v in vessels_b if v.mmsi == m)), key="dual_mmsi_b") if options_b else None
