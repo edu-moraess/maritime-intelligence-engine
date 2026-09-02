@@ -1,7 +1,7 @@
 """Streamlit entry point for the Maritime Intelligence Engine.
 
-Real AIS only. The sidebar supports one or two simultaneous AISStream
-BoundingBoxes; both regions are collected by the same live subscription.
+Real AIS only. The sidebar supports two simultaneous AISStream
+BoundingBoxes collected by one live subscription and one MIE app.
 """
 from __future__ import annotations
 
@@ -11,15 +11,16 @@ from dotenv import load_dotenv
 from src.config.regions import REGION_OPTIONS, REGION_PRESETS, format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, COLLECTION_DURATION_OPTIONS, _validate_bbox
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
-from src.ui.pages import (render_anomalies, render_behavior, render_data_quality,
-    render_overview, render_similarity, render_system, render_traffic,
-    render_trajectory_analysis, render_vessel_intelligence, render_vessels)
+from src.ui.pages import (
+    render_anomalies, render_behavior, render_data_quality, render_overview,
+    render_similarity, render_system, render_traffic, render_trajectory_analysis,
+    render_vessel_intelligence, render_vessels,
+)
 from src.ui.presentation import inject_css, notice, render_header
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 load_dotenv()
 st.set_page_config(page_title="Maritime Intelligence Engine", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
-
 inject_css()
 
 NAVIGATION = {
@@ -42,6 +43,8 @@ def _read_settings() -> AppSettings:
 def _with_settings(settings: AppSettings, *, bboxes=None, bbox=None, config_error=None,
                    collection_seconds=None, historical_persistence_enabled=None) -> AppSettings:
     active = tuple(bboxes if bboxes is not None else settings.monitoring_bboxes)
+    if not active:
+        active = (settings.bbox,)
     primary = bbox if bbox is not None else active[0]
     return AppSettings(
         aisstream_api_key=settings.aisstream_api_key,
@@ -64,7 +67,7 @@ def _normalize_bbox(bbox):
 
 
 def _normalize_bboxes(bboxes):
-    return tuple(sorted(_normalize_bbox(b) for b in bboxes))
+    return tuple(_normalize_bbox(b) for b in bboxes)
 
 
 def _engine_signature(settings: AppSettings) -> tuple:
@@ -93,28 +96,56 @@ def _connection_state(settings, engine) -> str:
     return engine.snapshot().status.state
 
 
-def _region_options_for(current):
-    return list(REGION_OPTIONS) if current not in REGION_OPTIONS else list(REGION_OPTIONS)
+def _bbox_values(bbox):
+    (min_lat, min_lon), (max_lat, max_lon) = bbox
+    return float(min_lat), float(min_lon), float(max_lat), float(max_lon)
 
 
 def _render_region_selector(settings: AppSettings):
-    """Render two independent region selectors and return active bboxes."""
+    """Render Region A and B inside the existing MIE sidebar."""
     existing = list(settings.monitoring_bboxes) or [settings.bbox]
     first = region_name_for_bbox(existing[0]) or "Miami"
     second = region_name_for_bbox(existing[1]) if len(existing) > 1 else "English Channel"
+    preset_options = list(REGION_OPTIONS)
+
     if second == first:
-        second = next(name for name in REGION_OPTIONS if name not in {first, "Custom"})
+        second = next(name for name in preset_options if name not in {first, "Custom"})
 
     st.markdown("<div class='side-section-label'>LIVE MONITORING REGIONS</div>", unsafe_allow_html=True)
-    st.caption("Monitor até duas regiões simultaneamente na mesma assinatura AISStream.")
-    region_a = st.selectbox("Region A", REGION_OPTIONS[:-1], index=REGION_OPTIONS[:-1].index(first) if first in REGION_OPTIONS[:-1] else 0, key="monitor_region_a")
-    choices_b = [name for name in REGION_OPTIONS[:-1] if name != region_a]
-    region_b = st.selectbox("Region B", choices_b, index=choices_b.index(second) if second in choices_b else 0, key="monitor_region_b")
-    bbox_a = REGION_PRESETS[region_a]
-    bbox_b = REGION_PRESETS[region_b]
-    st.caption(f"A · {region_a} · {format_bbox(bbox_a)}")
-    st.caption(f"B · {region_b} · {format_bbox(bbox_b)}")
-    return (bbox_a, bbox_b), (region_a, region_b)
+    st.caption("Duas regiões na mesma assinatura AISStream. Sem segundo app e sem segunda conexão.")
+
+    region_a = st.selectbox(
+        "Region A", preset_options,
+        index=preset_options.index(first) if first in preset_options else 0,
+        key="monitor_region_a",
+    )
+    choices_b = [name for name in preset_options if name != region_a]
+    region_b = st.selectbox(
+        "Region B", choices_b,
+        index=choices_b.index(second) if second in choices_b else 0,
+        key="monitor_region_b",
+    )
+
+    bboxes = []
+    for label, name, key_prefix in (("A", region_a, "region_a"), ("B", region_b, "region_b")):
+        if name == "Custom":
+            fallback = existing[0 if label == "A" else min(1, len(existing) - 1)]
+            st.caption(f"{label} · Custom")
+            min_lat = st.number_input("Min Latitude", value=float(fallback[0][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key=f"{key_prefix}_min_lat")
+            min_lon = st.number_input("Min Longitude", value=float(fallback[0][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key=f"{key_prefix}_min_lon")
+            max_lat = st.number_input("Max Latitude", value=float(fallback[1][0]), min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key=f"{key_prefix}_max_lat")
+            max_lon = st.number_input("Max Longitude", value=float(fallback[1][1]), min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key=f"{key_prefix}_max_lon")
+            bbox = ((min_lat, min_lon), (max_lat, max_lon))
+        else:
+            bbox = REGION_PRESETS[name]
+            st.caption(f"{label} · {name} · {format_bbox(bbox)}")
+        try:
+            _validate_bbox(bbox)
+        except ValueError as exc:
+            st.error(f"Region {label}: {exc}")
+        bboxes.append(bbox)
+
+    return tuple(bboxes), (region_a, region_b)
 
 
 def _render_sidebar(settings: AppSettings):
@@ -122,6 +153,7 @@ def _render_sidebar(settings: AppSettings):
     with st.sidebar:
         connection_placeholder = st.empty()
         st.markdown("<div class='side-section-title'>MISSION CONTEXT</div>", unsafe_allow_html=True)
+
         duration_options = list(COLLECTION_DURATION_OPTIONS)
         duration_index = min(range(len(duration_options)), key=lambda i: abs(duration_options[i] - settings.collection_seconds))
         selected_duration = st.selectbox("Collection duration", duration_options, index=duration_index,
@@ -150,9 +182,12 @@ def _render_sidebar(settings: AppSettings):
         if bool(historical_enabled) != settings.historical_persistence_enabled:
             settings = _with_settings(settings, historical_persistence_enabled=bool(historical_enabled))
 
-        if settings.database_url is None: historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
-        elif settings.historical_persistence_enabled: historical_state = "HISTORICAL PERSISTENCE ENABLED"
-        else: historical_state = "HISTORICAL PERSISTENCE OFF"
+        if settings.database_url is None:
+            historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
+        elif settings.historical_persistence_enabled:
+            historical_state = "HISTORICAL PERSISTENCE ENABLED"
+        else:
+            historical_state = "HISTORICAL PERSISTENCE OFF"
         st.markdown(f"<div class='data-value side-muted'>{historical_state}</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='side-section-title'>ANALYSIS</div>", unsafe_allow_html=True)
@@ -168,6 +203,7 @@ def _render_sidebar(settings: AppSettings):
         with st.expander("SYSTEM", expanded=False):
             st.markdown(f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>", unsafe_allow_html=True)
             st.selectbox("Operator timezone", OPERATOR_TIMEZONE_OPTIONS, index=0, key="operator_timezone", format_func=lambda v: f"Operator time · {v}", label_visibility="collapsed")
+
     return settings, page, collect, clear, region_changed
 
 
@@ -179,9 +215,11 @@ def main() -> None:
     if region_changed:
         notice("Monitoring regions changed. Run Collect Real AIS · 2 Regions to open the new subscription.")
     if clear:
-        engine.clear_session_data(); st.session_state.pop("selected_mmsi", None); st.rerun()
+        engine.clear_session_data()
+        st.session_state.pop("selected_mmsi", None)
+        st.rerun()
     if collect:
-        with st.spinner(f"Opening AISStream WebSocket for {len(settings.monitoring_bboxes)} real AIS regions and collecting for {int(settings.collection_seconds)} seconds…"):
+        with st.spinner(f"Opening one AISStream WebSocket for {len(settings.monitoring_bboxes)} real AIS regions and collecting for {int(settings.collection_seconds)} seconds…"):
             received = engine.collect(seconds=settings.collection_seconds)
         if received:
             st.session_state["collection_result"] = ("success", f"Collection elapsed {engine.last_collection_seconds:.1f} s · received {received:,} real AIS position report(s) across {len(settings.monitoring_bboxes)} regions.")
