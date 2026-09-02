@@ -27,7 +27,10 @@ DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
 DEFAULT_NUM_LAYERS = 3
-MAX_TIME_DELTA_SECONDS = 900.0
+# Diagnostic/model input should preserve long AIS outages instead of silently
+# rewriting them as a 15-minute interval. Extreme gaps remain represented by
+# log1p, so the feature stays numerically bounded without losing ordering.
+MAX_TIME_DELTA_SECONDS = 86400.0
 
 DEFAULT_EPOCHS_MAX = 30
 DEFAULT_LEARNING_RATE = 1e-3
