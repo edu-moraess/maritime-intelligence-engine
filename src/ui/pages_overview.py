@@ -13,7 +13,7 @@ from src.ui.pages_helpers import (
     _selected_vessel,
     _utc,
 )
-from src.ui.presentation import render_ops_bar, render_section_header
+from src.ui.presentation import render_ops_bar
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 _WORKSTATION_CSS = """
@@ -94,7 +94,6 @@ def render_overview(
 ) -> None:
     """Render the operational overview and tactical vessel workstation."""
     st.markdown(_WORKSTATION_CSS, unsafe_allow_html=True)
-    render_section_header("MARITIME INTELLIGENCE / OVERVIEW")
 
     summary = snapshot.summary
     region = region_name_for_bbox(settings.bbox) or "CUSTOM"
@@ -155,13 +154,14 @@ def render_overview(
             )
     else:
         render_vessel_quick_intelligence(
-            None,
+            selected,
             snapshot,
             show_gemini_hook=True,
             engine=engine,
         )
 
     st.caption(
-        f"Region: {region_name_for_bbox(settings.bbox)} · AIS REAL ONLY · "
+        "Operational intelligence derived from live AIS observations. "
+        f"Region: {region} · AIS REAL ONLY · "
         "Map controls float above the map without reducing its width."
     )
