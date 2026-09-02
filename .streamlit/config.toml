@@ -14,3 +14,8 @@ maxUploadSize = 20
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# The MIE app owns navigation inside its custom sidebar.
+# Prevent Streamlit's automatic multipage navigation from rendering a second menu.
+showSidebarNavigation = false

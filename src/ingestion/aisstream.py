@@ -143,8 +143,16 @@ class AISStreamProvider(AISProvider):
             self._set_failure("AISSTREAM_API_KEY is not configured.")
             return False, self._reason
         try:
-            corners = ((float(self.bbox[0][0][0]), float(self.bbox[0][0][1])), (float(self.bbox[0][1][0]), float(self.bbox[0][1][1])))
-            _validate_bbox(corners)
+            if not self.bbox:
+                raise ValueError("At least one AIS bounding box is required.")
+            for box in self.bbox:
+                if not isinstance(box, (list, tuple)) or len(box) != 2:
+                    raise ValueError("Each AIS bounding box must contain two corners.")
+                corners = (
+                    (float(box[0][0]), float(box[0][1])),
+                    (float(box[1][0]), float(box[1][1])),
+                )
+                _validate_bbox(corners)
         except (IndexError, TypeError, ValueError) as exc:
             self._set_failure(f"Invalid AIS bounding box: {exc}")
             return False, self._reason

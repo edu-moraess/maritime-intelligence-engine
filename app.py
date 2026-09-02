@@ -19,12 +19,10 @@ from src.config.regions import (
 from src.config.settings import (
     AppSettings,
     COLLECTION_DURATION_OPTIONS,
+    RegionBBox,
     _validate_bbox,
 )
-from src.intelligence.engine import (
-    MaritimeIntelligenceEngine,
-    create_engine,
-)
+from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
 from src.ui.pages import (
     render_anomalies,
     render_behavior,
@@ -37,11 +35,7 @@ from src.ui.pages import (
     render_vessel_intelligence,
     render_vessels,
 )
-from src.ui.presentation import (
-    inject_css,
-    notice,
-    render_header,
-)
+from src.ui.presentation import inject_css, notice, render_header
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 
@@ -57,60 +51,42 @@ st.set_page_config(
 inject_css()
 
 
-# ----------------------------------------------------------------------
-# WORKSPACE NAVIGATION
-# ----------------------------------------------------------------------
-
 NAVIGATION = {
     "Overview": ("Overview",),
-    "Vessels": (
-        "Fleet",
-        "Vessel Intelligence",
-    ),
-    "Movement & Behavior": (
-        "Trajectory Analysis",
-        "Behavior",
-        "Similarity",
-    ),
-    "Anomalies & Traffic": (
-        "Anomalies",
-        "Traffic",
-    ),
-    "Data & System": (
-        "Data Quality",
-        "System",
-    ),
+    "Vessels": ("Fleet", "Vessel Intelligence"),
+    "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
+    "Anomalies & Traffic": ("Anomalies", "Traffic"),
+    "Data & System": ("Data Quality", "System"),
 }
-
-
-# ----------------------------------------------------------------------
-# SETTINGS
-# ----------------------------------------------------------------------
 
 
 def _read_settings() -> AppSettings:
     """Load runtime settings from Streamlit secrets/environment."""
-
     try:
         secrets = st.secrets
     except Exception:
         secrets = None
-
     return AppSettings.from_runtime(secrets)
 
 
-def _with_bbox(
+def _with_settings(
     settings: AppSettings,
-    bbox: tuple[tuple[float, float], tuple[float, float]],
+    *,
+    bboxes: tuple[RegionBBox, ...] | None = None,
+    bbox: RegionBBox | None = None,
     config_error: str | None = None,
     collection_seconds: float | None = None,
     historical_persistence_enabled: bool | None = None,
 ) -> AppSettings:
     """Return settings with only the requested runtime values changed."""
-
+    active = tuple(bboxes if bboxes is not None else settings.monitoring_bboxes)
+    if not active:
+        active = (settings.bbox,)
+    primary = bbox if bbox is not None else active[0]
     return AppSettings(
         aisstream_api_key=settings.aisstream_api_key,
-        bbox=bbox,
+        bbox=primary,
+        monitoring_bboxes=active,
         collection_seconds=(
             settings.collection_seconds
             if collection_seconds is None
@@ -120,7 +96,9 @@ def _with_bbox(
         max_vessels=settings.max_vessels,
         stale_after_seconds=settings.stale_after_seconds,
         provider=settings.provider,
-        config_error=config_error,
+        config_error=(
+            settings.config_error if config_error is None else config_error
+        ),
         database_url=settings.database_url,
         historical_persistence_enabled=(
             settings.historical_persistence_enabled
@@ -130,31 +108,7 @@ def _with_bbox(
     )
 
 
-def _bbox_values(
-    bbox: tuple[tuple[float, float], tuple[float, float]],
-) -> tuple[float, float, float, float]:
-    """Flatten a bounding box for Streamlit numeric inputs."""
-
-    (min_lat, min_lon), (max_lat, max_lon) = bbox
-
-    return (
-        float(min_lat),
-        float(min_lon),
-        float(max_lat),
-        float(max_lon),
-    )
-
-
-# ----------------------------------------------------------------------
-# ENGINE LIFECYCLE
-# ----------------------------------------------------------------------
-
-
-def _normalize_bbox(
-    bbox: tuple[tuple[float, float], tuple[float, float]],
-) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Stable bbox for session identity (avoids float-noise engine resets)."""
-
+def _normalize_bbox(bbox: RegionBBox) -> RegionBBox:
     (min_lat, min_lon), (max_lat, max_lon) = bbox
     return (
         (round(float(min_lat), 5), round(float(min_lon), 5)),
@@ -162,20 +116,16 @@ def _normalize_bbox(
     )
 
 
-def _engine_signature(
-    settings: AppSettings,
-) -> tuple:
-    """Build the state signature that defines a live engine session.
+def _normalize_bboxes(bboxes: tuple[RegionBBox, ...]) -> tuple[RegionBBox, ...]:
+    """Preserve operator order; A/B order is part of session identity."""
+    return tuple(_normalize_bbox(bbox) for bbox in bboxes)
 
-    Only AIS identity parameters belong here. Collection duration and
-    historical-persistence toggles must not recreate the in-memory session.
-    Bbox coordinates are rounded so widget float noise does not discard
-    ObservationStore / tracks on ordinary Streamlit reruns.
-    """
 
+def _engine_signature(settings: AppSettings) -> tuple:
+    """Build the state signature that defines a live engine session."""
     return (
         settings.aisstream_api_key,
-        _normalize_bbox(settings.bbox),
+        _normalize_bboxes(settings.monitoring_bboxes),
         settings.max_messages,
         settings.max_vessels,
         settings.stale_after_seconds,
@@ -184,301 +134,172 @@ def _engine_signature(
     )
 
 
-def _engine_for(
-    settings: AppSettings,
-) -> MaritimeIntelligenceEngine:
-    """Return the engine associated with the current runtime configuration.
-
-    A change in the live AIS configuration, especially the monitoring
-    bounding box, creates a new isolated engine session.
-    """
-
+def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
+    """Return the engine associated with the current live configuration."""
     signature = _engine_signature(settings)
-    current_signature = st.session_state.get(
-        "engine_signature"
-    )
-
-    if current_signature != signature:
-        previous_engine = st.session_state.get(
-            "engine"
-        )
-
+    if st.session_state.get("engine_signature") != signature:
+        previous_engine = st.session_state.get("engine")
         if previous_engine is not None:
             previous_engine.historical_writer.close()
-
-        st.session_state.engine = create_engine(
-            settings
-        )
+        st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
-
-        # Vessel selection belongs to the previous region/session.
-        st.session_state.pop(
-            "selected_mmsi",
-            None,
-        )
+        st.session_state.pop("selected_mmsi", None)
 
     engine = st.session_state.engine
-
     engine.configure_historical_writer(
         settings.database_url,
         settings.historical_persistence_enabled,
     )
-
     return engine
 
 
-# ----------------------------------------------------------------------
-# CONNECTION STATE
-# ----------------------------------------------------------------------
-
-
-def _connection_state(
-    settings: AppSettings,
-    engine: MaritimeIntelligenceEngine,
-) -> str:
-    """Return the user-facing state from the current engine snapshot."""
-
+def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
     if not settings.aisstream_api_key:
         return "NOT CONFIGURED"
-
     return engine.snapshot().status.state
 
 
-# ----------------------------------------------------------------------
-# SIDEBAR
-# ----------------------------------------------------------------------
+def _bbox_values(bbox: RegionBBox) -> tuple[float, float, float, float]:
+    (min_lat, min_lon), (max_lat, max_lon) = bbox
+    return float(min_lat), float(min_lon), float(max_lat), float(max_lon)
+
+
+def _render_region_slot(
+    label: str,
+    settings: AppSettings,
+    existing: list[RegionBBox],
+) -> tuple[RegionBBox, str, str | None]:
+    """Render one region selector, including a fully functional Custom box."""
+    index = 0 if label == "A" else 1
+    fallback = existing[index] if len(existing) > index else existing[0]
+    current = region_name_for_bbox(fallback) or "Custom"
+    options = list(REGION_OPTIONS)
+    if current not in options:
+        current = "Custom"
+
+    selected = st.selectbox(
+        f"Region {label}",
+        options,
+        index=options.index(current),
+        key=f"monitor_region_{label.lower()}",
+    )
+
+    if selected != "Custom":
+        bbox = REGION_PRESETS[selected]
+        st.caption(f"{label} · {selected} · {format_bbox(bbox)}")
+    else:
+        keys = {
+            "min_lat": f"region_{label.lower()}_min_lat",
+            "min_lon": f"region_{label.lower()}_min_lon",
+            "max_lat": f"region_{label.lower()}_max_lat",
+            "max_lon": f"region_{label.lower()}_max_lon",
+        }
+        values = _bbox_values(fallback)
+        min_lat = st.number_input("Min Latitude", value=values[0], min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key=keys["min_lat"])
+        min_lon = st.number_input("Min Longitude", value=values[1], min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key=keys["min_lon"])
+        max_lat = st.number_input("Max Latitude", value=values[2], min_value=-90.0, max_value=90.0, step=0.01, format="%.5f", key=keys["max_lat"])
+        max_lon = st.number_input("Max Longitude", value=values[3], min_value=-180.0, max_value=180.0, step=0.01, format="%.5f", key=keys["max_lon"])
+        bbox = ((min_lat, min_lon), (max_lat, max_lon))
+        st.caption(f"{label} · Custom · {format_bbox(bbox)}")
+
+    try:
+        _validate_bbox(bbox)
+    except ValueError as exc:
+        return bbox, selected, str(exc)
+    return bbox, selected, None
 
 
 def _render_sidebar(
     settings: AppSettings,
-) -> tuple[
-    AppSettings,
-    str,
-    bool,
-    bool,
-    bool,
-]:
-    """Render the operational control console sidebar and return user selections.
-
-    Presentation-only grouping (MISSION / DATA / ANALYSIS / SYSTEM). Widget
-    keys, defaults, and control flow are unchanged from the previous sidebar.
-    """
-
+) -> tuple[AppSettings, str, bool, bool, bool]:
+    """Render one MIE sidebar with one AISStream subscription for A+B."""
     region_changed = False
-
     with st.sidebar:
         connection_placeholder = st.empty()
-
         st.markdown(
             "<div class='side-section-title'>MISSION CONTEXT</div>",
             unsafe_allow_html=True,
         )
 
         duration_options = list(COLLECTION_DURATION_OPTIONS)
-
         duration_index = min(
             range(len(duration_options)),
-            key=lambda index: abs(
-                duration_options[index] - settings.collection_seconds
-            ),
+            key=lambda i: abs(duration_options[i] - settings.collection_seconds),
         )
-
         selected_duration = st.selectbox(
             "Collection duration",
             duration_options,
             index=duration_index,
-            format_func=lambda seconds: (
-                f"Collection duration · {seconds} s"
-            ),
+            format_func=lambda seconds: f"Collection duration · {seconds} s",
             key="collection_duration_seconds",
             label_visibility="collapsed",
         )
-
         if float(selected_duration) != settings.collection_seconds:
-            settings = _with_bbox(
+            settings = _with_settings(
                 settings,
-                settings.bbox,
-                settings.config_error,
                 collection_seconds=float(selected_duration),
             )
 
-        collect = st.button(
-            "Collect Real AIS",
-            width="stretch",
-            type="primary",
-            disabled=settings.config_error is not None,
-        )
-
-        clear = st.button(
-            "Clear Session",
-            width="stretch",
-        )
-
         st.markdown(
-            "<div class='side-section-label'>Region</div>",
+            "<div class='side-section-label'>LIVE MONITORING REGIONS</div>",
             unsafe_allow_html=True,
         )
+        st.caption(
+            "Region A + Region B use one MIE app and one AISStream subscription."
+        )
 
-        with st.expander(
-            "Bounding Box",
-            expanded=False,
-        ):
-            active_bbox = st.session_state.get(
-                "active_bbox",
-                settings.bbox,
+        existing = list(settings.monitoring_bboxes) or [settings.bbox]
+        bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
+        bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
+
+        if name_a == name_b and name_a != "Custom":
+            error_b = "Region A and Region B must be different."
+
+        region_error = error_a or error_b
+        bboxes = (bbox_a, bbox_b)
+        previous = tuple(existing)
+        region_changed = _normalize_bboxes(bboxes) != _normalize_bboxes(previous)
+
+        if region_error is None:
+            settings = _with_settings(settings, bboxes=bboxes, bbox=bbox_a)
+            if region_changed:
+                st.warning(
+                    "Monitoring regions changed. The previous live session "
+                    "will be discarded when the new subscription is collected."
+                )
+        else:
+            st.error(region_error)
+            settings = _with_settings(
+                settings,
+                bboxes=bboxes,
+                bbox=bbox_a,
+                config_error=region_error,
             )
 
-            current_region = region_name_for_bbox(active_bbox)
-
-            if current_region in REGION_OPTIONS:
-                preset_index = REGION_OPTIONS.index(current_region)
-            else:
-                preset_index = REGION_OPTIONS.index("Custom")
-
-            selected_region = st.selectbox(
-                "AIS region preset",
-                REGION_OPTIONS,
-                index=preset_index,
-                key="region_preset",
-            )
-
-            if selected_region != "Custom":
-                candidate_bbox = REGION_PRESETS[selected_region]
-
-                for key, value in zip(
-                    (
-                        "bbox_min_lat",
-                        "bbox_min_lon",
-                        "bbox_max_lat",
-                        "bbox_max_lon",
-                    ),
-                    _bbox_values(candidate_bbox),
-                ):
-                    st.session_state[key] = value
-
-                st.caption(
-                    f"{selected_region} · {format_bbox(candidate_bbox)}"
-                )
-
-            else:
-                st.caption(
-                    "Custom · applied to the next "
-                    "real AIS subscription"
-                )
-
-                min_lat = st.number_input(
-                    "Min Latitude",
-                    value=float(active_bbox[0][0]),
-                    min_value=-90.0,
-                    max_value=90.0,
-                    step=0.01,
-                    format="%.5f",
-                    key="bbox_min_lat",
-                )
-
-                min_lon = st.number_input(
-                    "Min Longitude",
-                    value=float(active_bbox[0][1]),
-                    min_value=-180.0,
-                    max_value=180.0,
-                    step=0.01,
-                    format="%.5f",
-                    key="bbox_min_lon",
-                )
-
-                max_lat = st.number_input(
-                    "Max Latitude",
-                    value=float(active_bbox[1][0]),
-                    min_value=-90.0,
-                    max_value=90.0,
-                    step=0.01,
-                    format="%.5f",
-                    key="bbox_max_lat",
-                )
-
-                max_lon = st.number_input(
-                    "Max Longitude",
-                    value=float(active_bbox[1][1]),
-                    min_value=-180.0,
-                    max_value=180.0,
-                    step=0.01,
-                    format="%.5f",
-                    key="bbox_max_lon",
-                )
-
-                candidate_bbox = (
-                    (min_lat, min_lon),
-                    (max_lat, max_lon),
-                )
-
-            region_error: str | None = None
-
-            try:
-                _validate_bbox(candidate_bbox)
-            except ValueError as exc:
-                region_error = str(exc)
-                st.error(region_error)
-
-            if region_error is None:
-                previous_bbox = st.session_state.get(
-                    "active_bbox",
-                    settings.bbox,
-                )
-
-                region_changed = (
-                    _normalize_bbox(candidate_bbox)
-                    != _normalize_bbox(previous_bbox)
-                )
-
-                st.session_state.active_bbox = candidate_bbox
-
-                if candidate_bbox != settings.bbox:
-                    settings = _with_bbox(
-                        settings,
-                        candidate_bbox,
-                    )
-
-                if region_changed:
-                    st.warning(
-                        "Region changed. "
-                        "The previous live AIS session "
-                        "will be discarded when the new "
-                        "region is applied."
-                    )
-
-            else:
-                settings = _with_bbox(
-                    settings,
-                    active_bbox,
-                    region_error,
-                )
+        can_collect = settings.config_error is None
+        collect = st.button(
+            "Collect Real AIS · 2 Regions",
+            width="stretch",
+            type="primary",
+            disabled=not can_collect,
+        )
+        clear = st.button("Clear Session", width="stretch")
 
         st.markdown(
             "<div class='side-section-title'>DATA</div>",
             unsafe_allow_html=True,
         )
-
         historical_enabled = st.checkbox(
             "Historical Persistence",
             value=settings.historical_persistence_enabled,
             key="historical_persistence_enabled",
             disabled=settings.database_url is None,
-            help=(
-                "Persiste somente observações AIS reais "
-                "e válidas após a coleta; não altera o live."
-            ),
+            help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
         )
-
-        if (
-            bool(historical_enabled)
-            != settings.historical_persistence_enabled
-        ):
-            settings = _with_bbox(
+        if bool(historical_enabled) != settings.historical_persistence_enabled:
+            settings = _with_settings(
                 settings,
-                settings.bbox,
-                historical_persistence_enabled=bool(
-                    historical_enabled
-                ),
+                historical_persistence_enabled=bool(historical_enabled),
             )
 
         if settings.database_url is None:
@@ -487,7 +308,6 @@ def _render_sidebar(
             historical_state = "HISTORICAL PERSISTENCE ENABLED"
         else:
             historical_state = "HISTORICAL PERSISTENCE OFF"
-
         st.markdown(
             f"<div class='data-value side-muted'>{historical_state}</div>",
             unsafe_allow_html=True,
@@ -497,18 +317,13 @@ def _render_sidebar(
             "<div class='side-section-title'>ANALYSIS</div>",
             unsafe_allow_html=True,
         )
-
-        modules = list(NAVIGATION)
-
         module = st.radio(
             "Workspace module",
-            modules,
+            list(NAVIGATION),
             label_visibility="collapsed",
             key="workspace_module",
         )
-
         views = NAVIGATION[module]
-
         if len(views) == 1:
             page = views[0]
         else:
@@ -519,8 +334,6 @@ def _render_sidebar(
                 key=f"workspace_subarea_{module}",
             )
 
-        # Resolve the final engine after region controls have been applied,
-        # then render the indicator from the same snapshot used by SYSTEM.
         engine = _engine_for(settings)
         conn = _connection_state(settings, engine)
         conn_upper = str(conn).upper()
@@ -534,117 +347,69 @@ def _render_sidebar(
             "<div class='side-header'>"
             "<div class='brand'>MIE</div>"
             "<div class='side-subtitle'>MARITIME INTELLIGENCE</div>"
-            f"<div class='side-status'>"
-            f"<span class='status-pill {pill_cls}'>{conn}</span>"
-            f"<span class='side-provider'>AISSTREAM</span>"
-            f"</div>"
-            "</div>",
+            f"<div class='side-status'><span class='status-pill {pill_cls}'>{conn}</span>"
+            "<span class='side-provider'>AISSTREAM</span></div></div>",
             unsafe_allow_html=True,
         )
         with st.expander("SYSTEM", expanded=False):
             st.markdown(
-                f"<div class='data-label'>Connection</div>"
-                f"<div class='data-value'>{conn}</div>",
+                f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
                 unsafe_allow_html=True,
             )
-
             st.selectbox(
                 "Operator timezone",
                 OPERATOR_TIMEZONE_OPTIONS,
                 index=0,
                 key="operator_timezone",
-                format_func=lambda value: (
-                    f"Operator time · {value}"
-                ),
+                format_func=lambda value: f"Operator time · {value}",
                 label_visibility="collapsed",
             )
 
-    return (
-        settings,
-        page,
-        collect,
-        clear,
-        region_changed,
-    )
-
-
-# ----------------------------------------------------------------------
-# MAIN APPLICATION
-# ----------------------------------------------------------------------
+    return settings, page, collect, clear, region_changed
 
 
 def main() -> None:
     """Run the Streamlit application."""
-
     settings = _read_settings()
-
-    (
-        settings,
-        page,
-        collect,
-        clear,
-        region_changed,
-    ) = _render_sidebar(settings)
-
-    engine = _engine_for(
-        settings
-    )
+    settings, page, collect, clear, region_changed = _render_sidebar(settings)
+    engine = _engine_for(settings)
 
     if region_changed:
         notice(
-            "Monitoring region changed. "
-            "The previous live AIS session has been "
-            "discarded. Run Collect Real AIS to open "
-            "the new subscription."
+            "Monitoring regions changed. Run Collect Real AIS · 2 Regions "
+            "to open the new single AISStream subscription."
         )
 
     if clear:
         engine.clear_session_data()
-
-        st.session_state.pop(
-            "selected_mmsi",
-            None,
-        )
-
+        st.session_state.pop("selected_mmsi", None)
         st.rerun()
 
     if collect:
         with st.spinner(
-            "Opening AISStream WebSocket and "
-            f"collecting real AIS messages for "
-            f"{int(settings.collection_seconds)} seconds…"
+            "Opening one AISStream WebSocket for "
+            f"{len(settings.monitoring_bboxes)} real AIS regions and collecting "
+            f"for {int(settings.collection_seconds)} seconds…"
         ):
-            received = engine.collect(
-                seconds=settings.collection_seconds
-            )
+            received = engine.collect(seconds=settings.collection_seconds)
 
         if received:
             st.session_state["collection_result"] = (
                 "success",
                 "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · "
-                f"received {received:,} real AIS "
-                "position report(s).",
+                f"{engine.last_collection_seconds:.1f} s · received {received:,} "
+                f"real AIS position report(s) across {len(settings.monitoring_bboxes)} regions.",
             )
         else:
             st.session_state["collection_result"] = (
                 "warning",
                 "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · "
-                "REAL AIS DATA UNAVAILABLE — "
-                "no real observations were received "
-                "in this collection window.",
+                f"{engine.last_collection_seconds:.1f} s · REAL AIS DATA "
+                "UNAVAILABLE — no real observations were received in this collection window.",
             )
-
-        # The sidebar is rendered before collection. Rerun once so its
-        # connection indicator observes the provider state produced by the
-        # completed collection instead of the pre-collection state.
         st.rerun()
 
-    collection_result = st.session_state.pop(
-        "collection_result",
-        None,
-    )
+    collection_result = st.session_state.pop("collection_result", None)
     if collection_result:
         result_type, result_message = collection_result
         if result_type == "success":
@@ -653,101 +418,36 @@ def main() -> None:
             st.warning(result_message)
 
     snapshot = engine.snapshot()
-
-    render_header(
-        snapshot.status,
-        page,
-    )
+    render_header(snapshot.status, page)
 
     if snapshot.status.state != "LIVE AIS":
         status_type = (
             "red"
-            if snapshot.status.state
-            in {
-                "DISCONNECTED",
-                "REAL AIS DATA UNAVAILABLE",
-            }
+            if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"}
             else ""
         )
-
-        notice(
-            (
-                snapshot.status.state
-                + ": "
-                + snapshot.status.reason
-            ),
-            status_type,
-        )
+        notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
 
     if page == "Overview":
-        render_overview(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_overview(engine, snapshot, settings)
     elif page == "Fleet":
-        render_vessels(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_vessels(engine, snapshot, settings)
     elif page == "Vessel Intelligence":
-        render_vessel_intelligence(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_vessel_intelligence(engine, snapshot, settings)
     elif page == "Trajectory Analysis":
-        render_trajectory_analysis(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_trajectory_analysis(engine, snapshot, settings)
     elif page == "Behavior":
-        render_behavior(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_behavior(engine, snapshot, settings)
     elif page == "Similarity":
-        render_similarity(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_similarity(engine, snapshot, settings)
     elif page == "Anomalies":
-        render_anomalies(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_anomalies(engine, snapshot, settings)
     elif page == "Traffic":
-        render_traffic(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_traffic(engine, snapshot, settings)
     elif page == "Data Quality":
-        render_data_quality(
-            engine,
-            snapshot,
-            settings,
-        )
-
+        render_data_quality(engine, snapshot, settings)
     elif page == "System":
-        render_system(
-            engine,
-            snapshot,
-            settings,
-        )
+        render_system(engine, snapshot, settings)
 
 
 if __name__ == "__main__":
