@@ -32,6 +32,13 @@ _WORKSTATION_CSS = """
     box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(10px);
 }
+
+/* Keep the tactical map visually clean by hiding the basemap attribution UI. */
+.mapboxgl-ctrl-attrib,
+.maplibregl-ctrl-attrib {
+    display: none !important;
+}
+
 @media (max-width: 900px) {
     .st-key-tactical-vessel-panel {
         position: static;
