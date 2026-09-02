@@ -58,8 +58,11 @@ def test_anomaly_mmsi_sets():
 
 
 def test_ship_polygon_orientation_differs():
-    north, east = ship_polygon(0.0, 0.0, 0.0, scale_deg=0.02), ship_polygon(0.0, 0.0, 90.0, scale_deg=0.02)
+    north = ship_polygon(0.0, 0.0, 0.0, scale_deg=0.02)
+    east = ship_polygon(0.0, 0.0, 90.0, scale_deg=0.02)
     assert north[0] == north[-1] and north != east
+    assert len(north) == 14  # detailed hull + closing point
+    assert north[0] != north[1] != north[2]
 
 
 def test_vector_zero_and_positive_sog():
