@@ -59,9 +59,7 @@ _WORKSTATION_CSS = """
 """
 
 
-def _render_map_controls(
-    *,
-) -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
+def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
     """Render compact map controls without consuming map width."""
     with st.popover("MAP CONTROLS", icon="☰", use_container_width=False):
         min_speed = st.slider(
