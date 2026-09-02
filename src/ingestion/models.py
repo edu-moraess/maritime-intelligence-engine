@@ -32,13 +32,7 @@ def is_valid_mmsi(value: object) -> bool:
 
 @dataclass(frozen=True)
 class AISObservation:
-    """A validated real AIS PositionReport with explicit temporal semantics.
-
-    ``received_at`` is when the MIE received/processed the frame. The AIS
-    ``Timestamp`` is retained separately as ``ais_timestamp_second`` and is
-    never promoted to an absolute datetime. ``observed_at`` remains ``None``
-    unless a trusted absolute observation-time source is added in the future.
-    """
+    """A validated real AIS PositionReport with explicit temporal semantics."""
 
     mmsi: str
     latitude: float
@@ -57,46 +51,20 @@ class AISObservation:
 
     def __post_init__(self) -> None:
         if not is_valid_mmsi(self.mmsi):
-            raise ValueError(
-                f"Invalid AIS MMSI: {self.mmsi!r}. "
-                "Expected exactly 9 numeric digits."
-            )
-
+            raise ValueError(f"Invalid AIS MMSI: {self.mmsi!r}. Expected exactly 9 numeric digits.")
         if self.received_at.tzinfo is None or self.received_at.utcoffset() is None:
             raise ValueError("received_at must be timezone-aware")
-
-        object.__setattr__(
-            self,
-            "received_at",
-            self.received_at.astimezone(timezone.utc),
-        )
-
+        object.__setattr__(self, "received_at", self.received_at.astimezone(timezone.utc))
         if self.observed_at is not None:
-            if (
-                self.observed_at.tzinfo is None
-                or self.observed_at.utcoffset() is None
-            ):
-                raise ValueError(
-                    "observed_at must be timezone-aware when provided"
-                )
-
-            object.__setattr__(
-                self,
-                "observed_at",
-                self.observed_at.astimezone(timezone.utc),
-            )
-
+            if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+                raise ValueError("observed_at must be timezone-aware when provided")
+            object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
         if self.ais_timestamp_second is not None and (
             isinstance(self.ais_timestamp_second, bool)
             or not isinstance(self.ais_timestamp_second, int)
             or not 0 <= self.ais_timestamp_second <= 59
         ):
-            # AIS 60–63 are special states; raw keeps the provider value for audit.
-            object.__setattr__(
-                self,
-                "ais_timestamp_second",
-                None,
-            )
+            object.__setattr__(self, "ais_timestamp_second", None)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -105,11 +73,7 @@ class AISObservation:
             "longitude": self.longitude,
             "received_at": self.received_at.astimezone(timezone.utc).isoformat(),
             "ais_timestamp_second": self.ais_timestamp_second,
-            "observed_at": (
-                self.observed_at.astimezone(timezone.utc).isoformat()
-                if self.observed_at is not None
-                else None
-            ),
+            "observed_at": self.observed_at.astimezone(timezone.utc).isoformat() if self.observed_at else None,
             "sog_knots": self.sog_knots,
             "cog_degrees": self.cog_degrees,
             "heading_degrees": self.heading_degrees,
@@ -134,6 +98,7 @@ class VesselSnapshot:
     stale: bool = False
     ais_timestamp_second: int | None = None
     observed_at: datetime | None = None
+    ship_type: int | None = None
 
 
 @dataclass(frozen=True)
