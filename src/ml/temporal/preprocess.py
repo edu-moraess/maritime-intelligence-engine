@@ -99,8 +99,8 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
     if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
         return None
 
-    # Keep motion features physically meaningful: AIS deltas are angular, so
-    # convert them to local metres before temporal modelling.
+    # AIS latitude/longitude deltas are converted to metres so the feature
+    # magnitude is physically meaningful and comparable across regions.
     lat_rad = np.deg2rad(lat)
     mean_lat_rad = float(np.mean(lat_rad))
     meters_per_degree_lat = 111_132.0
@@ -165,20 +165,25 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
 
 
 def _resample_to_length(mat: np.ndarray, target_length: int) -> np.ndarray:
-    """Resample only by observed sequence index; retain elapsed time as a feature."""
-    n, f = mat.shape
+    """Select real observations without interpolating or fabricating AIS points."""
+    n, _ = mat.shape
+    if target_length < 1:
+        raise ValueError("target_length must be >= 1")
+    if n < target_length:
+        raise ValueError("Cannot build temporal window without enough real observations.")
     if n == target_length:
         return mat.astype(np.float32)
-    if n == 1:
-        return np.repeat(mat.astype(np.float32), target_length, axis=0)
-    src_idx = np.linspace(0.0, n - 1, num=n)
-    dst_idx = np.linspace(0.0, n - 1, num=target_length)
-    out = np.empty((target_length, f), dtype=np.float64)
-    for j in range(f):
-        out[:, j] = np.interp(dst_idx, src_idx, mat[:, j])
-    if not np.isfinite(out).all():
-        raise ValueError("Non-finite values after interpolation.")
-    return out.astype(np.float32)
+
+    # Evenly sample existing observations. The selected rows retain their true
+    # receive-time metadata through log_time_delta; no synthetic timestamps or
+    # interpolated motion values are introduced.
+    indices = np.linspace(0, n - 1, num=target_length, dtype=int)
+    indices = np.unique(indices)
+    if len(indices) != target_length:
+        indices = np.round(np.linspace(0, n - 1, num=target_length)).astype(int)
+    if len(np.unique(indices)) != target_length:
+        raise ValueError("Unable to select distinct real observations for window.")
+    return mat[indices].astype(np.float32)
 
 
 def build_temporal_sequence(
@@ -189,17 +194,17 @@ def build_temporal_sequence(
     mmsi: str | None = None,
 ) -> TemporalSequence | None:
     obs_list = list(observations)
-    if len(obs_list) < minimum_points:
+    if len(obs_list) < minimum_points or len(obs_list) < sequence_length:
         return None
     mmsi_val = mmsi or str(obs_list[0].mmsi)
     try:
         frame = enrich_track(track_to_frame(obs_list))
     except Exception:
         return None
-    if frame is None or len(frame) < minimum_points:
+    if frame is None or len(frame) < minimum_points or len(frame) < sequence_length:
         return None
     mat = _build_feature_matrix(frame)
-    if mat is None or mat.shape[0] < minimum_points:
+    if mat is None or mat.shape[0] < minimum_points or mat.shape[0] < sequence_length:
         return None
     try:
         seq = _resample_to_length(mat, int(sequence_length))
