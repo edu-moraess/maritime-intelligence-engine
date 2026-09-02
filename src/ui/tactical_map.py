@@ -6,10 +6,10 @@ from math import cos, radians, sin
 import pydeck as pdk
 
 STATUS_FILL = {"NORMAL":[53,194,201,220],"ATTENTION":[233,184,87,230],"ANOMALY":[239,107,115,235],"CRITICAL":[220,50,60,245],"SELECTED":[255,255,255,250],"STALE":[121,147,155,180]}
-STATUS_HALO = {"NORMAL":[53,194,201,50],"ATTENTION":[233,184,87,65],"ANOMALY":[239,107,115,85],"CRITICAL":[220,50,60,105],"SELECTED":[255,255,255,95],"STALE":[121,147,155,40]}
-STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,160],"ANOMALY":[239,107,115,200],"CRITICAL":[220,50,60,230],"SELECTED":[255,255,255,240],"STALE":[121,147,155,80]}
+STATUS_HALO = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,35],"CRITICAL":[220,50,60,50],"SELECTED":[255,255,255,65],"STALE":[121,147,155,0]}
+STATUS_RING = {"NORMAL":[53,194,201,0],"ATTENTION":[233,184,87,0],"ANOMALY":[239,107,115,120],"CRITICAL":[220,50,60,150],"SELECTED":[255,255,255,190],"STALE":[121,147,155,0]}
 _SHIP_LOCAL = ((0.0,1.6),(0.55,-0.3),(0.45,-1.1),(-0.45,-1.1),(-0.55,-0.3))
-VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.004
+VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.0025
 TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>"
     "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>"
@@ -85,10 +85,10 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         lat, lon = float(row["latitude"]), float(row["longitude"])
         course = resolve_course_degrees(row)
         row["course_degrees"] = course
-        scale = SHIP_SCALE_DEG * (1.35 if status=="SELECTED" else 1.2 if status=="CRITICAL" else 1.1 if status=="ANOMALY" else 1.0)
+        scale = SHIP_SCALE_DEG * (1.25 if status=="SELECTED" else 1.1 if status=="CRITICAL" else 1.05 if status=="ANOMALY" else 1.0)
         row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale)
-        row["halo_radius"] = 180 if status=="SELECTED" else 110
-        row["core_radius"] = 55 if status=="SELECTED" else 40
+        row["halo_radius"] = 100 if status=="SELECTED" else 70
+        row["core_radius"] = 42 if status=="SELECTED" else 28
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
         try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
@@ -135,7 +135,7 @@ def density_points_from_observations(observations, *, max_points=2500):
     return points
 
 AIS_TARGETS_LAYER_ID = "ais-targets"
-VESSEL_HIT_RADIUS = 115
+VESSEL_HIT_RADIUS = 90
 DENSITY_LAYER_TYPE = "ScatterplotLayer"
 DENSITY_FILL_COLOR = [53, 194, 201, 30]
 DENSITY_RADIUS = 900
