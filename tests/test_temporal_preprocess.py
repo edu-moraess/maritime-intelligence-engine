@@ -3,13 +3,13 @@ import numpy as np
 from src.ml.temporal.preprocess import _build_feature_matrix, _resample_to_length
 
 
-def test_temporal_window_selects_real_rows_without_interpolation() -> None:
+def test_temporal_window_selects_latest_contiguous_real_rows() -> None:
     matrix = np.arange(12 * 2, dtype=np.float64).reshape(12, 2)
 
     result = _resample_to_length(matrix, 8)
 
     assert result.shape == (8, 2)
-    assert all(any(np.array_equal(row, source) for source in matrix) for row in result)
+    np.testing.assert_array_equal(result, matrix[-8:])
 
 
 def test_temporal_window_rejects_insufficient_real_points() -> None:
