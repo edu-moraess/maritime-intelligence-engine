@@ -361,6 +361,13 @@ def _render_vessel_map(
         zoom = float(st.session_state.get("tactical_map_zoom", 7.5))
 
     style = TACTICAL_MAP_STYLE if map_style in (None, "", "Dark Matter", "dark", "tactical") else MAP_STYLES.get(map_style, TACTICAL_MAP_STYLE)
+    if isinstance(style, str) and style.startswith("https://tiles.openwaters.io/seamap/"):
+        map_provider = "maplibre"
+        map_projection = "mercator"
+    else:
+        map_provider = "carto"
+        map_projection = None
+
     by_mmsi_obs: dict[str, int] = {}
     for observation in list(snapshot.observations or []):
         by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
@@ -385,7 +392,7 @@ def _render_vessel_map(
             unsafe_allow_html=True,
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
-    deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
+    deck = pdk.Deck(map_style=style, map_provider=map_provider, map_projection=map_projection, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
     event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
     _apply_map_selection(event)
     st.markdown(
