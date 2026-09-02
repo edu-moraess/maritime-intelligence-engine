@@ -79,6 +79,11 @@ class AISStreamProvider(AISProvider):
         self._last_received_at: datetime | None = None
         self._last_ais_timestamp_second: int | None = None
         self._messages_received = 0
+        self._frames_received = 0
+        self._position_reports_received = 0
+        self._position_reports_accepted = 0
+        self._parse_errors = 0
+        self._non_position_frames = 0
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -96,6 +101,11 @@ class AISStreamProvider(AISProvider):
             latency_seconds=None,
             websocket_status=self._websocket_status,
             ais_timestamp_second=self._last_ais_timestamp_second,
+            frames_received=self._frames_received,
+            position_reports_received=self._position_reports_received,
+            position_reports_accepted=self._position_reports_accepted,
+            parse_errors=self._parse_errors,
+            non_position_frames=self._non_position_frames,
         )
 
     def reset_session(self) -> None:
@@ -106,6 +116,11 @@ class AISStreamProvider(AISProvider):
         self._last_received_at = None
         self._last_ais_timestamp_second = None
         self._messages_received = 0
+        self._frames_received = 0
+        self._position_reports_received = 0
+        self._position_reports_accepted = 0
+        self._parse_errors = 0
+        self._non_position_frames = 0
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -134,7 +149,7 @@ class AISStreamProvider(AISProvider):
             self._set_failure(f"Invalid AIS bounding box: {exc}")
             return False, self._reason
         self._state = "CONNECTING"
-        self._reason = "Opening AISStream WebSocket."
+        self._reason = "Subscription sent; waiting for AIS messages."
         self._websocket_status = "CONNECTING"
         return True, self._reason
 
@@ -178,6 +193,7 @@ class AISStreamProvider(AISProvider):
                         raise
                     if not frame:
                         raise ConnectionError("AISStream closed the WebSocket.")
+                    self._frames_received += 1
                     observation = self._parse_frame(frame)
                     if observation is None:
                         continue
@@ -212,7 +228,15 @@ class AISStreamProvider(AISProvider):
             self._reason = "No real AIS PositionReport was received during the collection window."
         elif received_this_window and self._state == "CONNECTING":
             self._state = "LIVE AIS"
-            self._reason = "Real AIS PositionReports received during the collection window."
+            self._reason = (
+                "Real AIS PositionReports received during the collection window. "
+                f"Ingestion diagnostics: frames={self._frames_received}, "
+                f"position_reports={self._position_reports_received}, "
+                f"accepted={self._position_reports_accepted}, "
+                f"rejected={max(0, self._position_reports_received - self._position_reports_accepted)}, "
+                f"parse_errors={self._parse_errors}, "
+                f"non_position={self._non_position_frames}."
+            )
 
     def _parse_frame(self, frame: str | bytes) -> AISObservation | None:
         try:
@@ -220,9 +244,12 @@ class AISStreamProvider(AISProvider):
                 frame = frame.decode("utf-8")
             payload = json.loads(frame)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            self._parse_errors += 1
             return None
         if not isinstance(payload, dict) or payload.get("MessageType") != "PositionReport":
+            self._non_position_frames += 1
             return None
+        self._position_reports_received += 1
         meta = payload.get("MetaData") or {}
         report = (payload.get("Message") or {}).get("PositionReport") or {}
         if not isinstance(meta, dict) or not isinstance(report, dict):
@@ -263,6 +290,7 @@ class AISStreamProvider(AISProvider):
 
     def _record(self, observation: AISObservation) -> None:
         self._messages_received += 1
+        self._position_reports_accepted += 1
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
         self._state = "LIVE AIS"

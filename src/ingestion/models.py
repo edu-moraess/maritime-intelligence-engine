@@ -112,6 +112,11 @@ class IngestionStatus:
     latency_seconds: float | None
     websocket_status: str
     ais_timestamp_second: int | None = None
+    frames_received: int = 0
+    position_reports_received: int = 0
+    position_reports_accepted: int = 0
+    parse_errors: int = 0
+    non_position_frames: int = 0
 
 
 @dataclass(frozen=True)
