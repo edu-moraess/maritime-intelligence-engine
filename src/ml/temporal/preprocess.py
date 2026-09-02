@@ -99,6 +99,17 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
     if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
         return None
 
+    # Keep motion features physically meaningful: AIS deltas are angular, so
+    # convert them to local metres before temporal modelling.
+    lat_rad = np.deg2rad(lat)
+    mean_lat_rad = float(np.mean(lat_rad))
+    meters_per_degree_lat = 111_132.0
+    meters_per_degree_lon = 111_320.0 * max(np.cos(mean_lat_rad), 1e-6)
+    delta_lat_m = np.zeros(len(frame), dtype=np.float64)
+    delta_lon_m = np.zeros(len(frame), dtype=np.float64)
+    delta_lat_m[1:] = np.diff(lat) * meters_per_degree_lat
+    delta_lon_m[1:] = np.diff(lon) * meters_per_degree_lon
+
     sog = frame["sog_knots"].to_numpy(dtype=np.float64) if "sog_knots" in frame.columns else np.zeros(len(frame))
     sog = np.where(np.isfinite(sog), sog, 0.0)
     sog = np.clip(sog, 0.0, 80.0)
@@ -108,11 +119,6 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
     cog = np.mod(cog, 360.0)
     cog_sin = np.sin(np.deg2rad(cog))
     cog_cos = np.cos(np.deg2rad(cog))
-
-    delta_lat = np.zeros(len(frame), dtype=np.float64)
-    delta_lon = np.zeros(len(frame), dtype=np.float64)
-    delta_lat[1:] = np.diff(lat)
-    delta_lon[1:] = np.diff(lon)
 
     computed_speed = (
         frame["computed_speed_knots"].to_numpy(dtype=np.float64)
@@ -141,8 +147,8 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
 
     mat = np.column_stack(
         [
-            delta_lat,
-            delta_lon,
+            delta_lat_m,
+            delta_lon_m,
             sog,
             cog_sin,
             cog_cos,
@@ -159,6 +165,7 @@ def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
 
 
 def _resample_to_length(mat: np.ndarray, target_length: int) -> np.ndarray:
+    """Resample only by observed sequence index; retain elapsed time as a feature."""
     n, f = mat.shape
     if n == target_length:
         return mat.astype(np.float32)
@@ -221,12 +228,7 @@ def build_temporal_sequences(
         items = list(tracks)
     result: list[TemporalSequence] = []
     for mmsi, obs in items:
-        seq = build_temporal_sequence(
-            obs,
-            sequence_length=sequence_length,
-            minimum_points=minimum_points,
-            mmsi=str(mmsi),
-        )
+        seq = build_temporal_sequence(obs, sequence_length=sequence_length, minimum_points=minimum_points, mmsi=str(mmsi))
         if seq is not None:
             result.append(seq)
     return result
