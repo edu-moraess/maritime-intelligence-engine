@@ -10,10 +10,10 @@ from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui.pages_helpers import (
     MAP_STYLES,
     _render_vessel_map,
-    render_connection_banner,
-    render_metric_strip,
+    _selected_vessel,
+    _utc,
 )
-from src.ui.presentation import render_section_header
+from src.ui.presentation import render_ops_bar, render_section_header
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 _WORKSTATION_CSS = """
@@ -95,8 +95,25 @@ def render_overview(
     """Render the operational overview and tactical vessel workstation."""
     st.markdown(_WORKSTATION_CSS, unsafe_allow_html=True)
     render_section_header("MARITIME INTELLIGENCE / OVERVIEW")
-    render_connection_banner(engine)
-    render_metric_strip(snapshot)
+
+    summary = snapshot.summary
+    region = region_name_for_bbox(settings.bbox) or "CUSTOM"
+    duration = (
+        f"Collection {snapshot.last_collection_seconds:.1f}s"
+        if snapshot.last_collection_seconds > 0
+        else "Collection —"
+    )
+    render_ops_bar(
+        live_state=snapshot.status.state,
+        region=region,
+        vessels=summary["active_vessels"],
+        messages=f"{summary['messages']:,}",
+        anomalies=summary["anomalies"],
+        collection=duration,
+        provenance="AIS REAL ONLY",
+        avg_speed=f"{summary['average_speed_knots']:.1f} kn",
+        last_message=_utc(snapshot.status.last_received_at),
+    )
 
     (
         min_speed,
@@ -127,12 +144,22 @@ def render_overview(
         show_anomaly_hotspots=show_anomaly_hotspots,
     )
 
-    selected_mmsi = st.session_state.get("selected_mmsi")
-    if selected_mmsi:
+    selected = _selected_vessel(snapshot.vessels)
+    if selected is not None:
         with st.container(key="tactical-vessel-panel", border=True):
-            render_vessel_quick_intelligence(snapshot, selected_mmsi)
+            render_vessel_quick_intelligence(
+                selected,
+                snapshot,
+                show_gemini_hook=True,
+                engine=engine,
+            )
     else:
-        render_vessel_quick_intelligence(snapshot, selected_mmsi)
+        render_vessel_quick_intelligence(
+            None,
+            snapshot,
+            show_gemini_hook=True,
+            engine=engine,
+        )
 
     st.caption(
         f"Region: {region_name_for_bbox(settings.bbox)} · AIS REAL ONLY · "
