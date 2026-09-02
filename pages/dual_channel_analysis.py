@@ -56,14 +56,6 @@ def _resolve_channels(selection: list[str]) -> list[str]:
     return [name for name in selection if name in REGIONS]
 
 
-def _snapshot_data(engines: dict[str, MaritimeIntelligenceEngine]) -> dict[str, object]:
-    return {name: engine.snapshot() for name, engine in engines.items()}
-
-
-def _vessel_label(vessel) -> str:
-    return f"{vessel.mmsi} · {(vessel.vessel_name or 'UNKNOWN').strip()}"
-
-
 def _hybrid_scores(snapshot) -> list:
     isolation = {}
     if snapshot.embeddings is not None:
@@ -118,11 +110,7 @@ def main() -> None:
             counts = _collect(engines, float(duration))
         st.success(" · ".join(f"{name}: {count} PositionReports" for name, count in counts.items()))
 
-    snapshots = _snapshot_data(engines)
-    if not snapshots:
-        st.info("Select at least one configured channel.")
-        return
-
+    snapshots = {name: engine.snapshot() for name, engine in engines.items()}
     st.divider()
     st.subheader("Mission Overview")
     overview_rows = []
@@ -144,7 +132,7 @@ def main() -> None:
     with map_col:
         channel_filter = st.selectbox("Channel", [ALL_CHANNELS, *channels], key="mission_channel_filter")
     with data_col:
-        show_anomalies = st.checkbox("Show anomaly vessels", value=True)
+        show_anomalies = st.checkbox("Show anomaly evidence", value=True)
 
     visible_channels = channels if channel_filter == ALL_CHANNELS else [channel_filter]
     visible_rows = []
@@ -174,7 +162,7 @@ def main() -> None:
             st.markdown(f"**{name}**")
             st.metric("Vessels", snapshot.readiness.distinct_vessels)
             st.metric("Anomalies", snapshot.readiness.anomaly_count)
-            st.metric("Avg speed (kn)", round(float(snapshot.summary.get("avg_speed_knots", 0.0)), 2))
+            st.metric("Avg speed (kn)", round(float(snapshot.summary.get("average_speed_knots", 0.0)), 2))
 
     st.divider()
     st.subheader("Hybrid ML — Behavioral Ranking")
@@ -221,7 +209,7 @@ def main() -> None:
         st.line_chart(seq_df[["sog_knots", "cog_degrees"]], y_label="AIS value", x_label="Elapsed seconds")
 
     if show_anomalies:
-        findings = [f for name in visible_channels for f in snapshots[name].findings if f.mmsi == selected_mmsi]
+        findings = [f for f in snapshot.findings if f.mmsi == selected_mmsi]
         if findings:
             st.write("**Observed anomaly evidence**")
             st.dataframe(pd.DataFrame([{
@@ -232,6 +220,10 @@ def main() -> None:
             } for f in findings]), use_container_width=True, hide_index=True)
 
     st.caption("All displayed observations originate from live AISStream PositionReport data. No synthetic, mock, or fallback data is generated.")
+
+
+def _vessel_label(vessel) -> str:
+    return f"{vessel.mmsi} · {(vessel.vessel_name or 'UNKNOWN').strip()}"
 
 
 if __name__ == "__main__":
