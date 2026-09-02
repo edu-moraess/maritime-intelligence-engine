@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.config.settings import AppSettings
 from src.ingestion.models import AnomalyFinding, VesselSnapshot
@@ -393,7 +394,15 @@ def _render_vessel_map(
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, map_provider=map_provider, map_projection=map_projection, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
-    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
+    if map_provider == "maplibre":
+        # Streamlit's native pydeck component currently bundles Mapbox GL, not
+        # the MapLibre runtime exposed by pydeck 0.9.2+. Render the standalone
+        # PyDeck document instead; it includes maplibre-gl and preserves the
+        # Open Waters style URL as the actual basemap source.
+        components.html(deck.to_html(as_string=True), height=580, scrolling=False)
+        event = None
+    else:
+        event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
     _apply_map_selection(event)
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
