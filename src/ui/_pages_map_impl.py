@@ -5,7 +5,7 @@ Presentation-only split from pages_helpers; no business-logic changes.
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -35,7 +35,6 @@ MAP_STYLES = {
     "Dark Matter": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     "Positron": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     "Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-    "Light": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 }
 
 
@@ -155,3 +154,71 @@ def _build_anomaly_hotspots(findings):
         hotspots[key]["count"] += 1
         hotspots[key]["max_score"] = max(hotspots[key]["max_score"], float(finding.score))
     return list(hotspots.values())
+
+
+def _build_anomaly_type_rows(findings):
+    """Prepare real anomaly findings for category-aware tactical rendering."""
+    colors = {
+        "HEADING": [233, 184, 87, 220],
+        "SPEED": [81, 199, 155, 220],
+        "POSITION": [121, 147, 155, 220],
+        "SPATIAL": [151, 116, 220, 220],
+        "TEMPORAL": [73, 160, 220, 220],
+        "SIGNAL": [239, 107, 115, 220],
+    }
+    rows = []
+    for finding in findings:
+        if finding.latitude is None or finding.longitude is None:
+            continue
+        category = str(finding.category or "OTHER").upper()
+        rows.append({
+            "latitude": float(finding.latitude),
+            "longitude": float(finding.longitude),
+            "mmsi": str(finding.mmsi),
+            "category": category,
+            "score": float(finding.score),
+            "color": colors.get(category, [180, 180, 180, 210]),
+            "radius": max(220.0, min(900.0, 250.0 + float(finding.score) * 650.0)),
+        })
+    return rows
+
+
+def _build_freshness_rows(rows, reference_time: datetime | None = None):
+    """Prepare vessel freshness bands from real observation timestamps only."""
+    if not rows:
+        return []
+    if reference_time is None:
+        timestamps = [row.get("last_received") for row in rows if row.get("last_received") is not None]
+        reference_time = max(timestamps) if timestamps else None
+    if reference_time is None:
+        return []
+    if reference_time.tzinfo is None:
+        reference_time = reference_time.replace(tzinfo=timezone.utc)
+
+    result = []
+    for row in rows:
+        received = row.get("last_received")
+        if received is None:
+            continue
+        if received.tzinfo is None:
+            received = received.replace(tzinfo=timezone.utc)
+        age_seconds = max(0.0, (reference_time - received).total_seconds())
+        if age_seconds <= 30:
+            band = "FRESH"
+            color = [81, 199, 155, 125]
+        elif age_seconds <= 120:
+            band = "AGING"
+            color = [233, 184, 87, 115]
+        else:
+            band = "STALE"
+            color = [239, 107, 115, 105]
+        result.append({
+            "latitude": float(row["latitude"]),
+            "longitude": float(row["longitude"]),
+            "mmsi": str(row["mmsi"]),
+            "age_seconds": age_seconds,
+            "band": band,
+            "color": color,
+            "radius": 420.0,
+        })
+    return result

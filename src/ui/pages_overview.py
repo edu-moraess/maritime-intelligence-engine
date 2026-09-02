@@ -51,7 +51,7 @@ _WORKSTATION_CSS = """
 """
 
 
-def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
+def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool]:
     """Render compact map controls without consuming map width."""
     with st.popover("MAP CONTROLS", use_container_width=False):
         min_speed = st.slider(
@@ -75,10 +75,14 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
         show_vectors = st.checkbox("Heading vectors", value=True, key="overview_show_vectors")
         show_trails = st.checkbox("Observed trails", value=True, key="overview_show_trails")
         show_behavior = st.checkbox("Behavioral findings", value=True, key="overview_show_behavior")
-        show_density = st.checkbox("Traffic density", value=False, key="overview_show_density")
-        show_hexbin = st.checkbox("Traffic hexbin", value=False, key="overview_show_hexbin")
-        show_speed_field = st.checkbox("Speed field", value=False, key="overview_show_speed_field")
-        show_anomaly_hotspots = st.checkbox("Anomaly hotspots", value=True, key="overview_show_anomaly_hotspots")
+        show_hexbin = st.checkbox("Traffic corridors", value=False, key="overview_show_hexbin")
+        show_anomaly_types = st.checkbox("Anomaly types", value=False, key="overview_show_anomaly_types")
+        show_freshness = st.checkbox("Track freshness", value=False, key="overview_show_freshness")
+        show_anomaly_hotspots = st.checkbox(
+            "Anomaly hotspots",
+            value=True,
+            key="overview_show_anomaly_hotspots",
+        )
 
     return (
         min_speed,
@@ -87,9 +91,9 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
         show_vectors,
         show_trails,
         show_behavior,
-        show_density,
         show_hexbin,
-        show_speed_field,
+        show_anomaly_types,
+        show_freshness,
         show_anomaly_hotspots,
     )
 
@@ -128,9 +132,9 @@ def render_overview(
         show_vectors,
         show_trails,
         show_behavior,
-        show_density,
         show_hexbin,
-        show_speed_field,
+        show_anomaly_types,
+        show_freshness,
         show_anomaly_hotspots,
     ) = _render_map_controls()
 
@@ -151,9 +155,9 @@ def render_overview(
         show_heading=show_vectors,
         show_trails=show_trails,
         show_anomalies=show_behavior,
-        show_density=show_density,
         show_hexbin=show_hexbin,
-        show_speed_field=show_speed_field,
+        show_anomaly_types=show_anomaly_types,
+        show_freshness=show_freshness,
         show_anomaly_hotspots=show_anomaly_hotspots,
         map_style=map_style,
     )

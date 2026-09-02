@@ -26,7 +26,7 @@ from src.ui.tactical_map import (
     operational_strip,
 )
 from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
-from src.ui._pages_map_impl import MAP_STYLES
+from src.ui._pages_map_impl import MAP_STYLES, _build_anomaly_type_rows, _build_freshness_rows
 
 
 def _apply_map_selection(event) -> None:
@@ -227,9 +227,9 @@ def _render_vessel_map(
     show_heading: bool,
     show_trails: bool,
     show_anomalies: bool,
-    show_density: bool = False,
     show_hexbin: bool = False,
-    show_speed_field: bool = False,
+    show_anomaly_types: bool = False,
+    show_freshness: bool = False,
     show_anomaly_hotspots: bool = False,
     map_style: str = "Dark Matter",
     show_operational_strip: bool = True,
@@ -243,34 +243,67 @@ def _render_vessel_map(
     rows = enrich_tactical_rows(rows, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
     layers: list[pdk.Layer] = []
 
-    if show_density:
-        density_source = density_points_from_observations(list(snapshot.observations or []))
-        density_spec = build_density_layer_spec(density_source) if density_source else None
-        if density_spec is not None:
-            try:
-                layers.append(pdk.Layer(
-                    density_spec["type"], data=density_spec["data"],
-                    get_position=density_spec["get_position"], get_fill_color=density_spec["get_fill_color"],
-                    get_radius=density_spec["get_radius"], radius_min_pixels=density_spec["radius_min_pixels"],
-                    radius_max_pixels=density_spec["radius_max_pixels"], pickable=False,
-                ))
-            except Exception:
-                pass
-
     if show_hexbin and snapshot.observations:
-        hex_rows = [{"longitude": float(o.longitude), "latitude": float(o.latitude), "radius": 1200} for o in list(snapshot.observations)[:2000]]
+        hex_rows = [
+            {"longitude": float(o.longitude), "latitude": float(o.latitude)}
+            for o in list(snapshot.observations)[:4000]
+            if o.latitude is not None and o.longitude is not None
+        ]
         if hex_rows:
-            layers.append(pdk.Layer("ScatterplotLayer", data=hex_rows, get_position=["longitude", "latitude"], get_fill_color=[233, 184, 87, 55], get_radius="radius", radius_min_pixels=4, radius_max_pixels=28, pickable=False))
-
-    if show_speed_field:
-        speed_rows = [r for r in rows if r.get("sog_knots") is not None]
-        if speed_rows:
-            layers.append(pdk.Layer("ScatterplotLayer", data=speed_rows, get_position=["longitude", "latitude"], get_fill_color=[121, 147, 155, 40], get_radius=750, radius_min_pixels=3, radius_max_pixels=12, pickable=False))
+            layers.append(
+                pdk.Layer(
+                    "HexagonLayer",
+                    data=hex_rows,
+                    get_position="[longitude, latitude]",
+                    radius=1200,
+                    elevation_scale=0,
+                    elevation_range=[0, 0],
+                    extruded=False,
+                    coverage=0.82,
+                    pickable=False,
+                )
+            )
 
     if show_anomaly_hotspots and snapshot.findings:
-        hot = [{"latitude": float(f.latitude), "longitude": float(f.longitude), "radius": 900 + min(2000, float(f.score) * 1500)} for f in snapshot.findings if f.latitude is not None and f.longitude is not None]
+        hot = [
+            {"latitude": float(f.latitude), "longitude": float(f.longitude), "radius": 900 + min(2000, float(f.score) * 1500)}
+            for f in snapshot.findings
+            if f.latitude is not None and f.longitude is not None
+        ]
         if hot:
             layers.append(pdk.Layer("ScatterplotLayer", data=hot, get_position=["longitude", "latitude"], get_fill_color=[239, 107, 115, 55], get_radius="radius", radius_min_pixels=5, radius_max_pixels=30, pickable=False))
+
+    if show_anomaly_types and snapshot.findings:
+        anomaly_rows = _build_anomaly_type_rows(snapshot.findings)
+        if anomaly_rows:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=anomaly_rows,
+                    get_position="[longitude, latitude]",
+                    get_fill_color="color",
+                    get_radius="radius",
+                    radius_min_pixels=4,
+                    radius_max_pixels=16,
+                    pickable=False,
+                )
+            )
+
+    if show_freshness:
+        freshness_rows = _build_freshness_rows(rows, snapshot.status.last_received_at)
+        if freshness_rows:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=freshness_rows,
+                    get_position="[longitude, latitude]",
+                    get_fill_color="color",
+                    get_radius="radius",
+                    radius_min_pixels=7,
+                    radius_max_pixels=18,
+                    pickable=False,
+                )
+            )
 
     if show_trails:
         by_mmsi: dict[str, list] = {}
@@ -284,7 +317,9 @@ def _render_vessel_map(
             segs = build_track_segments(track, selected=is_selected)
             if selected_mmsi and not is_selected:
                 for seg in segs:
-                    color = list(seg["color"]); color[3] = max(22, int(color[3] * 0.4)); seg["color"] = color
+                    color = list(seg["color"])
+                    color[3] = max(22, int(color[3] * 0.4))
+                    seg["color"] = color
             track_segments.extend(segs)
         if track_segments:
             layers.append(pdk.Layer("PathLayer", data=track_segments, get_path="path", get_color="color", get_width="width", width_min_pixels=1, pickable=False))
