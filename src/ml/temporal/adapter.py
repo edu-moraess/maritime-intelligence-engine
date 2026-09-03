@@ -25,6 +25,10 @@ class TemporalAnomalyAdapter:
         self.training_config = training_config
         self.result = None
 
+    @staticmethod
+    def _unique_mmsis(sequences):
+        return {str(sequence.mmsi) for sequence in sequences}
+
     def _select_sequence_length(self, tracks) -> int | None:
         if self.sequence_length is not None:
             return self.sequence_length
@@ -51,7 +55,8 @@ class TemporalAnomalyAdapter:
         except Exception as e:
             self.result = TemporalFitResult(status="FAILED", reason=f"Preprocessing failed: {e}", n_tracks_seen=n_seen, sequence_length=selected_length)
             return self.result
-        n_usable = len(sequences)
+        unique_mmsis = self._unique_mmsis(sequences)
+        n_usable = len(unique_mmsis)
         n_points_min = min((s.n_source_points for s in sequences), default=None)
         if n_usable < self.minimum_tracks:
             self.result = TemporalFitResult(status="NOT_READY", reason=f"Insufficient usable tracks: {n_usable} < minimum {self.minimum_tracks}.", n_tracks_seen=n_seen, n_tracks_usable=n_usable, n_points_min=n_points_min, sequence_length=selected_length, sequences=list(sequences))
@@ -84,7 +89,7 @@ class TemporalAnomalyAdapter:
         inf = score_sequences(sequences, model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=self.result.device, architecture=self.result.architecture)
         if not inf.ok:
             return TemporalFitResult(status="FAILED", reason=inf.reason, sequence_length=selected_length, architecture=self.result.architecture, method=self.result.method)
-        return TemporalFitResult(status="READY", reason="Inference with prior model.", n_tracks_usable=len(sequences), sequence_length=selected_length, scores=list(inf.scores), sequences=list(sequences), model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, inference_available=True, architecture=self.result.architecture, method=self.result.method)
+        return TemporalFitResult(status="READY", reason="Inference with prior model.", n_tracks_usable=len(self._unique_mmsis(sequences)), sequence_length=selected_length, scores=list(inf.scores), sequences=list(sequences), model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, inference_available=True, architecture=self.result.architecture, method=self.result.method)
 
     @property
     def status(self):
