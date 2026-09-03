@@ -196,10 +196,8 @@ def _install_floating_sidebar_controller() -> None:
   };
 
   const bind = (sidebar) => {
-    if (!sidebar || sidebar.dataset.mieFloatingBound === '1') {
-      if (sidebar) clampCurrent(sidebar, false);
-      return;
-    }
+    if (!sidebar) return;
+    if (sidebar.dataset.mieFloatingBound === '1') return;
 
     injectStyle();
     sidebar.classList.add('mie-floating-sidebar');
@@ -310,7 +308,7 @@ def _install_floating_sidebar_controller() -> None:
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['aria-expanded', 'class', 'style'],
+    attributeFilter: ['aria-expanded'],
   });
 
   scan();
