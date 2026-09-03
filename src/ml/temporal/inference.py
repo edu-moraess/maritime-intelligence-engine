@@ -1,4 +1,4 @@
-"""TCN inference and reconstruction-error scoring for real AIS sequences."""
+"""Temporal autoencoder inference and reconstruction-error scoring."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,7 +6,7 @@ from typing import Sequence
 
 import numpy as np
 
-from src.ml.temporal.model import TCNAutoencoder, torch_available
+from src.ml.temporal.model import GRUTemporalAutoencoder, TCNAutoencoder, torch_available
 from src.ml.temporal.preprocess import TemporalSequenceScaler
 from src.ml.temporal.types import DEFAULT_HIDDEN_DIM, DEFAULT_INPUT_DIM, DEFAULT_LATENT_DIM, DEFAULT_NUM_LAYERS, TemporalScore, TemporalSequence
 
@@ -30,7 +30,7 @@ class InferenceResult:
 def score_sequences(
     sequences: Sequence[TemporalSequence], *, model_state, scaler_mean, scaler_scale,
     input_dim=DEFAULT_INPUT_DIM, hidden_dim=DEFAULT_HIDDEN_DIM, latent_dim=DEFAULT_LATENT_DIM,
-    num_layers=DEFAULT_NUM_LAYERS, device=None,
+    num_layers=DEFAULT_NUM_LAYERS, device=None, architecture="gru",
 ):
     if not torch_available() or torch is None:
         return InferenceResult(False, "PyTorch is not available.", [], [], [])
@@ -48,13 +48,19 @@ def score_sequences(
     if not np.isfinite(scaled).all():
         return InferenceResult(False, "NON_FINITE_INPUT", [], [], [])
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    architecture = architecture.lower()
     try:
-        model = TCNAutoencoder(input_dim, hidden_dim, latent_dim, num_layers)
+        if architecture == "gru":
+            model = GRUTemporalAutoencoder(input_dim, hidden_dim, latent_dim, num_layers)
+        elif architecture == "tcn":
+            model = TCNAutoencoder(input_dim, hidden_dim, latent_dim, num_layers)
+        else:
+            return InferenceResult(False, f"Unsupported temporal architecture: {architecture}.", [], [], [])
         model.load_state_dict(model_state)
         model.to(torch.device(dev))
         model.eval()
     except Exception as exc:
-        return InferenceResult(False, f"Failed to load TCN model_state: {exc}", [], [], [])
+        return InferenceResult(False, f"Failed to load {architecture.upper()} model_state: {exc}", [], [], [])
     try:
         with torch.no_grad():
             x = torch.from_numpy(scaled).to(torch.device(dev))
@@ -69,7 +75,7 @@ def score_sequences(
         return InferenceResult(False, "NON_FINITE_OUTPUT", [], [], [])
     scores_v = _minmax(errors)
     scores = [TemporalScore(m, float(e), float(s), int(sequences[i].sequence_length), input_dim) for i, (m, e, s) in enumerate(zip(mmsis, errors, scores_v))]
-    return InferenceResult(True, "TCN inference completed.", scores, errors, mmsis)
+    return InferenceResult(True, f"{architecture.upper()} inference completed.", scores, errors, mmsis)
 
 
 def _minmax(errors):
