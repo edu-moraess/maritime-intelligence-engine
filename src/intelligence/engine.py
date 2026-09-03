@@ -52,8 +52,10 @@ class ReadinessSnapshot:
 @dataclass
 class EngineSnapshot:
     observations: list[AISObservation]
+    current_session_observations: list[AISObservation]
     vessels: list[VesselSnapshot]
     findings: list[AnomalyFinding]
+    current_session_findings: list[AnomalyFinding]
     quality: QualityReport
     status: IngestionStatus
     embeddings: EmbeddingResult | None
@@ -100,6 +102,8 @@ class MaritimeIntelligenceEngine:
             self.provider.connect()
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
+        self.current_session_findings: list[AnomalyFinding] = []
+        self.current_session_observations: list[AISObservation] = []
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
         self._temporal_fingerprint: str | None = None
@@ -160,6 +164,8 @@ class MaritimeIntelligenceEngine:
         collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
+        self.current_session_observations = list(collected)
+        self.current_session_findings = []
         if collected:
             self.store.extend(collected)
             self.historical_result = self.historical_writer.persist_collection(
@@ -190,7 +196,21 @@ class MaritimeIntelligenceEngine:
         else:
             self.historical_result = None
         self._recompute()
+        self.current_session_findings = self._detect_current_session_findings()
         return len(collected)
+
+    def _detect_current_session_findings(self) -> list[AnomalyFinding]:
+        """Detect findings only from observations collected in the latest window.
+
+        This deliberately excludes restored/previous-window observations so a
+        historical signal gap cannot be presented as a current-session anomaly.
+        """
+        if not self.current_session_observations:
+            return []
+        by_mmsi: dict[str, list[AISObservation]] = {}
+        for observation in self.current_session_observations:
+            by_mmsi.setdefault(observation.mmsi, []).append(observation)
+        return detect_anomalies(by_mmsi, self.embeddings)
 
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
         """Switch only the optional historical sink; preserve all live state."""
@@ -290,8 +310,10 @@ class MaritimeIntelligenceEngine:
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         return EngineSnapshot(
             observations=observations,
+            current_session_observations=list(self.current_session_observations),
             vessels=vessels,
             findings=self.findings,
+            current_session_findings=list(self.current_session_findings),
             quality=quality,
             status=self.provider.status,
             embeddings=self.embeddings,
@@ -309,6 +331,8 @@ class MaritimeIntelligenceEngine:
         self.provider.reset_session()
         self.embeddings = None
         self.findings = []
+        self.current_session_findings = []
+        self.current_session_observations = []
         self.temporal = None
         self.region_comparison = None
         self._temporal_fingerprint = None
