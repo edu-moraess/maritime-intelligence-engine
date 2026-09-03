@@ -141,15 +141,15 @@ def select_adaptive_sequence_length(
     minimum_tracks: int,
     candidate_lengths: Sequence[int] = ADAPTIVE_SEQUENCE_LENGTHS,
 ) -> int | None:
-    """Choose the longest scale supported by enough real AIS tracks.
-
-    A track qualifies for a scale only when it contains at least that many
-    valid observations. This prevents resampling a short track into a longer
-    sequence and falsely implying temporal evidence that was never observed.
-    """
-    diagnostics = analyze_temporal_tracks(tracks, point_thresholds=candidate_lengths, window_lengths=())
+    """Choose the longest scale supported by enough contiguous real AIS tracks."""
+    items = list(tracks.items()) if isinstance(tracks, dict) else list(tracks)
     required = max(1, int(minimum_tracks))
     for length in sorted({int(value) for value in candidate_lengths if int(value) > 0}, reverse=True):
-        if diagnostics.tracks_by_min_points.get(length, 0) >= required:
+        eligible_vessels = 0
+        for _mmsi, observations in items:
+            track = _clean_track(observations)
+            if max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length:
+                eligible_vessels += 1
+        if eligible_vessels >= required:
             return length
     return None
