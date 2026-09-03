@@ -60,11 +60,11 @@ class TemporalAnomalyAdapter:
         if self.training_config is None:
             cfg.max_training_seconds, cfg.seed, cfg.input_dim = self.max_training_seconds, self.seed, self.input_dim
         tr = TemporalTrainer(cfg).train(sequences)
-        base = dict(n_tracks_seen=n_seen, n_tracks_usable=n_usable, n_points_min=n_points_min, sequence_length=selected_length, input_dim=self.input_dim, sequences=list(sequences), n_train=tr.n_train, n_validation=tr.n_validation, epochs_completed=tr.epochs_completed, best_epoch=tr.best_epoch, best_loss=tr.best_loss, training_seconds=tr.training_seconds, device=tr.device, training_mode=tr.training_mode, seed=tr.seed, training_started=tr.training_started, training_completed=tr.training_completed)
+        base = dict(n_tracks_seen=n_seen, n_tracks_usable=n_usable, n_points_min=n_points_min, sequence_length=selected_length, input_dim=self.input_dim, sequences=list(sequences), n_train=tr.n_train, n_validation=tr.n_validation, epochs_completed=tr.epochs_completed, best_epoch=tr.best_epoch, best_loss=tr.best_loss, training_seconds=tr.training_seconds, device=tr.device, training_mode=tr.training_mode, seed=tr.seed, training_started=tr.training_started, training_completed=tr.training_completed, architecture=tr.architecture, method=f"{tr.architecture.upper()} Temporal Autoencoder")
         if not tr.ok:
             self.result = TemporalFitResult(status="FAILED", reason=tr.reason, scores=[], **base)
             return self.result
-        inf = score_sequences(sequences, model_state=tr.model_state, scaler_mean=tr.scaler_mean, scaler_scale=tr.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=tr.device)
+        inf = score_sequences(sequences, model_state=tr.model_state, scaler_mean=tr.scaler_mean, scaler_scale=tr.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=tr.device, architecture=tr.architecture)
         if not inf.ok:
             self.result = TemporalFitResult(status="FAILED", reason=f"Inference failed after training: {inf.reason}", scores=[], model_state=tr.model_state, scaler_mean=tr.scaler_mean, scaler_scale=tr.scaler_scale, **base)
             return self.result
@@ -81,10 +81,10 @@ class TemporalAnomalyAdapter:
         if not sequences:
             return TemporalFitResult(status="NOT_READY", reason="No eligible sequences", sequence_length=selected_length)
         cfg = self.training_config or TrainingConfig(input_dim=self.input_dim)
-        inf = score_sequences(sequences, model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=self.result.device)
+        inf = score_sequences(sequences, model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=self.result.device, architecture=self.result.architecture)
         if not inf.ok:
-            return TemporalFitResult(status="FAILED", reason=inf.reason, sequence_length=selected_length)
-        return TemporalFitResult(status="READY", reason="Inference with prior model.", n_tracks_usable=len(sequences), sequence_length=selected_length, scores=list(inf.scores), sequences=list(sequences), model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, inference_available=True)
+            return TemporalFitResult(status="FAILED", reason=inf.reason, sequence_length=selected_length, architecture=self.result.architecture, method=self.result.method)
+        return TemporalFitResult(status="READY", reason="Inference with prior model.", n_tracks_usable=len(sequences), sequence_length=selected_length, scores=list(inf.scores), sequences=list(sequences), model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, inference_available=True, architecture=self.result.architecture, method=self.result.method)
 
     @property
     def status(self):
