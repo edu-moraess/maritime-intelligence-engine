@@ -44,14 +44,8 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
 def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
     """Return one enclosing viewport without inventing a geographic midpoint."""
     return (
-        (
-            min(b[0][0] for b in bboxes),
-            min(b[0][1] for b in bboxes),
-        ),
-        (
-            max(b[1][0] for b in bboxes),
-            max(b[1][1] for b in bboxes),
-        ),
+        (min(b[0][0] for b in bboxes), min(b[0][1] for b in bboxes)),
+        (max(b[1][0] for b in bboxes), max(b[1][1] for b in bboxes)),
     )
 
 
@@ -74,10 +68,9 @@ def _capture_region_selection(event, selection_key: str) -> None:
     if mmsi is None:
         return
     mmsi = str(mmsi).strip()
-    if mmsi.isdigit() and len(mmsi) == 9:
-        if st.session_state.get(selection_key) != mmsi:
-            st.session_state[selection_key] = mmsi
-            st.rerun()
+    if mmsi.isdigit() and len(mmsi) == 9 and st.session_state.get(selection_key) != mmsi:
+        st.session_state[selection_key] = mmsi
+        st.rerun()
 
 
 def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
@@ -88,40 +81,18 @@ def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
     return next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
 
 
-def _render_map(
-    label: str,
-    bbox: RegionBBox,
-    snapshot: EngineSnapshot,
-    settings: AppSettings,
-    controls,
-    engine: MaritimeIntelligenceEngine,
-    *,
-    selection_key: str,
-    map_key: str,
-) -> None:
+def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine, *, selection_key: str, map_key: str) -> None:
     """Render one tactical map using isolated selection and widget state."""
     (
-        min_speed,
-        include_stale,
-        map_style,
-        show_vectors,
-        show_trails,
-        show_behavior,
-        show_hexbin,
-        show_anomaly_types,
-        show_freshness,
-        show_anomaly_hotspots,
+        min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior,
+        show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots,
     ) = controls
     region_snapshot = _regional_snapshot(snapshot, bbox)
     region_settings = replace(settings, bbox=bbox, monitoring_bboxes=(bbox,))
     rows = vessel_rows(region_snapshot.vessels) if include_stale else live_vessel_rows(region_snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, (bbox,))
     if min_speed > 0:
-        rows = [
-            row
-            for row in rows
-            if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
-        ]
+        rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
 
     region_name = region_name_for_bbox(bbox) or label
     previous_global_selection = st.session_state.get("selected_mmsi")
@@ -142,19 +113,7 @@ def _render_map(
     map_render._apply_map_selection = _scoped_apply_selection
     try:
         st.caption(f"{label} · {region_name} · {format_bbox(bbox)}")
-        _render_vessel_map(
-            rows,
-            snapshot=region_snapshot,
-            settings=region_settings,
-            show_heading=show_vectors,
-            show_trails=show_trails,
-            show_anomalies=show_behavior,
-            show_hexbin=show_hexbin,
-            show_anomaly_types=show_anomaly_types,
-            show_freshness=show_freshness,
-            show_anomaly_hotspots=show_anomaly_hotspots,
-            map_style=map_style,
-        )
+        _render_vessel_map(rows, snapshot=region_snapshot, settings=region_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
     finally:
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
@@ -163,44 +122,21 @@ def _render_map(
     selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
         with st.container(key=f"tactical-vessel-panel-{label.lower()}", border=True):
-            render_vessel_quick_intelligence(
-                selected,
-                region_snapshot,
-                show_gemini_hook=True,
-                engine=engine,
-            )
+            render_vessel_quick_intelligence(selected, region_snapshot, show_gemini_hook=True, engine=engine)
 
 
-def _render_unified_map(
-    bboxes: tuple[RegionBBox, ...],
-    snapshot: EngineSnapshot,
-    settings: AppSettings,
-    controls,
-    engine: MaritimeIntelligenceEngine,
-) -> None:
+def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine) -> None:
     """Render both monitoring regions in one enclosing tactical viewport."""
     unified_bbox = _unified_bbox(bboxes)
     (
-        min_speed,
-        include_stale,
-        map_style,
-        show_vectors,
-        show_trails,
-        show_behavior,
-        show_hexbin,
-        show_anomaly_types,
-        show_freshness,
-        show_anomaly_hotspots,
+        min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior,
+        show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots,
     ) = controls
     unified_settings = replace(settings, bbox=unified_bbox, monitoring_bboxes=bboxes)
     rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, bboxes)
     if min_speed > 0:
-        rows = [
-            row
-            for row in rows
-            if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
-        ]
+        rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
 
     previous_global_selection = st.session_state.get("selected_mmsi")
     st.session_state.selected_mmsi = None
@@ -232,19 +168,7 @@ def _render_unified_map(
     map_render._apply_map_selection = _capture_unified_selection
     try:
         st.caption("UNIFIED · A + B · one tactical viewport")
-        _render_vessel_map(
-            rows,
-            snapshot=snapshot,
-            settings=unified_settings,
-            show_heading=show_vectors,
-            show_trails=show_trails,
-            show_anomalies=show_behavior,
-            show_hexbin=show_hexbin,
-            show_anomaly_types=show_anomaly_types,
-            show_freshness=show_freshness,
-            show_anomaly_hotspots=show_anomaly_hotspots,
-            map_style=map_style,
-        )
+        _render_vessel_map(rows, snapshot=snapshot, settings=unified_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
     finally:
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
@@ -264,41 +188,24 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     monitoring = tuple(settings.monitoring_bboxes)
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
-    render_ops_bar(
-        live_state=snapshot.status.state,
-        region=region,
-        vessels=summary["active_vessels"],
-        messages=f"{summary['messages']:,}",
-        anomalies=summary["anomalies"],
-        collection=duration,
-        provenance="AIS REAL ONLY",
-        avg_speed=f"{summary['average_speed_knots']:.1f} kn",
-        last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—",
-    )
+    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="AIS REAL ONLY", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
     controls = _render_workspace_controls(engine, settings)
 
     if len(monitoring) >= 2:
-        map_mode = st.segmented_control(
-            "MAP VIEW",
-            options=["SPLIT", "UNIFIED"],
-            default="SPLIT",
-            key="dual_region_map_mode",
-            label_visibility="visible",
-        )
+        map_mode = st.segmented_control("MAP VIEW", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
         if map_mode == "UNIFIED":
             _render_unified_map(monitoring[:2], snapshot, settings, controls, engine)
         else:
-            col_a, col_b = st.columns(2, gap="small")
-            with col_a:
-                _render_map("A", monitoring[0], snapshot, settings, controls, engine, selection_key="selected_mmsi_a", map_key="operational_ais_map_a")
-            with col_b:
-                _render_map("B", monitoring[1], snapshot, settings, controls, engine, selection_key="selected_mmsi_b", map_key="operational_ais_map_b")
+            with st.container(key="dual-region-split-view"):
+                st.markdown("<style>.st-key-dual-region-split-view [data-testid='stHorizontalBlock']{gap:0.6rem !important;}</style>", unsafe_allow_html=True)
+                col_a, col_b = st.columns(2, gap="small")
+                with col_a:
+                    _render_map("A", monitoring[0], snapshot, settings, controls, engine, selection_key="selected_mmsi_a", map_key="operational_ais_map_a")
+                with col_b:
+                    _render_map("B", monitoring[1], snapshot, settings, controls, engine, selection_key="selected_mmsi_b", map_key="operational_ais_map_b")
     else:
         _render_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine, selection_key="selected_mmsi_region_a", map_key="operational_ais_map_region_a")
 
-    st.caption(
-        "Operational intelligence derived from live AIS observations. "
-        + f"Regions: {region} · AIS REAL ONLY · Regional analyses remain separated in SPLIT and UNIFIED modes."
-    )
+    st.caption("Operational intelligence derived from live AIS observations. " + f"Regions: {region} · AIS REAL ONLY · Regional analyses remain separated in SPLIT and UNIFIED modes.")
     if controls[2] == "Nautical Chart":
         st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Not for navigational use; consult official nautical charts.")
