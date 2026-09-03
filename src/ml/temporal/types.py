@@ -26,7 +26,9 @@ TEMPORAL_FEATURE_NAMES: tuple[str, ...] = (
 DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
-DEFAULT_NUM_LAYERS = 4
+# One recurrent layer is sufficient for the short AIS windows used here and
+# keeps inference/training inexpensive on CPU.
+DEFAULT_NUM_LAYERS = 1
 MAX_TIME_DELTA_SECONDS = 86400.0
 
 DEFAULT_EPOCHS_MAX = 30
