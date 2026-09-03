@@ -13,7 +13,7 @@ from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
-from src.historical.reader import load_recent_observations
+from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
@@ -124,11 +124,19 @@ class MaritimeIntelligenceEngine:
         self._historical_loaded = True
         if not self._historical_persistence_enabled or not self._historical_database_url:
             return 0
-        restored = load_recent_observations(
-            self._historical_database_url,
-            self.settings.bbox,
-            limit=self.settings.max_messages,
-        )
+
+        if len(self.settings.monitoring_bboxes) > 1:
+            restored = load_recent_observations_for_bboxes(
+                self._historical_database_url,
+                self.settings.monitoring_bboxes,
+                limit=self.settings.max_messages,
+            )
+        else:
+            restored = load_recent_observations(
+                self._historical_database_url,
+                self.settings.bbox,
+                limit=self.settings.max_messages,
+            )
         if not restored:
             return 0
         self.store.extend(restored)
