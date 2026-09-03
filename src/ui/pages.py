@@ -18,7 +18,7 @@ from src.ui.pages_b import (  # noqa: F401
     render_system as _render_system,
     render_traffic,
 )
-from src.ui.pages_overview import render_overview
+from src.ui.dual_region_overview import render_overview
 from src.ui.temporal_diagnostics import render_temporal_diagnostics
 
 
