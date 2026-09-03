@@ -26,8 +26,6 @@ TEMPORAL_FEATURE_NAMES: tuple[str, ...] = (
 DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
-# Four dilated blocks (1, 2, 4, 8) give a 61-step receptive field,
-# covering every supported temporal window through T=32.
 DEFAULT_NUM_LAYERS = 4
 MAX_TIME_DELTA_SECONDS = 86400.0
 
@@ -78,7 +76,8 @@ class TemporalFitResult:
     n_points_min: int | None = None
     sequence_length: int = DEFAULT_SEQUENCE_LENGTH
     input_dim: int = DEFAULT_INPUT_DIM
-    method: str = "TCN Temporal Autoencoder"
+    method: str = "GRU Temporal Autoencoder"
+    architecture: str = "gru"
     scores: list[TemporalScore] = field(default_factory=list)
     sequences: list[TemporalSequence] = field(default_factory=list)
     latent: np.ndarray | None = None
