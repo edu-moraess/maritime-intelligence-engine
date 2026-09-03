@@ -28,25 +28,17 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
     observations = [o for o in snapshot.observations if _in_bbox(o.latitude, o.longitude, bbox)]
     vessels = [v for v in snapshot.vessels if _in_bbox(v.latitude, v.longitude, bbox)]
     findings = [f for f in snapshot.findings if _in_bbox(f.latitude, f.longitude, bbox)]
+    current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _in_bbox(o.latitude, o.longitude, bbox)]
+    current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _in_bbox(f.latitude, f.longitude, bbox)]
     speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
     summary = dict(snapshot.summary)
-    summary.update(
-        {
-            "active_vessels": len(vessels),
-            "messages": len(observations),
-            "anomalies": len(findings),
-            "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0,
-        }
-    )
-    return replace(snapshot, observations=observations, vessels=vessels, findings=findings, summary=summary)
+    summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
+    return replace(snapshot, observations=observations, current_session_observations=current_session_observations, vessels=vessels, findings=findings, current_session_findings=current_session_findings, summary=summary)
 
 
 def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
     """Return one enclosing viewport without inventing a geographic midpoint."""
-    return (
-        (min(b[0][0] for b in bboxes), min(b[0][1] for b in bboxes)),
-        (max(b[1][0] for b in bboxes), max(b[1][1] for b in bboxes)),
-    )
+    return ((min(b[0][0] for b in bboxes), min(b[0][1] for b in bboxes)), (max(b[1][0] for b in bboxes), max(b[1][1] for b in bboxes)))
 
 
 def _capture_region_selection(event, selection_key: str) -> None:
@@ -83,17 +75,13 @@ def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
 
 def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine, *, selection_key: str, map_key: str) -> None:
     """Render one tactical map using isolated selection and widget state."""
-    (
-        min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior,
-        show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots,
-    ) = controls
+    min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior, show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots = controls
     region_snapshot = _regional_snapshot(snapshot, bbox)
     region_settings = replace(settings, bbox=bbox, monitoring_bboxes=(bbox,))
     rows = vessel_rows(region_snapshot.vessels) if include_stale else live_vessel_rows(region_snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, (bbox,))
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
-
     region_name = region_name_for_bbox(bbox) or label
     previous_global_selection = st.session_state.get("selected_mmsi")
     region_selection = st.session_state.get(selection_key)
@@ -118,32 +106,24 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
-
     selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
         with st.container(key=f"tactical-contact-panel-{label.lower()}", border=True):
             render_vessel_quick_intelligence(selected, region_snapshot, show_gemini_hook=True, engine=engine)
 
 
-def _unified_rows(
-    snapshot: EngineSnapshot,
-    bboxes: tuple[RegionBBox, ...],
-    *,
-    include_stale: bool,
-    selected_mmsi: str | None,
-) -> list[dict]:
-    """Build unified targets while preserving an explicitly selected stale contact.
-
-    The operational default remains live-only. A Streamlit rerun caused by a
-    map click, however, can happen after the target crosses the stale threshold.
-    In that case the selected real AIS contact must remain renderable so the
-    selection does not turn the unified map into an empty state.
-    """
+def _unified_rows(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...], *, include_stale: bool, selected_mmsi: str | None) -> list[dict]:
+    """Build unified targets without dropping the real operational picture on rerun."""
     rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, bboxes)
+    # If the live-only view has aged past the stale threshold, keep real AIS
+    # contacts visible in UNIFIED rather than replacing the map with an empty
+    # state. They remain marked STALE by vessel_rows and are never fabricated.
+    if not rows and not include_stale:
+        rows = filter_rows_to_bboxes(vessel_rows(snapshot.vessels), bboxes)
     if selected_mmsi and not include_stale:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
-        if selected is not None and _in_bbox(selected.latitude, selected.longitude, bboxes[0]) or selected is not None and any(_in_bbox(selected.latitude, selected.longitude, bbox) for bbox in bboxes):
+        if selected is not None and any(_in_bbox(selected.latitude, selected.longitude, bbox) for bbox in bboxes):
             if not any(str(row.get("mmsi")) == str(selected_mmsi) for row in rows):
                 rows.append(vessel_rows([selected])[0])
     return rows
@@ -152,21 +132,13 @@ def _unified_rows(
 def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine) -> None:
     """Render all monitored regions in one enclosing tactical viewport."""
     unified_bbox = _unified_bbox(bboxes)
-    (
-        min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior,
-        show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots,
-    ) = controls
+    min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior, show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots = controls
     unified_settings = replace(settings, bbox=unified_bbox, monitoring_bboxes=bboxes)
     unified_selection_key = "selected_mmsi_unified"
     unified_selection = st.session_state.get(unified_selection_key)
     rows = _unified_rows(snapshot, bboxes, include_stale=include_stale, selected_mmsi=unified_selection)
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
-
-    # UNIFIED needs persistent selection state of its own. The shared map
-    # renderer still reads the legacy global key, so that key is scoped only
-    # for the render and restored afterwards; the durable selection lives in
-    # selected_mmsi_unified across Streamlit reruns.
     previous_global_selection = st.session_state.get("selected_mmsi")
     st.session_state.selected_mmsi = unified_selection
     original_pydeck_chart = st.__dict__["pydeck_chart"]
@@ -202,7 +174,6 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
-
     selected_mmsi = st.session_state.get(unified_selection_key)
     if selected_mmsi:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
@@ -219,7 +190,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
     render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
     controls = _render_workspace_controls(engine, settings)
-
     if len(monitoring) >= 2:
         map_mode = st.segmented_control("DISPLAY MODE", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
         if map_mode == "UNIFIED":
@@ -234,7 +204,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
                     _render_map("B", monitoring[1], snapshot, settings, controls, engine, selection_key="selected_mmsi_b", map_key="operational_ais_map_b")
     else:
         _render_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine, selection_key="selected_mmsi_region_a", map_key="operational_ais_map_region_a")
-
     st.caption("Operational picture derived from live AIS observations. " + f"Areas: {region} · REAL AIS · Regional analysis remains separated in both SPLIT and UNIFIED modes.")
     if controls[2] == "Nautical Chart":
         st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Visualization only; not for navigation. Consult official nautical charts.")
