@@ -138,8 +138,14 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
 
+    # UNIFIED needs persistent selection state of its own. The shared map
+    # renderer still reads the legacy global key, so that key is scoped only
+    # for the render and restored afterwards; the durable selection lives in
+    # selected_mmsi_unified across Streamlit reruns.
+    unified_selection_key = "selected_mmsi_unified"
     previous_global_selection = st.session_state.get("selected_mmsi")
-    st.session_state.selected_mmsi = None
+    unified_selection = st.session_state.get(unified_selection_key)
+    st.session_state.selected_mmsi = unified_selection
     original_pydeck_chart = st.__dict__["pydeck_chart"]
     original_apply_selection = map_render._apply_map_selection
 
@@ -161,7 +167,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
             return
         mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
         if mmsi is not None and str(mmsi).strip().isdigit() and len(str(mmsi).strip()) == 9:
-            st.session_state.selected_mmsi = str(mmsi).strip()
+            st.session_state[unified_selection_key] = str(mmsi).strip()
             st.rerun()
 
     st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
@@ -174,7 +180,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
         st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
 
-    selected_mmsi = st.session_state.get("selected_mmsi")
+    selected_mmsi = st.session_state.get(unified_selection_key)
     if selected_mmsi:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
         if selected is not None:
