@@ -11,8 +11,8 @@ from src.ml.temporal.diagnostics import analyze_temporal_tracks
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 NAVIGATION = {
-    "Operational Picture": ("Operational Picture",),
-    "Contacts": ("Fleet", "Vessel Intelligence"),
+    "Overview": ("Overview",),
+    "Vessels": ("Fleet", "Vessel Intelligence"),
     "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
     "Anomaly & Traffic": ("Anomalies", "Traffic"),
     "Data & System": ("Data Quality", "System"),
@@ -54,9 +54,9 @@ def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
     age_label = f"{age_seconds:.0f}s" if age_seconds is not None else "—"
     threshold = int(getattr(engine.settings, "stale_after_seconds", 180) or 180)
     st.markdown(
-        "<div class='data-label'>Signal freshness</div>"
+        "<div class='data-label'>SIGNAL FRESHNESS</div>"
         f"<div class='data-value'>LIVE {live_count} · STALE {stale_count}</div>"
-        f"<div class='side-muted'>Threshold {threshold}s · Last report age {age_label}</div>",
+        f"<div class='side-muted'>Stale threshold {threshold}s · Last report age {age_label}</div>",
         unsafe_allow_html=True,
     )
 
@@ -78,7 +78,7 @@ def _render_temporal_readiness(engine: MaritimeIntelligenceEngine) -> None:
         state = "NOT READY"
     ratio = (eligible_8 / total * 100.0) if total else 0.0
     st.markdown(
-        "<div class='data-label'>Temporal readiness</div>"
+        "<div class='data-label'>TEMPORAL READINESS</div>"
         f"<div class='data-value'>{state} · T8 {ratio:.0f}%</div>"
         f"<div class='side-muted'>Tracks ≥4: {eligible_4} · ≥8: {eligible_8} · ≥16: {eligible_16} · ≥32: {eligible_32}</div>",
         unsafe_allow_html=True,
@@ -102,11 +102,11 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
         else "—"
     )
     if attempts:
-        state = f"{attempts} retry" if attempts == 1 else f"{attempts} retries"
+        state = f"{attempts} RETRY" if attempts == 1 else f"{attempts} RETRIES"
     else:
         state = "STABLE"
     st.markdown(
-        "<div class='data-label'>WebSocket recovery</div>"
+        "<div class='data-label'>WEBSOCKET RECOVERY</div>"
         f"<div class='data-value'>{state}</div>"
         f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>",
         unsafe_allow_html=True,
@@ -160,13 +160,13 @@ def render_aux_workspace_controls(
                     key=f"workspace_subarea_body_{module}",
                     on_change=lambda: _sync_workspace_subarea(module),
                 )
-            st.caption(f"Current module · {module}")
+            st.caption(f"Current operational module · {module}")
 
     with columns[2]:
         conn = "NOT CONFIGURED" if not settings.aisstream_api_key else engine.snapshot().status.state
         with st.popover("SYSTEM", use_container_width=True):
             st.markdown(
-                f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
+                f"<div class='data-label'>CONNECTION STATE</div><div class='data-value'>{conn}</div>",
                 unsafe_allow_html=True,
             )
             _render_freshness_status(engine)
