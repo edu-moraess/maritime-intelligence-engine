@@ -40,12 +40,12 @@ def _patch_openwaters_pydeck_provider() -> None:
 
 
 def _install_floating_sidebar_controller() -> None:
-    """Install a persistent browser controller for free 2D sidebar positioning.
+    """Install persistent browser controllers for the floating operations UI.
 
-    Streamlit's native sidebar remains the widget host. The controller only
-    changes its presentation in the browser: it forces an overlay geometry,
-    adds a dedicated drag handle, survives sidebar DOM replacement, and keeps
-    the operator's position in localStorage. No Streamlit widget is replaced.
+    Streamlit's native sidebar remains the widget host. Browser enhancement only
+    changes presentation: the mission-controls sidebar is draggable and the
+    selected vessel intelligence card becomes a responsive floating inspector.
+    No Streamlit widget is replaced and no data is created by this layer.
     """
     global _FLOATING_SIDEBAR_PATCHED
     if _FLOATING_SIDEBAR_PATCHED:
@@ -59,7 +59,9 @@ def _install_floating_sidebar_controller() -> None:
   const KEY = 'mie.sidebar.position.v2';
   const HANDLE_CLASS = 'mie-drag-handle';
   const STYLE_ID = 'mie-floating-sidebar-style';
-  const GLOBAL_KEY = '__mieFloatingSidebarControllerV2';
+  const GLOBAL_KEY = '__mieFloatingSidebarControllerV3';
+  const PANEL_CLASS = 'mie-contact-intelligence-panel';
+  const CANVAS_CLASS = 'mie-overview-operational-canvas';
 
   const root = window.parent && window.parent.document
     ? window.parent.document
@@ -136,11 +138,112 @@ def _install_floating_sidebar_controller() -> None:
       }
       [data-testid="stSidebar"] .${HANDLE_CLASS}:active { cursor: grabbing; }
       [data-testid="stSidebar"] .mie-drag-grip { font-size: 16px; line-height: 1; }
+
+      /* P0.3 — selected-contact intelligence inspector. */
+      [data-testid="stColumn"].${PANEL_CLASS} {
+        position: fixed !important;
+        top: 12px !important;
+        right: 12px !important;
+        bottom: 12px !important;
+        width: min(25rem, 31vw) !important;
+        max-width: calc(100vw - 24px) !important;
+        z-index: 999990 !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: .7rem .75rem !important;
+        background: rgba(13,28,36,.97) !important;
+        border: 1px solid #1b3640 !important;
+        border-radius: 4px !important;
+        box-shadow: 0 14px 40px rgba(0,0,0,.35) !important;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} > div {
+        height: 100% !important;
+        min-height: 0 !important;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} > div > div {
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        scrollbar-width: thin;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .vessel-id .name {
+        font-size: 1.05rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .panel-title {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding-top: .1rem;
+        background: rgba(13,28,36,.97);
+      }
+
+      /* P0.4 — make the live map the primary operational canvas. The
+         underlying Streamlit layout remains intact; only presentation changes.
+         The floating contact inspector is removed from normal flex flow, giving
+         the map the dominant working area without changing selection or data. */
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS} {
+        width: 100% !important;
+        max-width: none !important;
+        align-items: flex-start !important;
+        gap: .7rem !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(1) {
+        flex: 0 0 11% !important;
+        max-width: 11% !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(2) {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(3) {
+        flex: 0 0 0 !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        overflow: visible !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(2) .stDeckGlJson {
+        width: 100% !important;
+      }
+
+      @media (max-width: 980px) {
+        [data-testid="stColumn"].${PANEL_CLASS} {
+          width: min(24rem, 44vw) !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(1) {
+          flex-basis: 17% !important;
+          max-width: 17% !important;
+        }
+      }
       @media (max-width: 760px) {
-        [data-testid="stSidebar"].mie-floating-sidebar {
-          width: min(19rem, 92vw) !important;
-          height: min(calc(100vh - 16px), 760px) !important;
-          max-height: calc(100vh - 16px) !important;
+        [data-testid="stColumn"].${PANEL_CLASS} {
+          left: 8px !important;
+          right: 8px !important;
+          top: auto !important;
+          bottom: 8px !important;
+          width: auto !important;
+          max-width: none !important;
+          height: min(58vh, 34rem) !important;
+          border-radius: 4px !important;
+          padding: .6rem .65rem !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS} {
+          flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(1),
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(2) {
+          flex: 0 0 100% !important;
+          max-width: 100% !important;
         }
       }
     `;
@@ -294,10 +397,23 @@ def _install_floating_sidebar_controller() -> None:
     clampCurrent(sidebar, false);
   };
 
+  const markContactPanel = () => {
+    const selected = root.querySelector('.vessel-id');
+    if (!selected) return;
+    const column = selected.closest('[data-testid="stColumn"]');
+    if (!column) return;
+    column.classList.add(PANEL_CLASS);
+    column.dataset.mieContactPanelBound = '1';
+
+    const row = column.closest('[data-testid="stHorizontalBlock"]');
+    if (row) row.classList.add(CANVAS_CLASS);
+  };
+
   const scan = () => {
     injectStyle();
     const sidebar = root.querySelector(SIDEBAR);
     if (sidebar) bind(sidebar);
+    markContactPanel();
   };
 
   const observer = new MutationObserver(() => scan());
