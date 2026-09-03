@@ -1,4 +1,4 @@
-"""Main-workspace controls shared by the overview and secondary pages."""
+"""Operational workspace controls shared by the overview and secondary pages."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -11,10 +11,10 @@ from src.ml.temporal.diagnostics import analyze_temporal_tracks
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 NAVIGATION = {
-    "Overview": ("Overview",),
-    "Vessels": ("Fleet", "Vessel Intelligence"),
+    "Operational Picture": ("Operational Picture",),
+    "Contacts": ("Fleet", "Vessel Intelligence"),
     "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
-    "Anomalies & Traffic": ("Anomalies", "Traffic"),
+    "Anomaly & Traffic": ("Anomalies", "Traffic"),
     "Data & System": ("Data Quality", "System"),
 }
 
@@ -40,7 +40,7 @@ def _sync_operator_timezone() -> None:
 
 
 def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
-    """Expose live/stale target counts using the provider's receive-time clock."""
+    """Expose live/stale contact counts using the provider receive-time clock."""
     vessels = engine.provider.fetch_vessels()
     stale_count = sum(1 for vessel in vessels if vessel.stale)
     live_count = len(vessels) - stale_count
@@ -62,7 +62,7 @@ def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
 
 
 def _render_temporal_readiness(engine: MaritimeIntelligenceEngine) -> None:
-    """Expose real-track coverage needed by the temporal model."""
+    """Expose real-track coverage required by temporal intelligence."""
     diagnostics = analyze_temporal_tracks(engine.store.tracks())
     total = diagnostics.nonempty_tracks
     counts = diagnostics.tracks_by_min_points
