@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from math import cos, radians, sin
+from typing import Sequence
 
 from src.ingestion.models import AISObservation, VesselSnapshot
+
+RegionBBox = tuple[tuple[float, float], tuple[float, float]]
 
 
 def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
@@ -36,6 +39,28 @@ def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
 def live_vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
     """Return only operationally live vessel targets without touching session history."""
     return vessel_rows([vessel for vessel in vessels if not vessel.stale])
+
+
+def filter_rows_to_bboxes(rows: list[dict], bboxes: Sequence[RegionBBox]) -> list[dict]:
+    """Keep map targets whose coordinates fall inside at least one monitoring box.
+
+    This is a presentation guard for hydrated historical/session state. AISStream
+    already applies the same geographic subscription, but persisted observations
+    can outlive a subscription and must never make a dual-region map drift toward
+    an unrelated location.
+    """
+    normalized = tuple(bboxes)
+    if not normalized:
+        return []
+    return [
+        row
+        for row in rows
+        if any(
+            min_lat <= float(row["latitude"]) <= max_lat
+            and min_lon <= float(row["longitude"]) <= max_lon
+            for (min_lat, min_lon), (max_lat, max_lon) in normalized
+        )
+    ]
 
 
 def heading_endpoint(latitude: float, longitude: float, heading: float, distance_degrees: float = 0.045) -> tuple[float, float]:
