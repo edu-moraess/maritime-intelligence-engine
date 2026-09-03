@@ -40,17 +40,6 @@ _WORKSTATION_CSS = """
     display: none !important;
 }
 
-/* DATA / ANALYSIS / SYSTEM now live in the main workspace control row. */
-section[data-testid="stSidebar"] details:nth-of-type(2),
-section[data-testid="stSidebar"] details:nth-of-type(3),
-section[data-testid="stSidebar"] details:nth-of-type(4) {
-    display: none !important;
-}
-
-.workspace-control-row [data-testid="stPopover"] > button {
-    width: 100%;
-}
-
 @media (max-width: 900px) {
     .st-key-tactical-vessel-panel {
         position: static;
@@ -72,26 +61,22 @@ NAVIGATION = {
 
 
 def _sync_workspace_module() -> None:
-    """Copy the main-workspace module choice to the sidebar's existing state key."""
     st.session_state["workspace_module"] = st.session_state["workspace_module_body"]
 
 
 def _sync_workspace_subarea(module: str) -> None:
-    """Copy the main-workspace subarea choice to the sidebar's existing state key."""
     st.session_state[f"workspace_subarea_{module}"] = st.session_state[
-        "workspace_subarea_body"
+        f"workspace_subarea_body_{module}"
     ]
 
 
 def _sync_historical_persistence() -> None:
-    """Copy the main-workspace persistence toggle to the existing state key."""
     st.session_state["historical_persistence_enabled"] = st.session_state[
         "historical_persistence_enabled_body"
     ]
 
 
 def _sync_operator_timezone() -> None:
-    """Copy the main-workspace timezone selection to the existing state key."""
     st.session_state["operator_timezone"] = st.session_state["operator_timezone_body"]
 
 
@@ -183,7 +168,7 @@ def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: App
                     f"{module} subarea",
                     views,
                     label_visibility="collapsed",
-                    key="workspace_subarea_body",
+                    key=f"workspace_subarea_body_{module}",
                     on_change=lambda: _sync_workspace_subarea(module),
                 )
             st.caption(f"Current module · {module}")
