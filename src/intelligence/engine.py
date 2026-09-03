@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
+from src.analytics.region_comparison import RegionComparison, compare_regions
 from src.analytics.traffic import traffic_summary
 from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
@@ -61,6 +62,7 @@ class EngineSnapshot:
     historical_status: str
     historical_result: HistoricalWriteResult | None
     temporal: TemporalFitResult | None = None
+    region_comparison: RegionComparison | None = None
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -98,6 +100,7 @@ class MaritimeIntelligenceEngine:
         self.embeddings: EmbeddingResult | None = None
         self.findings: list[AnomalyFinding] = []
         self.temporal: TemporalFitResult | None = None
+        self.region_comparison: RegionComparison | None = None
         self._temporal_fingerprint: str | None = None
         self.last_collection_seconds: float = 0.0
         self._historical_database_url = settings.database_url
@@ -187,6 +190,7 @@ class MaritimeIntelligenceEngine:
         self.findings = detect_anomalies(tracks, self.embeddings)
         fingerprint = _track_fingerprint(tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
+            self.region_comparison = self._build_region_comparison()
             return
         try:
             self.temporal = self.temporal_adapter.fit(tracks)
@@ -197,6 +201,17 @@ class MaritimeIntelligenceEngine:
                 reason=f"Temporal path exception (classical path intact): {exc}",
             )
             self._temporal_fingerprint = fingerprint
+        self.region_comparison = self._build_region_comparison()
+
+    def _build_region_comparison(self) -> RegionComparison | None:
+        if len(self.settings.monitoring_bboxes) != 2:
+            return None
+        return compare_regions(
+            self.store.all(),
+            self.findings,
+            self.settings.monitoring_bboxes,
+            temporal=self.temporal,
+        )
 
     def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
         tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
@@ -253,6 +268,7 @@ class MaritimeIntelligenceEngine:
             historical_status=self.historical_writer.status,
             historical_result=self.historical_result,
             temporal=self.temporal,
+            region_comparison=self.region_comparison,
         )
 
     def clear_session_data(self) -> None:
@@ -261,6 +277,7 @@ class MaritimeIntelligenceEngine:
         self.embeddings = None
         self.findings = []
         self.temporal = None
+        self.region_comparison = None
         self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
         self.historical_result = None
