@@ -61,6 +61,7 @@ def _install_floating_sidebar_controller() -> None:
   const STYLE_ID = 'mie-floating-sidebar-style';
   const GLOBAL_KEY = '__mieFloatingSidebarControllerV3';
   const PANEL_CLASS = 'mie-contact-intelligence-panel';
+  const CANVAS_CLASS = 'mie-overview-operational-canvas';
 
   const root = window.parent && window.parent.document
     ? window.parent.document
@@ -177,9 +178,49 @@ def _install_floating_sidebar_controller() -> None:
         padding-top: .1rem;
         background: rgba(13,28,36,.97);
       }
+
+      /* P0.4 — make the live map the primary operational canvas. The
+         underlying Streamlit layout remains intact; only presentation changes.
+         The floating contact inspector is removed from normal flex flow, giving
+         the map the dominant working area without changing selection or data. */
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS} {
+        width: 100% !important;
+        max-width: none !important;
+        align-items: flex-start !important;
+        gap: .7rem !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(1) {
+        flex: 0 0 11% !important;
+        max-width: 11% !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(2) {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(3) {
+        flex: 0 0 0 !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        overflow: visible !important;
+      }
+      [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+        > [data-testid="stColumn"]:nth-child(2) .stDeckGlJson {
+        width: 100% !important;
+      }
+
       @media (max-width: 980px) {
         [data-testid="stColumn"].${PANEL_CLASS} {
           width: min(24rem, 44vw) !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(1) {
+          flex-basis: 17% !important;
+          max-width: 17% !important;
         }
       }
       @media (max-width: 760px) {
@@ -193,6 +234,16 @@ def _install_floating_sidebar_controller() -> None:
           height: min(58vh, 34rem) !important;
           border-radius: 4px !important;
           padding: .6rem .65rem !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS} {
+          flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(1),
+        [data-testid="stHorizontalBlock"].${CANVAS_CLASS}
+          > [data-testid="stColumn"]:nth-child(2) {
+          flex: 0 0 100% !important;
+          max-width: 100% !important;
         }
       }
     `;
@@ -356,6 +407,9 @@ def _install_floating_sidebar_controller() -> None:
     if (!column) return;
     column.classList.add(PANEL_CLASS);
     column.dataset.mieContactPanelBound = '1';
+
+    const row = column.closest('[data-testid="stHorizontalBlock"]');
+    if (row) row.classList.add(CANVAS_CLASS);
   };
 
   const scan = () => {
