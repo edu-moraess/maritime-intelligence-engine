@@ -48,13 +48,11 @@ def test_workspace_modules_live_in_main_content():
     assert "render_aux_workspace_controls" in source
 
 
-def test_overview_aligns_workspace_modules_with_map_controls():
+def test_overview_places_map_controls_before_workspace_modules():
     source = _source(OVERVIEW_PATH)
     assert "columns = st.columns(4)" in source
-    assert "_render_map_controls(columns[0])" in source
-    assert 'with st.popover("DATA"' in source
-    assert 'with st.popover("ANALYSIS"' in source
-    assert 'with st.popover("SYSTEM"' in source
+    assert "map_values = _render_map_controls(columns[0])" in source
+    assert "render_aux_workspace_controls(engine, settings, columns[1:])" in source
 
 
 def test_collection_duration_options_include_temporal_windows():
