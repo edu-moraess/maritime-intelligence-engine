@@ -9,12 +9,7 @@ _FLOATING_SIDEBAR_PATCHED = False
 
 
 def _patch_openwaters_pydeck_provider() -> None:
-    """Force Open Waters Seamap styles through PyDeck's MapLibre provider.
-
-    PyDeck defaults to Carto. Open Waters publishes a MapLibre style, so the
-    provider must be explicit or the style URL is not rendered as intended.
-    The patch is intentionally limited to the Open Waters Seamap URL family.
-    """
+    """Force Open Waters Seamap styles through PyDeck's MapLibre provider."""
     global _OPENWATERS_PATCHED
     if _OPENWATERS_PATCHED:
         return
@@ -75,6 +70,7 @@ def _install_floating_sidebar_controller() -> None:
                       const SIDEBAR = '[data-testid="stSidebar"]';
                       const KEY = 'mie.sidebar.position.v1';
                       const HANDLE_CLASS = 'mie-drag-handle';
+                      const STYLE_ID = 'mie-floating-sidebar-style';
                       const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 
                       const controller = () => {
@@ -87,7 +83,32 @@ def _install_floating_sidebar_controller() -> None:
                           handle.className = HANDLE_CLASS;
                           handle.title = 'Drag to reposition mission controls';
                           handle.setAttribute('aria-label', 'Drag sidebar');
+                          handle.innerHTML = '<span class="mie-drag-grip">⠿</span><span>DRAG PANEL</span>';
                           sidebar.appendChild(handle);
+                        }
+
+                        if (!doc.getElementById(STYLE_ID)) {
+                          const style = doc.createElement('style');
+                          style.id = STYLE_ID;
+                          style.textContent = `
+                            [data-testid="stSidebar"] { will-change: left, top; }
+                            [data-testid="stSidebar"] .${HANDLE_CLASS} {
+                              position:absolute; top:6px; left:8px; right:8px; height:26px;
+                              display:flex; align-items:center; justify-content:center; gap:7px;
+                              box-sizing:border-box; z-index:1000002;
+                              border:1px solid #1b3640; border-radius:3px;
+                              background:rgba(13,28,36,.97); color:#79939b;
+                              cursor:grab; user-select:none; touch-action:none;
+                              font:500 9px 'IBM Plex Mono',monospace; letter-spacing:.12em;
+                            }
+                            [data-testid="stSidebar"] .${HANDLE_CLASS}:hover {
+                              color:#35c2c9; border-color:#35c2c9;
+                            }
+                            [data-testid="stSidebar"] .${HANDLE_CLASS}:active { cursor:grabbing; }
+                            [data-testid="stSidebar"] .mie-drag-grip { font-size:16px; line-height:1; }
+                            [data-testid="stSidebarContent"] { padding-top:2.35rem !important; }
+                          `;
+                          doc.head.appendChild(style);
                         }
 
                         if (sidebar.dataset.mieDragBound === '1') return true;
