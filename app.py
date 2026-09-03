@@ -36,6 +36,7 @@ from src.ui.pages import (
     render_vessels,
 )
 from src.ui.presentation import inject_css, notice, render_header
+from src.ui.workspace_controls import NAVIGATION, render_aux_workspace_controls
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 
@@ -49,15 +50,6 @@ st.set_page_config(
 )
 
 inject_css()
-
-
-NAVIGATION = {
-    "Overview": ("Overview",),
-    "Vessels": ("Fleet", "Vessel Intelligence"),
-    "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
-    "Anomalies & Traffic": ("Anomalies", "Traffic"),
-    "Data & System": ("Data Quality", "System"),
-}
 
 
 def _read_settings() -> AppSettings:
@@ -212,7 +204,7 @@ def _render_region_slot(
 def _render_sidebar(
     settings: AppSettings,
 ) -> tuple[AppSettings, str, bool, bool, bool]:
-    """Render one MIE sidebar with one AISStream subscription for A+B."""
+    """Render mission and map controls in the sidebar."""
     region_changed = False
     with st.sidebar:
         connection_placeholder = st.empty()
@@ -254,49 +246,6 @@ def _render_sidebar(
                     config_error=region_error,
                 )
 
-        with st.expander("DATA", expanded=False):
-            historical_enabled = st.checkbox(
-                "Historical Persistence",
-                value=settings.historical_persistence_enabled,
-                key="historical_persistence_enabled",
-                disabled=settings.database_url is None,
-                help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
-            )
-            if bool(historical_enabled) != settings.historical_persistence_enabled:
-                settings = _with_settings(
-                    settings,
-                    historical_persistence_enabled=bool(historical_enabled),
-                )
-
-            if settings.database_url is None:
-                historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
-            elif settings.historical_persistence_enabled:
-                historical_state = "HISTORICAL PERSISTENCE ENABLED"
-            else:
-                historical_state = "HISTORICAL PERSISTENCE OFF"
-            st.markdown(
-                f"<div class='data-value side-muted'>{historical_state}</div>",
-                unsafe_allow_html=True,
-            )
-
-        with st.expander("ANALYSIS", expanded=False):
-            module = st.radio(
-                "Workspace module",
-                list(NAVIGATION),
-                label_visibility="collapsed",
-                key="workspace_module",
-            )
-            views = NAVIGATION[module]
-            if len(views) == 1:
-                page = views[0]
-            else:
-                page = st.radio(
-                    f"{module} subarea",
-                    views,
-                    label_visibility="collapsed",
-                    key=f"workspace_subarea_{module}",
-                )
-
         engine = _engine_for(settings)
         conn = _connection_state(settings, engine)
         conn_upper = str(conn).upper()
@@ -314,20 +263,6 @@ def _render_sidebar(
             "<span class='side-provider'>AISSTREAM</span></div></div>",
             unsafe_allow_html=True,
         )
-
-        with st.expander("SYSTEM", expanded=False):
-            st.markdown(
-                f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
-                unsafe_allow_html=True,
-            )
-            st.selectbox(
-                "Operator timezone",
-                OPERATOR_TIMEZONE_OPTIONS,
-                index=0,
-                key="operator_timezone",
-                format_func=lambda value: f"Operator time · {value}",
-                label_visibility="collapsed",
-            )
 
         can_collect = settings.config_error is None
         collect = False
@@ -365,12 +300,30 @@ def _render_sidebar(
                 )
                 clear = st.button("Clear Session", width="stretch")
 
+        module = st.session_state.get("workspace_module", "Overview")
+        if module not in NAVIGATION:
+            module = "Overview"
+        views = NAVIGATION[module]
+        page = views[0]
+        if len(views) > 1:
+            page = st.session_state.get(f"workspace_subarea_{module}", views[0])
+            if page not in views:
+                page = views[0]
+
     return settings, page, collect, clear, region_changed
 
 
 def main() -> None:
     """Run the Streamlit application."""
     settings = _read_settings()
+    if "historical_persistence_enabled" in st.session_state:
+        settings = _with_settings(
+            settings,
+            historical_persistence_enabled=bool(
+                st.session_state["historical_persistence_enabled"]
+            ),
+        )
+
     settings, page, collect, clear, region_changed = _render_sidebar(settings)
     engine = _engine_for(settings)
 
@@ -420,6 +373,9 @@ def main() -> None:
 
     snapshot = engine.snapshot()
     render_header(snapshot.status, page)
+
+    if page != "Overview":
+        render_aux_workspace_controls(engine, settings, st.columns(3))
 
     if snapshot.status.state != "LIVE AIS":
         status_type = (
