@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from src.analytics.region_comparison import RegionComparison, compare_regions
@@ -26,7 +26,6 @@ from src.storage.memory import ObservationStore
 @dataclass(frozen=True)
 class ReadinessSnapshot:
     """Operational readiness derived only from the current real AIS session."""
-
     distinct_vessels: int
     tracks_with_history: int
     trajectory_ready: bool
@@ -52,10 +51,8 @@ class ReadinessSnapshot:
 @dataclass
 class EngineSnapshot:
     observations: list[AISObservation]
-    current_session_observations: list[AISObservation]
     vessels: list[VesselSnapshot]
     findings: list[AnomalyFinding]
-    current_session_findings: list[AnomalyFinding]
     quality: QualityReport
     status: IngestionStatus
     embeddings: EmbeddingResult | None
@@ -66,6 +63,8 @@ class EngineSnapshot:
     historical_result: HistoricalWriteResult | None
     temporal: TemporalFitResult | None = None
     region_comparison: RegionComparison | None = None
+    current_session_observations: list[AISObservation] = field(default_factory=list)
+    current_session_findings: list[AnomalyFinding] = field(default_factory=list)
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -82,17 +81,9 @@ def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
 
 class MaritimeIntelligenceEngine:
     """Session-scoped coordinator for one real AIS monitoring region."""
-
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
-        self.provider = AISStreamProvider(
-            api_key=settings.aisstream_api_key,
-            bbox=settings.bbox_payload,
-            max_messages=settings.max_messages,
-            max_vessels=settings.max_vessels,
-            stale_after_seconds=settings.stale_after_seconds,
-            config_error=settings.config_error,
-        )
+        self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
         self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
         self.temporal_adapter = TemporalAnomalyAdapter()
@@ -111,10 +102,7 @@ class MaritimeIntelligenceEngine:
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
         self._historical_loaded = False
-        self.historical_writer = create_historical_writer(
-            settings.database_url,
-            settings.historical_persistence_enabled,
-        )
+        self.historical_writer = create_historical_writer(settings.database_url, settings.historical_persistence_enabled)
         self.historical_result: HistoricalWriteResult | None = None
         self._restore_historical_context()
 
@@ -129,19 +117,10 @@ class MaritimeIntelligenceEngine:
         self._historical_loaded = True
         if not self._historical_persistence_enabled or not self._historical_database_url:
             return 0
-
         if len(self.settings.monitoring_bboxes) > 1:
-            restored = load_recent_observations_for_bboxes(
-                self._historical_database_url,
-                self.settings.monitoring_bboxes,
-                limit=self.settings.max_messages,
-            )
+            restored = load_recent_observations_for_bboxes(self._historical_database_url, self.settings.monitoring_bboxes, limit=self.settings.max_messages)
         else:
-            restored = load_recent_observations(
-                self._historical_database_url,
-                self.settings.bbox,
-                limit=self.settings.max_messages,
-            )
+            restored = load_recent_observations(self._historical_database_url, self.settings.bbox, limit=self.settings.max_messages)
         if not restored:
             return 0
         self.store.extend(restored)
@@ -168,31 +147,11 @@ class MaritimeIntelligenceEngine:
         self.current_session_findings = []
         if collected:
             self.store.extend(collected)
-            self.historical_result = self.historical_writer.persist_collection(
-                collected,
-                self.settings.bbox,
-                collection_elapsed,
-                started_at,
-                ended_at,
-            )
-            if (
-                self.historical_result.session_id is not None
-                and self._historical_persistence_enabled
-                and len(self.settings.monitoring_bboxes) > 1
-            ):
-                regions_persisted = persist_collection_session_regions(
-                    self._historical_database_url,
-                    self.historical_result.session_id,
-                    self.settings.monitoring_bboxes,
-                )
+            self.historical_result = self.historical_writer.persist_collection(collected, self.settings.bbox, collection_elapsed, started_at, ended_at)
+            if self.historical_result.session_id is not None and self._historical_persistence_enabled and len(self.settings.monitoring_bboxes) > 1:
+                regions_persisted = persist_collection_session_regions(self._historical_database_url, self.historical_result.session_id, self.settings.monitoring_bboxes)
                 if not regions_persisted:
-                    self.historical_result = replace(
-                        self.historical_result,
-                        reason=(
-                            f"{self.historical_result.reason} "
-                            "Exact multi-region session provenance could not be persisted."
-                        ),
-                    )
+                    self.historical_result = replace(self.historical_result, reason=f"{self.historical_result.reason} Exact multi-region session provenance could not be persisted.")
         else:
             self.historical_result = None
         self._recompute()
@@ -200,11 +159,7 @@ class MaritimeIntelligenceEngine:
         return len(collected)
 
     def _detect_current_session_findings(self) -> list[AnomalyFinding]:
-        """Detect findings only from observations collected in the latest window.
-
-        This deliberately excludes restored/previous-window observations so a
-        historical signal gap cannot be presented as a current-session anomaly.
-        """
+        """Detect findings only from observations collected in the latest window."""
         if not self.current_session_observations:
             return []
         by_mmsi: dict[str, list[AISObservation]] = {}
@@ -214,10 +169,7 @@ class MaritimeIntelligenceEngine:
 
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
         """Switch only the optional historical sink; preserve all live state."""
-        if (
-            database_url == self._historical_database_url
-            and persistence_enabled == self._historical_persistence_enabled
-        ):
+        if database_url == self._historical_database_url and persistence_enabled == self._historical_persistence_enabled:
             return
         self.historical_writer.close()
         self._historical_database_url = database_url
@@ -225,11 +177,7 @@ class MaritimeIntelligenceEngine:
         self._historical_loaded = False
         self.historical_writer = create_historical_writer(database_url, persistence_enabled)
         self.historical_result = None
-        self.settings = replace(
-            self.settings,
-            database_url=database_url,
-            historical_persistence_enabled=persistence_enabled,
-        )
+        self.settings = replace(self.settings, database_url=database_url, historical_persistence_enabled=persistence_enabled)
         self._restore_historical_context()
 
     def _recompute(self) -> None:
@@ -243,64 +191,30 @@ class MaritimeIntelligenceEngine:
         try:
             self.temporal = self.temporal_adapter.fit(tracks)
             self._temporal_fingerprint = fingerprint
-        except Exception as exc:  # pragma: no cover — defensive isolation
-            self.temporal = TemporalFitResult(
-                status="FAILED",
-                reason=f"Temporal path exception (classical path intact): {exc}",
-            )
+        except Exception as exc:
+            self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
             self._temporal_fingerprint = fingerprint
         self.region_comparison = self._build_region_comparison()
 
     def _build_region_comparison(self) -> RegionComparison | None:
         if len(self.settings.monitoring_bboxes) != 2:
             return None
-        return compare_regions(
-            self.store.all(),
-            self.findings,
-            self.settings.monitoring_bboxes,
-            temporal=self.temporal,
-        )
+        return compare_regions(self.store.all(), self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
 
     def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
         tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
         temporal_status = self.temporal.status if self.temporal is not None else "WAITING"
-        return ReadinessSnapshot(
-            distinct_vessels=len(tracks),
-            tracks_with_history=tracks_with_history,
-            trajectory_ready=tracks_with_history >= 1,
-            embeddings_ready=self.embeddings is not None,
-            embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"),
-            anomaly_count=len(self.findings),
-            temporal_status=temporal_status,
-        )
+        return ReadinessSnapshot(distinct_vessels=len(tracks), tracks_with_history=tracks_with_history, trajectory_ready=tracks_with_history >= 1, embeddings_ready=self.embeddings is not None, embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"), anomaly_count=len(self.findings), temporal_status=temporal_status)
 
     def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
-        """Expose live and restored historical targets through one capped view.
-
-        The cap applies only to the presentation snapshot. ``tracks`` remains
-        complete so trajectory, anomaly and temporal analytics retain MMSIs
-        beyond the active-contact display limit.
-        """
+        """Expose live and restored historical targets through one capped view."""
         live = {vessel.mmsi: vessel for vessel in self.provider.fetch_vessels()}
         now = datetime.now(timezone.utc)
         for mmsi, track in tracks.items():
             if mmsi in live or not track:
                 continue
             latest = max(track, key=lambda observation: observation.received_at)
-            live[mmsi] = VesselSnapshot(
-                mmsi=mmsi,
-                latitude=latest.latitude,
-                longitude=latest.longitude,
-                last_received=latest.received_at,
-                sog_knots=latest.sog_knots,
-                cog_degrees=latest.cog_degrees,
-                heading_degrees=latest.heading_degrees,
-                vessel_name=latest.vessel_name,
-                message_count=len(track),
-                stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
-                ais_timestamp_second=latest.ais_timestamp_second,
-                observed_at=latest.observed_at,
-            )
+            live[mmsi] = VesselSnapshot(mmsi=mmsi, latitude=latest.latitude, longitude=latest.longitude, last_received=latest.received_at, sog_knots=latest.sog_knots, cog_degrees=latest.cog_degrees, heading_degrees=latest.heading_degrees, vessel_name=latest.vessel_name, message_count=len(track), stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds, ais_timestamp_second=latest.ais_timestamp_second, observed_at=latest.observed_at)
         return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
 
     def snapshot(self) -> EngineSnapshot:
@@ -308,23 +222,7 @@ class MaritimeIntelligenceEngine:
         tracks = self.store.tracks()
         vessels = self._merged_vessels(tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
-        return EngineSnapshot(
-            observations=observations,
-            current_session_observations=list(self.current_session_observations),
-            vessels=vessels,
-            findings=self.findings,
-            current_session_findings=list(self.current_session_findings),
-            quality=quality,
-            status=self.provider.status,
-            embeddings=self.embeddings,
-            summary=traffic_summary(vessels, observations, self.findings),
-            readiness=self._readiness(tracks),
-            last_collection_seconds=self.last_collection_seconds,
-            historical_status=self.historical_writer.status,
-            historical_result=self.historical_result,
-            temporal=self.temporal,
-            region_comparison=self.region_comparison,
-        )
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=self.provider.status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
 
     def clear_session_data(self) -> None:
         self.store.clear()
@@ -344,5 +242,4 @@ class MaritimeIntelligenceEngine:
 
 
 def create_engine(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """Create an isolated engine for the current Streamlit session and region."""
     return MaritimeIntelligenceEngine(settings)
