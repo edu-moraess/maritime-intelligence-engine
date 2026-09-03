@@ -70,6 +70,7 @@ def _render_region_map(
     snapshot: EngineSnapshot,
     settings: AppSettings,
     controls,
+    engine: MaritimeIntelligenceEngine,
 ) -> None:
     """Render one independent tactical map and its region-local vessel panel."""
     min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior, show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots = controls
@@ -130,7 +131,7 @@ def _render_region_map(
                 selected,
                 region_snapshot,
                 show_gemini_hook=True,
-                engine=None,
+                engine=engine,
             )
 
 
@@ -154,14 +155,13 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     controls = _render_workspace_controls(engine, settings)
 
     if len(monitoring) >= 2:
-        names = [region_name_for_bbox(b) or f"Region {chr(65 + i)}" for i, b in enumerate(monitoring[:2])]
         col_a, col_b = st.columns(2, gap="medium")
         with col_a:
-            _render_region_map("A", monitoring[0], snapshot, settings, controls)
+            _render_region_map("A", monitoring[0], snapshot, settings, controls, engine)
         with col_b:
-            _render_region_map("B", monitoring[1], snapshot, settings, controls)
+            _render_region_map("B", monitoring[1], snapshot, settings, controls, engine)
     else:
-        _render_region_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls)
+        _render_region_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine)
 
     st.caption(
         "Operational intelligence derived from live AIS observations. "
