@@ -136,6 +136,9 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
         st.session_state.pop("selected_mmsi", None)
+        st.session_state.pop("selected_mmsi_a", None)
+        st.session_state.pop("selected_mmsi_b", None)
+        st.session_state.pop("selected_mmsi_unified", None)
 
     engine = st.session_state.engine
     engine.configure_historical_writer(
@@ -335,7 +338,13 @@ def main() -> None:
 
     if clear:
         engine.clear_session_data()
-        st.session_state.pop("selected_mmsi", None)
+        for key in (
+            "selected_mmsi",
+            "selected_mmsi_a",
+            "selected_mmsi_b",
+            "selected_mmsi_unified",
+        ):
+            st.session_state.pop(key, None)
         st.session_state.pop("monitoring_bboxes", None)
         st.rerun()
 
