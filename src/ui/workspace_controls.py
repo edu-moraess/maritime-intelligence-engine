@@ -149,17 +149,8 @@ def render_aux_workspace_controls(
     settings: AppSettings,
     columns,
 ) -> None:
-    """Render DATA, ANALYSIS, and SYSTEM into supplied main-content columns."""
+    """Render ANALYSIS and SYSTEM into supplied main-content columns."""
     with columns[0]:
-        with st.popover("DATA", use_container_width=True):
-            st.caption("Data quality and session-level observation diagnostics.")
-            report = engine.snapshot().quality
-            st.write(f"**Quality:** `{report.quality_percent:.1f}%`")
-            st.write(f"**Messages:** `{report.messages_processed:,}`")
-            st.write(f"**Invalid:** `{report.invalid_records:,}`")
-            st.write(f"**Duplicates:** `{report.duplicate_records:,}`")
-
-    with columns[1]:
         with st.popover("ANALYSIS", use_container_width=True):
             module = st.radio(
                 "Workspace module",
@@ -179,7 +170,7 @@ def render_aux_workspace_controls(
                 )
             st.caption(f"Current operational module · {module}")
 
-    with columns[2]:
+    with columns[1]:
         conn = "NOT CONFIGURED" if not settings.aisstream_api_key else engine.snapshot().status.state
         with st.popover("SYSTEM", use_container_width=True):
             st.markdown(
