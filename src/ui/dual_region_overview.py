@@ -41,6 +41,20 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
     return replace(snapshot, observations=observations, vessels=vessels, findings=findings, summary=summary)
 
 
+def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
+    """Return one enclosing viewport without inventing a geographic midpoint."""
+    return (
+        (
+            min(b[0][0] for b in bboxes),
+            min(b[0][1] for b in bboxes),
+        ),
+        (
+            max(b[1][0] for b in bboxes),
+            max(b[1][1] for b in bboxes),
+        ),
+    )
+
+
 def _capture_region_selection(event, selection_key: str) -> None:
     """Store a click in region-local state and rerun without touching global selection."""
     try:
@@ -74,15 +88,18 @@ def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
     return next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
 
 
-def _render_region_map(
+def _render_map(
     label: str,
     bbox: RegionBBox,
     snapshot: EngineSnapshot,
     settings: AppSettings,
     controls,
     engine: MaritimeIntelligenceEngine,
+    *,
+    selection_key: str,
+    map_key: str,
 ) -> None:
-    """Render one independent tactical map and its region-local vessel panel."""
+    """Render one tactical map using isolated selection and widget state."""
     (
         min_speed,
         include_stale,
@@ -107,17 +124,13 @@ def _render_region_map(
         ]
 
     region_name = region_name_for_bbox(bbox) or label
-    selection_key = f"selected_mmsi_{label.lower()}"
     previous_global_selection = st.session_state.get("selected_mmsi")
     region_selection = st.session_state.get(selection_key)
-
-    # The shared map renderer reads the legacy global key. Scope it only for
-    # this invocation, then restore it so Region A cannot leak into Region B.
     st.session_state.selected_mmsi = region_selection
     original_pydeck_chart = st.__dict__["pydeck_chart"]
 
     def _scoped_pydeck_chart(*args, **kwargs):
-        kwargs["key"] = f"operational_ais_map_{label.lower()}"
+        kwargs["key"] = map_key
         return original_pydeck_chart(*args, **kwargs)
 
     st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
@@ -158,8 +171,95 @@ def _render_region_map(
             )
 
 
+def _render_unified_map(
+    bboxes: tuple[RegionBBox, ...],
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+    controls,
+    engine: MaritimeIntelligenceEngine,
+) -> None:
+    """Render both monitoring regions in one enclosing tactical viewport."""
+    unified_bbox = _unified_bbox(bboxes)
+    (
+        min_speed,
+        include_stale,
+        map_style,
+        show_vectors,
+        show_trails,
+        show_behavior,
+        show_hexbin,
+        show_anomaly_types,
+        show_freshness,
+        show_anomaly_hotspots,
+    ) = controls
+    unified_settings = replace(settings, bbox=unified_bbox, monitoring_bboxes=bboxes)
+    rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
+    rows = filter_rows_to_bboxes(rows, bboxes)
+    if min_speed > 0:
+        rows = [
+            row
+            for row in rows
+            if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
+        ]
+
+    previous_global_selection = st.session_state.get("selected_mmsi")
+    st.session_state.selected_mmsi = None
+    original_pydeck_chart = st.__dict__["pydeck_chart"]
+    original_apply_selection = map_render._apply_map_selection
+
+    def _scoped_pydeck_chart(*args, **kwargs):
+        kwargs["key"] = "operational_ais_map_unified"
+        return original_pydeck_chart(*args, **kwargs)
+
+    def _capture_unified_selection(event) -> None:
+        try:
+            selection = event.selection if event is not None else None
+            objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
+        except Exception:
+            return
+        if not isinstance(objects, dict):
+            return
+        layer_objects = objects.get(map_render.AIS_TARGETS_LAYER_ID) or objects.get("ais_targets")
+        first = layer_objects[0] if isinstance(layer_objects, list) and layer_objects else None
+        if not isinstance(first, dict):
+            return
+        mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
+        if mmsi is not None and str(mmsi).strip().isdigit() and len(str(mmsi).strip()) == 9:
+            st.session_state.selected_mmsi = str(mmsi).strip()
+            st.rerun()
+
+    st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
+    map_render._apply_map_selection = _capture_unified_selection
+    try:
+        st.caption("UNIFIED · A + B · one tactical viewport")
+        _render_vessel_map(
+            rows,
+            snapshot=snapshot,
+            settings=unified_settings,
+            show_heading=show_vectors,
+            show_trails=show_trails,
+            show_anomalies=show_behavior,
+            show_hexbin=show_hexbin,
+            show_anomaly_types=show_anomaly_types,
+            show_freshness=show_freshness,
+            show_anomaly_hotspots=show_anomaly_hotspots,
+            map_style=map_style,
+        )
+    finally:
+        map_render._apply_map_selection = original_apply_selection
+        st.__dict__["pydeck_chart"] = original_pydeck_chart
+        st.session_state.selected_mmsi = previous_global_selection
+
+    selected_mmsi = st.session_state.get("selected_mmsi")
+    if selected_mmsi:
+        selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
+        if selected is not None:
+            with st.container(key="tactical-vessel-panel-unified", border=True):
+                render_vessel_quick_intelligence(selected, snapshot, show_gemini_hook=True, engine=engine)
+
+
 def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
-    """Render A+B as simultaneous, geographically isolated tactical views."""
+    """Render dual-region tactical maps in SPLIT or UNIFIED presentation modes."""
     summary = snapshot.summary
     monitoring = tuple(settings.monitoring_bboxes)
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
@@ -178,17 +278,27 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     controls = _render_workspace_controls(engine, settings)
 
     if len(monitoring) >= 2:
-        col_a, col_b = st.columns(2, gap="medium")
-        with col_a:
-            _render_region_map("A", monitoring[0], snapshot, settings, controls, engine)
-        with col_b:
-            _render_region_map("B", monitoring[1], snapshot, settings, controls, engine)
+        map_mode = st.segmented_control(
+            "MAP VIEW",
+            options=["SPLIT", "UNIFIED"],
+            default="SPLIT",
+            key="dual_region_map_mode",
+            label_visibility="visible",
+        )
+        if map_mode == "UNIFIED":
+            _render_unified_map(monitoring[:2], snapshot, settings, controls, engine)
+        else:
+            col_a, col_b = st.columns(2, gap="small")
+            with col_a:
+                _render_map("A", monitoring[0], snapshot, settings, controls, engine, selection_key="selected_mmsi_a", map_key="operational_ais_map_a")
+            with col_b:
+                _render_map("B", monitoring[1], snapshot, settings, controls, engine, selection_key="selected_mmsi_b", map_key="operational_ais_map_b")
     else:
-        _render_region_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine)
+        _render_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine, selection_key="selected_mmsi_region_a", map_key="operational_ais_map_region_a")
 
     st.caption(
         "Operational intelligence derived from live AIS observations. "
-        + f"Regions: {region} · AIS REAL ONLY · Region A and Region B maintain independent map viewports and vessel selections."
+        + f"Regions: {region} · AIS REAL ONLY · Regional analyses remain separated in SPLIT and UNIFIED modes."
     )
     if controls[2] == "Nautical Chart":
         st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Not for navigational use; consult official nautical charts.")
