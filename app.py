@@ -413,6 +413,7 @@ def main() -> None:
         st.session_state.pop("monitoring_bboxes", None)
         st.rerun()
 
+    collection_result = None
     if collect:
         with st.spinner(
             "Opening one AISStream WebSocket for "
@@ -422,22 +423,20 @@ def main() -> None:
             received = engine.collect(seconds=settings.collection_seconds)
 
         if received:
-            st.session_state["collection_result"] = (
+            collection_result = (
                 "success",
                 "Collection elapsed "
                 f"{engine.last_collection_seconds:.1f} s · received {received:,} "
                 f"real AIS position report(s) across {len(settings.monitoring_bboxes)} regions.",
             )
         else:
-            st.session_state["collection_result"] = (
+            collection_result = (
                 "warning",
                 "Collection elapsed "
                 f"{engine.last_collection_seconds:.1f} s · REAL AIS DATA "
                 "UNAVAILABLE — no real observations were received in this collection window.",
             )
-        st.rerun()
 
-    collection_result = st.session_state.pop("collection_result", None)
     if collection_result:
         result_type, result_message = collection_result
         if result_type == "success":
