@@ -1,4 +1,4 @@
-"""Lean Behavioral Intelligence panel (session AIS only)."""
+"""Lean Behavioral Intelligence panel (latest AIS session only)."""
 from __future__ import annotations
 
 import streamlit as st
@@ -17,12 +17,12 @@ def _fmt_opt(value, suffix="", digits=1):
 
 
 def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
-    """Lean DERIVED behavioral section from session AIS observations only."""
+    """Render behavioral features from the latest real AIS collection window only."""
     from src.intelligence.behavior import build_behavioral_profile
 
     observations = [
         obs
-        for obs in getattr(snapshot, "observations", []) or []
+        for obs in getattr(snapshot, "current_session_observations", []) or []
         if str(getattr(obs, "mmsi", "")) == str(mmsi)
     ]
     profile = build_behavioral_profile(str(mmsi), observations)
@@ -36,7 +36,7 @@ def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
 
     if profile.classification == "INSUFFICIENT_DATA":
         notice(
-            "INSUFFICIENT_DATA · behavioral features require at least 2 valid AIS positions for this target.",
+            "INSUFFICIENT_DATA · behavioral features require at least 2 valid AIS positions for this target in the latest collection window.",
             "yellow",
         )
         return
@@ -95,7 +95,7 @@ def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
         st.markdown(
             "<div class='small-note' style='margin-top:.35rem'>"
             "Deterministic behavioral features derived only from real AIS "
-            "observations in the current session."
+            "observations in the latest collection window."
             "</div>",
             unsafe_allow_html=True,
         )
