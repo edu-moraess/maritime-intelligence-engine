@@ -84,16 +84,24 @@ class TemporalTrainer:
         if any(not np.isfinite(a).all() for a in arrays):
             return TrainingResult(ok=False, reason="Non-finite values in sequences.", seed=cfg.seed, architecture=architecture)
 
-        n = len(arrays)
+        # Split by vessel, not by window. A vessel may now contribute several
+        # windows, so random window splitting would leak the same trajectory
+        # into both training and validation sets.
+        groups: dict[str, list[int]] = {}
+        for index, sequence in enumerate(sequences):
+            groups.setdefault(str(sequence.mmsi), []).append(index)
+        vessel_ids = np.asarray(list(groups), dtype=object)
         rng = np.random.default_rng(cfg.seed)
-        indices = np.arange(n)
-        rng.shuffle(indices)
-        use_val = n >= MINIMUM_TRACKS_FOR_VALIDATION_SPLIT
+        rng.shuffle(vessel_ids)
+        use_val = len(vessel_ids) >= MINIMUM_TRACKS_FOR_VALIDATION_SPLIT
         if use_val:
-            n_val = min(max(1, int(round(n * cfg.validation_fraction))), n - 1)
-            val_idx, train_idx = indices[:n_val], indices[n_val:]
+            n_val_vessels = min(max(1, int(round(len(vessel_ids) * cfg.validation_fraction))), len(vessel_ids) - 1)
+            val_vessels = set(vessel_ids[:n_val_vessels].tolist())
+            val_idx = np.asarray([i for vessel in val_vessels for i in groups[vessel]], dtype=int)
+            train_idx = np.asarray([i for vessel in vessel_ids[n_val_vessels:] for i in groups[vessel]], dtype=int)
         else:
-            train_idx, val_idx = indices, np.array([], dtype=int)
+            train_idx = np.arange(len(arrays), dtype=int)
+            val_idx = np.array([], dtype=int)
         train_arrays = [arrays[i] for i in train_idx]
         val_arrays = [arrays[i] for i in val_idx] if len(val_idx) else []
 
