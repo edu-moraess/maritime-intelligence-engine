@@ -14,6 +14,7 @@ from src.ui.pages_helpers import (
     _utc,
 )
 from src.ui.presentation import render_ops_bar
+from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 _WORKSTATION_CSS = """
@@ -77,8 +78,9 @@ def _sync_workspace_module() -> None:
 
 def _sync_workspace_subarea(module: str) -> None:
     """Copy the main-workspace subarea choice to the sidebar's existing state key."""
-    key = f"workspace_subarea_{module}"
-    st.session_state[key] = st.session_state["workspace_subarea_body"]
+    st.session_state[f"workspace_subarea_{module}"] = st.session_state[
+        "workspace_subarea_body"
+    ]
 
 
 def _sync_historical_persistence() -> None:
@@ -143,7 +145,6 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
 def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
     """Render Map Controls, Data, Analysis, and System in one main-workspace row."""
     columns = st.columns(4)
-    columns[0].markdown("<div class='workspace-control-row'>", unsafe_allow_html=True)
     map_values = _render_map_controls(columns[0])
 
     with columns[1]:
