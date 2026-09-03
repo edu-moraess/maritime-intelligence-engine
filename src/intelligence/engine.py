@@ -104,7 +104,9 @@ class MaritimeIntelligenceEngine:
         self._historical_loaded = False
         self.historical_writer = create_historical_writer(settings.database_url, settings.historical_persistence_enabled)
         self.historical_result: HistoricalWriteResult | None = None
-        self._restore_historical_context()
+        # Historical hydration is deliberately lazy. The first Streamlit render
+        # must not block on Postgres or run the ML/temporal recompute path.
+        # Persistence is still loaded before live collection processing.
 
     @property
     def region(self) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -129,6 +131,10 @@ class MaritimeIntelligenceEngine:
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window; processing time is excluded from the window metric."""
+        # Hydrate persisted real AIS history only when the operator actually
+        # starts collection. This keeps the initial dashboard render fast while
+        # preserving historical context for the analytical session.
+        self._restore_historical_context()
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -178,7 +184,6 @@ class MaritimeIntelligenceEngine:
         self.historical_writer = create_historical_writer(database_url, persistence_enabled)
         self.historical_result = None
         self.settings = replace(self.settings, database_url=database_url, historical_persistence_enabled=persistence_enabled)
-        self._restore_historical_context()
 
     def _recompute(self) -> None:
         tracks = self.store.tracks()
