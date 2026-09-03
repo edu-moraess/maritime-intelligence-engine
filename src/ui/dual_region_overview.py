@@ -1,4 +1,4 @@
-"""Dual-region overview rendering with isolated tactical views and selection state."""
+"""Dual-region operational picture with isolated tactical views and selection state."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -24,7 +24,7 @@ def _in_bbox(latitude: float | None, longitude: float | None, bbox: RegionBBox) 
 
 
 def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnapshot:
-    """Create a presentation-only snapshot containing only one region."""
+    """Create a presentation-only snapshot containing only one operational area."""
     observations = [o for o in snapshot.observations if _in_bbox(o.latitude, o.longitude, bbox)]
     vessels = [v for v in snapshot.vessels if _in_bbox(v.latitude, v.longitude, bbox)]
     findings = [f for f in snapshot.findings if _in_bbox(f.latitude, f.longitude, bbox)]
@@ -50,7 +50,7 @@ def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
 
 
 def _capture_region_selection(event, selection_key: str) -> None:
-    """Store a click in region-local state and rerun without touching global selection."""
+    """Store a contact selection in region-local state without touching global selection."""
     try:
         selection = event.selection if event is not None else None
         objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
@@ -74,7 +74,7 @@ def _capture_region_selection(event, selection_key: str) -> None:
 
 
 def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
-    """Resolve a vessel only from the selection belonging to this region."""
+    """Resolve a selected contact only from the selection belonging to this region."""
     selected_mmsi = st.session_state.get(selection_key)
     if not selected_mmsi:
         return None
@@ -121,12 +121,12 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
 
     selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
-        with st.container(key=f"tactical-vessel-panel-{label.lower()}", border=True):
+        with st.container(key=f"tactical-contact-panel-{label.lower()}", border=True):
             render_vessel_quick_intelligence(selected, region_snapshot, show_gemini_hook=True, engine=engine)
 
 
 def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine) -> None:
-    """Render both monitoring regions in one enclosing tactical viewport."""
+    """Render all monitored regions in one enclosing tactical viewport."""
     unified_bbox = _unified_bbox(bboxes)
     (
         min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior,
@@ -173,7 +173,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
     map_render._apply_map_selection = _capture_unified_selection
     try:
-        st.caption("UNIFIED · A + B · one tactical viewport")
+        st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
         _render_vessel_map(rows, snapshot=snapshot, settings=unified_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
     finally:
         map_render._apply_map_selection = original_apply_selection
@@ -184,21 +184,21 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     if selected_mmsi:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
         if selected is not None:
-            with st.container(key="tactical-vessel-panel-unified", border=True):
+            with st.container(key="tactical-contact-panel-unified", border=True):
                 render_vessel_quick_intelligence(selected, snapshot, show_gemini_hook=True, engine=engine)
 
 
 def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
-    """Render dual-region tactical maps in SPLIT or UNIFIED presentation modes."""
+    """Render dual-region tactical monitoring in SPLIT or UNIFIED presentation modes."""
     summary = snapshot.summary
     monitoring = tuple(settings.monitoring_bboxes)
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
-    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="AIS REAL ONLY", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
+    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
     controls = _render_workspace_controls(engine, settings)
 
     if len(monitoring) >= 2:
-        map_mode = st.segmented_control("MAP VIEW", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
+        map_mode = st.segmented_control("DISPLAY MODE", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
         if map_mode == "UNIFIED":
             _render_unified_map(monitoring[:2], snapshot, settings, controls, engine)
         else:
@@ -212,6 +212,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     else:
         _render_map("Region A", monitoring[0] if monitoring else settings.bbox, snapshot, settings, controls, engine, selection_key="selected_mmsi_region_a", map_key="operational_ais_map_region_a")
 
-    st.caption("Operational intelligence derived from live AIS observations. " + f"Regions: {region} · AIS REAL ONLY · Regional analyses remain separated in SPLIT and UNIFIED modes.")
+    st.caption("Operational picture derived from live AIS observations. " + f"Areas: {region} · REAL AIS · Regional analysis remains separated in both SPLIT and UNIFIED modes.")
     if controls[2] == "Nautical Chart":
-        st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Not for navigational use; consult official nautical charts.")
+        st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Visualization only; not for navigation. Consult official nautical charts.")
