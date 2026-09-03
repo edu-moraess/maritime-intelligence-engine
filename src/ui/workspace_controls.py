@@ -1,6 +1,8 @@
 """Main-workspace controls shared by the overview and secondary pages."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import streamlit as st
 
 from src.config.settings import AppSettings
@@ -34,6 +36,28 @@ def _sync_historical_persistence() -> None:
 
 def _sync_operator_timezone() -> None:
     st.session_state["operator_timezone"] = st.session_state["operator_timezone_body"]
+
+
+def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
+    """Expose live/stale target counts using the provider's receive-time clock."""
+    vessels = engine.provider.fetch_vessels()
+    stale_count = sum(1 for vessel in vessels if vessel.stale)
+    live_count = len(vessels) - stale_count
+    status = engine.snapshot().status
+    last_received = status.last_received_at
+    age_seconds = (
+        max(0.0, (datetime.now(timezone.utc) - last_received).total_seconds())
+        if last_received is not None
+        else None
+    )
+    age_label = f"{age_seconds:.0f}s" if age_seconds is not None else "—"
+    threshold = int(getattr(engine.settings, "stale_after_seconds", 180) or 180)
+    st.markdown(
+        "<div class='data-label'>Signal freshness</div>"
+        f"<div class='data-value'>LIVE {live_count} · STALE {stale_count}</div>"
+        f"<div class='side-muted'>Threshold {threshold}s · Last report age {age_label}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_aux_workspace_controls(
@@ -90,6 +114,7 @@ def render_aux_workspace_controls(
                 f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
                 unsafe_allow_html=True,
             )
+            _render_freshness_status(engine)
             st.selectbox(
                 "Operator timezone",
                 OPERATOR_TIMEZONE_OPTIONS,
