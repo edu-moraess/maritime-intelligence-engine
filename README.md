@@ -44,6 +44,32 @@ The central question is not only **where a vessel is**, but also how it is movin
 - Configurable collection windows
 - Explicit connection and collection states
 - Session-based collection
+- Multi-region monitoring through a single operational workspace
+- Two-region unified or split tactical visualization
+
+### Multi-region tactical monitoring
+
+MIE supports monitoring two maritime regions simultaneously while keeping their analytical state separated.
+
+```text
+                 AISStream
+                    ↓
+          Multi-region subscription
+               ↙          ↘
+          Region A      Region B
+             ↓              ↓
+       Regional state  Regional state
+             ↘              ↙
+              Operational UI
+              /            \
+           SPLIT          UNIFIED
+```
+
+**SPLIT** provides independent tactical maps and independent vessel selection for each region.
+
+**UNIFIED** provides one enclosing tactical viewport across both regions without inventing a geographic midpoint. Regional intelligence remains distinct even when the map is unified.
+
+Selecting a vessel in a regional or unified view persists the selection across Streamlit reruns and opens the corresponding Vessel Intelligence context.
 
 ### Vessel and trajectory intelligence
 
@@ -65,7 +91,7 @@ The central question is not only **where a vessel is**, but also how it is movin
 
 ### Temporal intelligence
 
-MIE now measures the real temporal coverage available before applying deep temporal learning.
+MIE measures the real temporal coverage available before applying deep temporal learning.
 
 ```text
 Real AIS tracks
@@ -81,7 +107,7 @@ T=8  ── if enough real observations
 NOT_READY
 ```
 
-The temporal path uses a TCN Autoencoder. The adaptive selector chooses the longest supported scale using only validated real AIS observations. Short tracks are never stretched, interpolated, or fabricated into longer temporal evidence.
+The current temporal production path uses a **GRU Temporal Autoencoder** with adaptive sequence length. Short tracks are never stretched, interpolated, or fabricated into longer temporal evidence.
 
 ### Temporal evidence observed in live AIS
 
@@ -149,7 +175,7 @@ Feature Engineering
                  ↓
        Temporal Diagnostics
                  ↓
-        Adaptive TCN-AE
+      GRU Temporal Autoencoder
                  ↓
       Intelligence / Findings
           ↙              ↘
@@ -222,7 +248,7 @@ Universal behavior probability
 | Dimensionality Reduction | PCA |
 | Clustering | KMeans |
 | Anomaly Detection | Isolation Forest |
-| Temporal Model | TCN Autoencoder |
+| Temporal Model | GRU Temporal Autoencoder |
 | Visualization | Plotly / PyDeck |
 | Database | PostgreSQL |
 | Geospatial Database | PostGIS |
@@ -267,6 +293,11 @@ See:
 
 - Real-time AIS ingestion
 - AISStream WebSocket integration
+- Multi-region monitoring with two simultaneous Bounding Boxes
+- SPLIT and UNIFIED tactical map views
+- Independent regional vessel selection
+- Persistent UNIFIED vessel selection across Streamlit reruns
+- Vessel Intelligence from regional and unified selection
 - 30 maritime monitoring region presets
 - Bounding Box validation
 - Vessel tracking
@@ -280,7 +311,7 @@ See:
 - Data Quality monitoring
 - Temporal integrity controls
 - Temporal track diagnostics
-- TCN temporal autoencoder
+- GRU Temporal Autoencoder
 - Adaptive temporal scale selection (T=8/T=16/T=32)
 - PostgreSQL/PostGIS historical persistence
 - Idempotent historical observation persistence
@@ -323,11 +354,15 @@ The system should prefer `NOT_READY` or a shorter supported temporal scale over 
 ```text
 Real-Time AIS
       ↓
+Multi-Region Operational Monitoring
+      ↓
 Temporal Coverage Diagnostics
       ↓
 Adaptive Temporal Intelligence
       ↓
 Historical Behavioral Baselines
+      ↓
+Weather / Ocean Context
       ↓
 Context-Aware Behavioral Intelligence
       ↓
