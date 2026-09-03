@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from math import log2
 
 import streamlit as st
 
@@ -39,6 +40,26 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
 def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
     """Return one enclosing viewport without inventing a geographic midpoint."""
     return ((min(b[0][0] for b in bboxes), min(b[0][1] for b in bboxes)), (max(b[1][0] for b in bboxes), max(b[1][1] for b in bboxes)))
+
+
+def _unified_map_zoom(rows: list[dict], *, min_zoom: float = 1.5, max_zoom: float = 9.0) -> float:
+    """Choose a zoom that keeps all real unified targets in the initial viewport.
+
+    The tactical renderer historically used a fixed zoom while centering on the
+    mean target position. That works for one region, but two distant regions can
+    place the mean over open ocean and leave both target clusters outside the
+    visible map. Deriving zoom from the actual target extent keeps the unified
+    view useful without adding synthetic map points or changing SPLIT behavior.
+    """
+    if not rows:
+        return 7.5
+    latitudes = [float(row["latitude"]) for row in rows]
+    longitudes = [float(row["longitude"]) for row in rows]
+    lat_span = max(latitudes) - min(latitudes)
+    lon_span = max(longitudes) - min(longitudes)
+    span = max(lat_span, lon_span, 0.01)
+    zoom = log2(360.0 / (span * 1.25))
+    return max(min_zoom, min(max_zoom, zoom))
 
 
 def _capture_region_selection(event, selection_key: str) -> None:
@@ -140,7 +161,12 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
     previous_global_selection = st.session_state.get("selected_mmsi")
+    previous_zoom = st.session_state.get("tactical_map_zoom")
     st.session_state.selected_mmsi = unified_selection
+    # _render_vessel_map centers on the mean of the real targets. Keep that
+    # center, but derive a zoom from the complete real-target extent so distant
+    # A/B regions remain visible instead of appearing as an empty map.
+    st.session_state.tactical_map_zoom = _unified_map_zoom(rows)
     original_pydeck_chart = st.__dict__["pydeck_chart"]
     original_apply_selection = map_render._apply_map_selection
 
@@ -174,6 +200,10 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
+        if previous_zoom is None:
+            st.session_state.pop("tactical_map_zoom", None)
+        else:
+            st.session_state.tactical_map_zoom = previous_zoom
     selected_mmsi = st.session_state.get(unified_selection_key)
     if selected_mmsi:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
