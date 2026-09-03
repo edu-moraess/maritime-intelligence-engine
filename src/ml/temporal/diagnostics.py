@@ -11,7 +11,7 @@ from statistics import mean, median
 from typing import Sequence
 
 from src.ingestion.models import AISObservation
-from src.ml.temporal.types import MAX_TIME_DELTA_SECONDS
+from src.ml.temporal.types import MAX_TRACK_GAP_SECONDS
 
 DEFAULT_POINT_THRESHOLDS: tuple[int, ...] = (4, 8, 16, 32)
 DEFAULT_WINDOW_LENGTHS: tuple[int, ...] = (8, 16, 32)
@@ -54,12 +54,26 @@ def _clean_track(observations: Sequence[AISObservation]) -> list[AISObservation]
     )
 
 
+def _contiguous_segment_lengths(track: Sequence[AISObservation], gap_threshold_seconds: float) -> list[int]:
+    if not track:
+        return []
+    threshold = max(0.0, float(gap_threshold_seconds))
+    lengths = [1]
+    for previous, current in zip(track, track[1:]):
+        gap = (current.received_at - previous.received_at).total_seconds()
+        if gap > threshold:
+            lengths.append(1)
+        else:
+            lengths[-1] += 1
+    return lengths
+
+
 def analyze_temporal_tracks(
     tracks: dict[str, list[AISObservation]] | Sequence[tuple[str, list[AISObservation]]],
     *,
     point_thresholds: Sequence[int] = DEFAULT_POINT_THRESHOLDS,
     window_lengths: Sequence[int] = DEFAULT_WINDOW_LENGTHS,
-    gap_threshold_seconds: float = MAX_TIME_DELTA_SECONDS,
+    gap_threshold_seconds: float = MAX_TRACK_GAP_SECONDS,
 ) -> TemporalTrackDiagnostics:
     """Summarize temporal coverage without modifying the supplied tracks."""
     items = list(tracks.items()) if isinstance(tracks, dict) else list(tracks)
@@ -93,7 +107,12 @@ def analyze_temporal_tracks(
 
     by_threshold = {threshold: sum(n >= threshold for n in point_counts) for threshold in thresholds}
     sliding = {length: sum(max(0, n - length + 1) for n in point_counts) for length in lengths}
-    non_overlapping = {length: sum(n // length for n in point_counts) for length in lengths}
+    segment_lengths = [
+        segment_length
+        for _mmsi, observations in items
+        for segment_length in _contiguous_segment_lengths(_clean_track(observations), gap_threshold)
+    ]
+    non_overlapping = {length: sum(n // length for n in segment_lengths) for length in lengths}
 
     return TemporalTrackDiagnostics(
         total_tracks=len(items),
