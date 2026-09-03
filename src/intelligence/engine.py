@@ -254,7 +254,12 @@ class MaritimeIntelligenceEngine:
         )
 
     def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
-        """Expose live and restored historical targets through one vessel view."""
+        """Expose live and restored historical targets through one capped view.
+
+        The cap applies only to the presentation snapshot. ``tracks`` remains
+        complete so trajectory, anomaly and temporal analytics retain MMSIs
+        beyond the active-contact display limit.
+        """
         live = {vessel.mmsi: vessel for vessel in self.provider.fetch_vessels()}
         now = datetime.now(timezone.utc)
         for mmsi, track in tracks.items():
@@ -275,7 +280,7 @@ class MaritimeIntelligenceEngine:
                 ais_timestamp_second=latest.ais_timestamp_second,
                 observed_at=latest.observed_at,
             )
-        return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)
+        return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
 
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
