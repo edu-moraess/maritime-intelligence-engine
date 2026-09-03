@@ -1,6 +1,7 @@
 """Temporal autoencoder inference and reconstruction-error scoring."""
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -73,9 +74,21 @@ def score_sequences(
         return InferenceResult(False, f"INFERENCE_EXCEPTION: {exc}", [], [], [])
     if any(not np.isfinite(e) or e < 0 for e in errors):
         return InferenceResult(False, "NON_FINITE_OUTPUT", [], [], [])
-    scores_v = _minmax(errors)
-    scores = [TemporalScore(m, float(e), float(s), int(sequences[i].sequence_length), input_dim) for i, (m, e, s) in enumerate(zip(mmsis, errors, scores_v))]
-    return InferenceResult(True, f"{architecture.upper()} inference completed.", scores, errors, mmsis)
+
+    # A vessel can now have several windows. Publish one comparable vessel-level
+    # score using its worst reconstruction error; this preserves the strongest
+    # observed deviation without counting a long track multiple times.
+    grouped: dict[str, list[float]] = defaultdict(list)
+    for mmsi, error in zip(mmsis, errors):
+        grouped[str(mmsi)].append(float(error))
+    vessel_mmsis = list(grouped)
+    vessel_errors = [max(grouped[mmsi]) for mmsi in vessel_mmsis]
+    scores_v = _minmax(vessel_errors)
+    scores = [
+        TemporalScore(mmsi, float(error), float(score), int(sequences[next(i for i, seq in enumerate(sequences) if seq.mmsi == mmsi)].sequence_length), input_dim)
+        for mmsi, error, score in zip(vessel_mmsis, vessel_errors, scores_v)
+    ]
+    return InferenceResult(True, f"{architecture.upper()} inference completed.", scores, vessel_errors, vessel_mmsis)
 
 
 def _minmax(errors):
