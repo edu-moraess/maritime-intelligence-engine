@@ -86,6 +86,7 @@ def analyze_temporal_tracks(
     intervals: list[float] = []
     gap_count = 0
     max_gap: float | None = None
+    segment_lengths_by_track: list[list[int]] = []
 
     for _mmsi, observations in items:
         track = _clean_track(observations)
@@ -93,8 +94,9 @@ def analyze_temporal_tracks(
             continue
         n = len(track)
         point_counts.append(n)
-        duration = max(0.0, float((track[-1].received_at - track[0].received_at).total_seconds()))
-        durations.append(duration)
+        durations.append(max(0.0, float((track[-1].received_at - track[0].received_at).total_seconds())))
+        segment_lengths = _contiguous_segment_lengths(track, gap_threshold)
+        segment_lengths_by_track.append(segment_lengths)
         for previous, current in zip(track, track[1:]):
             delta = (current.received_at - previous.received_at).total_seconds()
             if delta < 0:
@@ -106,13 +108,14 @@ def analyze_temporal_tracks(
                 max_gap = delta if max_gap is None else max(max_gap, delta)
 
     by_threshold = {threshold: sum(n >= threshold for n in point_counts) for threshold in thresholds}
-    sliding = {length: sum(max(0, n - length + 1) for n in point_counts) for length in lengths}
-    segment_lengths = [
-        segment_length
-        for _mmsi, observations in items
-        for segment_length in _contiguous_segment_lengths(_clean_track(observations), gap_threshold)
-    ]
-    non_overlapping = {length: sum(n // length for n in segment_lengths) for length in lengths}
+    sliding = {
+        length: sum(max(0, segment_length - length + 1) for segments in segment_lengths_by_track for segment_length in segments)
+        for length in lengths
+    }
+    non_overlapping = {
+        length: sum(segment_length // length for segments in segment_lengths_by_track for segment_length in segments)
+        for length in lengths
+    }
 
     return TemporalTrackDiagnostics(
         total_tracks=len(items),
