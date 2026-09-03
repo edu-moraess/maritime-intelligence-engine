@@ -9,10 +9,9 @@ from src.config.settings import DEFAULT_BBOX, AppSettings
 from src.ingestion.models import AISObservation
 from src.intelligence.engine import MaritimeIntelligenceEngine
 from src.ml.temporal import (
-    FEATURE_DIM, MINIMUM_POINTS_PER_TRACK, MINIMUM_TRACKS_FOR_DEEP_MODEL,
-    TCNAutoencoder, TemporalAnomalyAdapter, TemporalTrainer, TrainingConfig,
-    build_temporal_sequence, build_temporal_sequences, compare_if_vs_deep,
-    compare_snapshot, torch_available,
+    FEATURE_DIM, GRUTemporalAutoencoder, MINIMUM_POINTS_PER_TRACK, MINIMUM_TRACKS_FOR_DEEP_MODEL,
+    TemporalAnomalyAdapter, TemporalTrainer, TrainingConfig, build_temporal_sequence,
+    build_temporal_sequences, compare_if_vs_deep, compare_snapshot, torch_available,
 )
 from src.ml.temporal.types import DEFAULT_SEQUENCE_LENGTH
 
@@ -51,9 +50,9 @@ def test_not_ready():
 
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
-def test_tcn_forward_contract():
+def test_gru_forward_contract():
     import torch
-    model = TCNAutoencoder(input_dim=FEATURE_DIM, hidden_dim=16, latent_dim=8, num_layers=3)
+    model = GRUTemporalAutoencoder(input_dim=FEATURE_DIM, hidden_dim=16, latent_dim=8, num_layers=1)
     x = torch.randn(2, DEFAULT_SEQUENCE_LENGTH, FEATURE_DIM)
     rec, latent = model(x)
     assert rec.shape == x.shape
@@ -66,7 +65,8 @@ def test_adapter_ready():
     tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     r = TemporalAnomalyAdapter().fit(tracks)
     assert r.status == "READY" and r.training_completed and r.inference_available
-    assert r.method == "TCN Temporal Autoencoder"
+    assert r.method == "GRU Temporal Autoencoder"
+    assert r.architecture == "gru"
     assert r.sequence_length == 8
     assert r.model_state is not None and r.scaler_mean is not None and r.scaler_scale is not None
     assert len(r.scores) == MINIMUM_TRACKS_FOR_DEEP_MODEL
@@ -82,7 +82,8 @@ def test_engine_ready():
         rows.extend(_track(f"3682076{v:02d}", 8, 25 + v * 0.02))
     e.store.extend(rows); e._recompute(); s = e.snapshot()
     assert s.temporal is not None and s.temporal.status == "READY"
-    assert s.temporal.method == "TCN Temporal Autoencoder"
+    assert s.temporal.method == "GRU Temporal Autoencoder"
+    assert s.temporal.architecture == "gru"
     assert s.temporal.sequence_length == 8
     assert s.temporal.training_completed and s.temporal.inference_available and s.temporal.model_state is not None
     assert all(0 <= x.deep_anomaly_score <= 1 for x in s.temporal.scores)
@@ -121,7 +122,7 @@ def test_trainer_direct():
     seqs = build_temporal_sequences(tracks)
     tr = TemporalTrainer(TrainingConfig(max_training_seconds=3.0, seed=42)).train(seqs)
     assert len(seqs) >= MINIMUM_TRACKS_FOR_DEEP_MODEL and tr.ok and tr.model_state is not None
-    assert tr.training_completed and tr.architecture == "tcn" and tr.best_loss is not None and tr.best_loss >= 0
+    assert tr.training_completed and tr.architecture == "gru" and tr.best_loss is not None and tr.best_loss >= 0
 
 
 def test_benchmark_inconclusivo_sparse():
