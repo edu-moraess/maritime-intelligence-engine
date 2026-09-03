@@ -84,12 +84,7 @@ def render_aux_workspace_controls(
             st.caption(f"Current module · {module}")
 
     with columns[2]:
-        conn = settings.connection_state if hasattr(settings, "connection_state") else None
-        if conn is None:
-            if not settings.aisstream_api_key:
-                conn = "NOT CONFIGURED"
-            else:
-                conn = engine.snapshot().status.state
+        conn = "NOT CONFIGURED" if not settings.aisstream_api_key else engine.snapshot().status.state
         with st.popover("SYSTEM", use_container_width=True):
             st.markdown(
                 f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
