@@ -14,6 +14,7 @@ from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
+from src.historical.session_regions import persist_collection_session_regions
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
@@ -166,6 +167,24 @@ class MaritimeIntelligenceEngine:
                 started_at,
                 ended_at,
             )
+            if (
+                self.historical_result.session_id is not None
+                and self._historical_persistence_enabled
+                and len(self.settings.monitoring_bboxes) > 1
+            ):
+                regions_persisted = persist_collection_session_regions(
+                    self._historical_database_url,
+                    self.historical_result.session_id,
+                    self.settings.monitoring_bboxes,
+                )
+                if not regions_persisted:
+                    self.historical_result = replace(
+                        self.historical_result,
+                        reason=(
+                            f"{self.historical_result.reason} "
+                            "Exact multi-region session provenance could not be persisted."
+                        ),
+                    )
         else:
             self.historical_result = None
         self.last_collection_seconds = time.monotonic() - started
