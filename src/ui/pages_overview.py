@@ -39,6 +39,17 @@ _WORKSTATION_CSS = """
     display: none !important;
 }
 
+/* DATA / ANALYSIS / SYSTEM now live in the main workspace control row. */
+section[data-testid="stSidebar"] details:nth-of-type(2),
+section[data-testid="stSidebar"] details:nth-of-type(3),
+section[data-testid="stSidebar"] details:nth-of-type(4) {
+    display: none !important;
+}
+
+.workspace-control-row [data-testid="stPopover"] > button {
+    width: 100%;
+}
+
 @media (max-width: 900px) {
     .st-key-tactical-vessel-panel {
         position: static;
@@ -50,10 +61,41 @@ _WORKSTATION_CSS = """
 </style>
 """
 
+NAVIGATION = {
+    "Overview": ("Overview",),
+    "Vessels": ("Fleet", "Vessel Intelligence"),
+    "Movement & Behavior": ("Trajectory Analysis", "Behavior", "Similarity"),
+    "Anomalies & Traffic": ("Anomalies", "Traffic"),
+    "Data & System": ("Data Quality", "System"),
+}
 
-def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool]:
+
+def _sync_workspace_module() -> None:
+    """Copy the main-workspace module choice to the sidebar's existing state key."""
+    st.session_state["workspace_module"] = st.session_state["workspace_module_body"]
+
+
+def _sync_workspace_subarea(module: str) -> None:
+    """Copy the main-workspace subarea choice to the sidebar's existing state key."""
+    key = f"workspace_subarea_{module}"
+    st.session_state[key] = st.session_state["workspace_subarea_body"]
+
+
+def _sync_historical_persistence() -> None:
+    """Copy the main-workspace persistence toggle to the existing state key."""
+    st.session_state["historical_persistence_enabled"] = st.session_state[
+        "historical_persistence_enabled_body"
+    ]
+
+
+def _sync_operator_timezone() -> None:
+    """Copy the main-workspace timezone selection to the existing state key."""
+    st.session_state["operator_timezone"] = st.session_state["operator_timezone_body"]
+
+
+def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
     """Render compact map controls without consuming map width."""
-    with st.popover("MAP CONTROLS", use_container_width=False):
+    with container.popover("MAP CONTROLS", use_container_width=False):
         min_speed = st.slider(
             "Minimum SOG (kn)",
             0.0,
@@ -98,6 +140,80 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
     )
 
 
+def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
+    """Render Map Controls, Data, Analysis, and System in one main-workspace row."""
+    columns = st.columns(4)
+    columns[0].markdown("<div class='workspace-control-row'>", unsafe_allow_html=True)
+    map_values = _render_map_controls(columns[0])
+
+    with columns[1]:
+        with st.popover("DATA", use_container_width=True):
+            historical_enabled = st.checkbox(
+                "Historical Persistence",
+                value=settings.historical_persistence_enabled,
+                key="historical_persistence_enabled_body",
+                disabled=settings.database_url is None,
+                help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
+                on_change=_sync_historical_persistence,
+            )
+            if settings.database_url is None:
+                historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
+            elif historical_enabled:
+                historical_state = "HISTORICAL PERSISTENCE ENABLED"
+            else:
+                historical_state = "HISTORICAL PERSISTENCE OFF"
+            st.markdown(
+                f"<div class='data-value side-muted'>{historical_state}</div>",
+                unsafe_allow_html=True,
+            )
+
+    with columns[2]:
+        with st.popover("ANALYSIS", use_container_width=True):
+            module = st.radio(
+                "Workspace module",
+                list(NAVIGATION),
+                label_visibility="collapsed",
+                key="workspace_module_body",
+                on_change=_sync_workspace_module,
+            )
+            views = NAVIGATION[module]
+            if len(views) > 1:
+                st.radio(
+                    f"{module} subarea",
+                    views,
+                    label_visibility="collapsed",
+                    key="workspace_subarea_body",
+                    on_change=lambda: _sync_workspace_subarea(module),
+                )
+            st.caption(f"Current module · {module}")
+
+    with columns[3]:
+        conn = _connection_state(settings, engine)
+        with st.popover("SYSTEM", use_container_width=True):
+            st.markdown(
+                f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
+                unsafe_allow_html=True,
+            )
+            st.selectbox(
+                "Operator timezone",
+                OPERATOR_TIMEZONE_OPTIONS,
+                index=0,
+                key="operator_timezone_body",
+                format_func=lambda value: f"Operator time · {value}",
+                label_visibility="collapsed",
+                on_change=_sync_operator_timezone,
+            )
+
+    return map_values
+
+
+def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
+    """Return the user-facing state from the current engine snapshot."""
+    if not settings.aisstream_api_key:
+        return "NOT CONFIGURED"
+    return engine.snapshot().status.state
+
+
 def render_overview(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -136,7 +252,7 @@ def render_overview(
         show_anomaly_types,
         show_freshness,
         show_anomaly_hotspots,
-    ) = _render_map_controls()
+    ) = _render_workspace_controls(engine, settings)
 
     rows = vessel_rows(snapshot.vessels)
     if min_speed > 0:
@@ -182,7 +298,7 @@ def render_overview(
     st.caption(
         "Operational intelligence derived from live AIS observations. "
         f"Region: {region} · AIS REAL ONLY · "
-        "Map controls float above the map without reducing its width."
+        "Map controls and workspace modules sit above the tactical map."
     )
     if map_style == "Nautical Chart":
         st.caption(
