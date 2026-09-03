@@ -48,6 +48,15 @@ def test_workspace_modules_live_in_main_content():
     assert "render_aux_workspace_controls" in source
 
 
+def test_historical_persistence_lives_under_system_controls():
+    source = _source(WORKSPACE_PATH)
+    data_block = source[source.index('with st.popover("DATA"'):source.index('with st.popover("ANALYSIS"')]
+    system_block = source[source.index('with st.popover("SYSTEM"'):]
+    assert '"Historical Persistence"' not in data_block
+    assert '"Historical Persistence"' in system_block
+    assert "_render_historical_persistence(engine, settings)" in system_block
+
+
 def test_overview_places_map_controls_before_workspace_modules():
     source = _source(OVERVIEW_PATH)
     assert "columns = st.columns(4)" in source
@@ -73,7 +82,7 @@ def test_navigation_structure_stable():
         "Overview",
         "Vessels",
         "Movement & Behavior",
-        "Anomalies & Traffic",
+        "Anomaly & Traffic",
         "Data & System",
     ]
     assert nav["Overview"] == ("Overview",)
@@ -83,7 +92,7 @@ def test_navigation_structure_stable():
         "Behavior",
         "Similarity",
     )
-    assert nav["Anomalies & Traffic"] == ("Anomalies", "Traffic")
+    assert nav["Anomaly & Traffic"] == ("Anomalies", "Traffic")
     assert nav["Data & System"] == ("Data Quality", "System")
 
 
