@@ -29,6 +29,9 @@ DEFAULT_LATENT_DIM = 16
 # One recurrent layer is sufficient for the short AIS windows used here and
 # keeps inference/training inexpensive on CPU.
 DEFAULT_NUM_LAYERS = 1
+# A gap this large is treated as a break in temporal continuity. We never
+# interpolate across it, so a model window cannot silently span an outage.
+MAX_TRACK_GAP_SECONDS = 900.0
 MAX_TIME_DELTA_SECONDS = 86400.0
 
 DEFAULT_EPOCHS_MAX = 30
