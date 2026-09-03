@@ -40,12 +40,34 @@ _WORKSTATION_CSS = """
     display: none !important;
 }
 
+/* Keep the three workspace controls as one equal-width horizontal rail. */
+.st-key-workspace-controls > div {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.st-key-workspace-controls [data-testid="column"] {
+    min-width: 0;
+    width: 100% !important;
+    align-self: stretch;
+}
+
+.st-key-workspace-controls [data-testid="stPopover"] > button {
+    width: 100%;
+}
+
 @media (max-width: 900px) {
     .st-key-tactical-vessel-panel {
         position: static;
         width: auto;
         max-height: none;
         margin-top: 0.75rem;
+    }
+
+    .st-key-workspace-controls > div {
+        grid-template-columns: 1fr;
     }
 }
 </style>
@@ -102,9 +124,10 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
 
 def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
     """Render Map Controls, Analysis, and System in one main-workspace row."""
-    columns = st.columns(3)
-    map_values = _render_map_controls(columns[0])
-    render_aux_workspace_controls(engine, settings, columns[1:])
+    with st.container(key="workspace-controls"):
+        columns = st.columns(3)
+        map_values = _render_map_controls(columns[0])
+        render_aux_workspace_controls(engine, settings, columns[1:])
     return map_values
 
 
