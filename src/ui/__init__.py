@@ -196,17 +196,14 @@ def _install_floating_sidebar_controller() -> None:
   };
 
   const bind = (sidebar) => {
-    if (!sidebar) return;
-    if (sidebar.dataset.mieFloatingBound === '1') return;
+    if (!sidebar || sidebar.dataset.mieFloatingBound === '1') return;
 
     injectStyle();
     sidebar.classList.add('mie-floating-sidebar');
 
     const saved = readPosition();
     const expanded = sidebar.getAttribute('aria-expanded') !== 'false';
-    if (expanded) {
-      setPosition(sidebar, saved.left, saved.top, false);
-    }
+    if (expanded) setPosition(sidebar, saved.left, saved.top, false);
 
     const content = sidebar.querySelector(CONTENT);
     if (content) content.classList.add('mie-floating-sidebar-content');
@@ -328,13 +325,10 @@ def _install_floating_sidebar_controller() -> None:
 
         import streamlit.components.v1 as components
 
-        components.html(controller_html, height=0, scrolling=False)
+        components.html(controller_html, height=1, scrolling=False)
         _FLOATING_SIDEBAR_PATCHED = True
     except Exception:
-        # The native sidebar remains fully functional if browser enhancement
-        # is unavailable; never interfere with Streamlit widget execution.
         _FLOATING_SIDEBAR_PATCHED = True
 
 
 _patch_openwaters_pydeck_provider()
-_install_floating_sidebar_controller()
