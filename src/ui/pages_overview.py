@@ -101,8 +101,8 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
 
 
 def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
-    """Render Map Controls, Data, Analysis, and System in one main-workspace row."""
-    columns = st.columns(4)
+    """Render Map Controls, Analysis, and System in one main-workspace row."""
+    columns = st.columns(3)
     map_values = _render_map_controls(columns[0])
     render_aux_workspace_controls(engine, settings, columns[1:])
     return map_values
