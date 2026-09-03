@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from statistics import quantiles
 from typing import Iterable, Sequence
 
 from src.ingestion.models import AISObservation, AnomalyFinding
@@ -20,8 +21,8 @@ class RegionMetrics:
     position_reports: int
     average_speed_knots: float
     eligible_temporal_tracks: int
-    temporal_anomalous_tracks: int
-    temporal_anomaly_rate: float
+    temporal_top_quartile_tracks: int
+    temporal_top_quartile_rate: float
     average_temporal_score: float | None
     anomalies: int
     anomaly_rate: float
@@ -40,11 +41,7 @@ def _contains(bbox: RegionBBox, latitude: float, longitude: float) -> bool:
     return min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
 
 
-def _membership(
-    latitude: float,
-    longitude: float,
-    bboxes: Sequence[RegionBBox],
-) -> tuple[int, ...]:
+def _membership(latitude: float, longitude: float, bboxes: Sequence[RegionBBox]) -> tuple[int, ...]:
     return tuple(index for index, bbox in enumerate(bboxes) if _contains(bbox, latitude, longitude))
 
 
@@ -58,9 +55,9 @@ def compare_regions(
     """Compare two regions without training separate regional models.
 
     Observations falling in overlapping boxes are excluded from both regional
-    metrics instead of being double-counted. Temporal scores are assigned by
-    the vessel's observed track membership and therefore remain comparable
-    because the temporal model is shared across both regions.
+    metrics instead of being double-counted. The temporal model remains shared;
+    its score is therefore compared as a session-relative ranking, not as a
+    calibrated probability or a fixed anomaly threshold.
     """
     if len(bboxes) != 2:
         return None
@@ -83,10 +80,14 @@ def compare_regions(
         if len(membership) == 1:
             finding_counts[membership[0]] += 1
 
-    temporal_scores = {score.mmsi: score for score in (temporal.scores if temporal and temporal.ready else [])}
-    track_regions: list[set[str]] = [set(), set()]
-    for region_index, region_items in enumerate(region_observations):
-        track_regions[region_index] = {item.mmsi for item in region_items}
+    temporal_scores = {
+        score.mmsi: score
+        for score in (temporal.scores if temporal and temporal.ready else [])
+    }
+    all_temporal_values = sorted(score.deep_anomaly_score for score in temporal_scores.values())
+    temporal_cutoff = None
+    if len(all_temporal_values) >= 4:
+        temporal_cutoff = quantiles(all_temporal_values, n=4, method="inclusive")[2]
 
     metrics: list[RegionMetrics] = []
     for index, region_items in enumerate(region_observations):
@@ -94,7 +95,11 @@ def compare_regions(
         speeds = [item.sog_knots for item in region_items if item.sog_knots is not None]
         eligible = sorted(vessel_ids & set(temporal_scores))
         scores = [temporal_scores[mmsi] for mmsi in eligible]
-        temporal_anomalous = sum(score.deep_anomaly_score >= 0.5 for score in scores)
+        top_quartile = (
+            sum(score.deep_anomaly_score >= temporal_cutoff for score in scores)
+            if temporal_cutoff is not None
+            else 0
+        )
         metrics.append(
             RegionMetrics(
                 label=names[index],
@@ -102,8 +107,8 @@ def compare_regions(
                 position_reports=len(region_items),
                 average_speed_knots=round(sum(speeds) / len(speeds), 2) if speeds else 0.0,
                 eligible_temporal_tracks=len(eligible),
-                temporal_anomalous_tracks=temporal_anomalous,
-                temporal_anomaly_rate=(temporal_anomalous / len(eligible)) if eligible else 0.0,
+                temporal_top_quartile_tracks=top_quartile,
+                temporal_top_quartile_rate=(top_quartile / len(eligible)) if eligible else 0.0,
                 average_temporal_score=(
                     round(sum(score.deep_anomaly_score for score in scores) / len(scores), 4)
                     if scores else None
