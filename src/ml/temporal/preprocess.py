@@ -10,6 +10,7 @@ from src.ingestion.models import AISObservation
 from src.ml.temporal.types import (
     DEFAULT_SEQUENCE_LENGTH,
     MAX_TIME_DELTA_SECONDS,
+    MAX_TRACK_GAP_SECONDS,
     MINIMUM_POINTS_PER_TRACK,
     TEMPORAL_FEATURE_NAMES,
     TemporalSequence,
@@ -172,27 +173,45 @@ def _resample_to_length(mat: np.ndarray, target_length: int) -> np.ndarray:
     return mat[-target_length:].astype(np.float32)
 
 
-def build_temporal_sequence(
-    observations: Sequence[AISObservation] | Iterable[AISObservation],
+def _split_track_on_gaps(
+    observations: Sequence[AISObservation],
     *,
-    sequence_length: int = DEFAULT_SEQUENCE_LENGTH,
-    minimum_points: int = MINIMUM_POINTS_PER_TRACK,
-    mmsi: str | None = None,
+    gap_threshold_seconds: float = MAX_TRACK_GAP_SECONDS,
+) -> list[list[AISObservation]]:
+    """Split chronologically ordered AIS into contiguous real-observation segments."""
+    cleaned = sorted(
+        (obs for obs in observations if isinstance(obs, AISObservation) and obs.valid),
+        key=lambda obs: obs.received_at,
+    )
+    if not cleaned:
+        return []
+    threshold = max(0.0, float(gap_threshold_seconds))
+    segments: list[list[AISObservation]] = [[cleaned[0]]]
+    for obs in cleaned[1:]:
+        previous = segments[-1][-1]
+        gap = (obs.received_at - previous.received_at).total_seconds()
+        if gap > threshold:
+            segments.append([obs])
+        else:
+            segments[-1].append(obs)
+    return segments
+
+
+def _build_sequence_from_observations(
+    observations: Sequence[AISObservation],
+    *,
+    sequence_length: int,
+    minimum_points: int,
+    mmsi: str,
 ) -> TemporalSequence | None:
-    obs_list = list(observations)
-    if len(obs_list) < minimum_points or len(obs_list) < sequence_length:
+    if len(observations) < minimum_points or len(observations) < sequence_length:
         return None
-    mmsi_val = mmsi or str(obs_list[0].mmsi)
     try:
-        frame = enrich_track(track_to_frame(obs_list))
+        frame = enrich_track(track_to_frame(observations))
     except Exception:
         return None
     if frame is None or len(frame) < minimum_points or len(frame) < sequence_length:
         return None
-
-    # Select a contiguous real window before deriving deltas. This keeps every
-    # delta, heading change and time interval semantically tied to its immediate
-    # predecessor inside the actual model window.
     window_frame = frame.iloc[-int(sequence_length):].copy()
     mat = _build_feature_matrix(window_frame)
     if mat is None or mat.shape[0] != sequence_length:
@@ -204,11 +223,32 @@ def build_temporal_sequence(
     if seq.shape != (sequence_length, FEATURE_DIM) or not np.isfinite(seq).all():
         return None
     return TemporalSequence(
-        mmsi=str(mmsi_val),
+        mmsi=str(mmsi),
         sequence=seq,
         sequence_length=int(sequence_length),
         feature_names=FEATURE_NAMES,
-        n_source_points=int(len(frame)),
+        n_source_points=int(len(observations)),
+    )
+
+
+def build_temporal_sequence(
+    observations: Sequence[AISObservation] | Iterable[AISObservation],
+    *,
+    sequence_length: int = DEFAULT_SEQUENCE_LENGTH,
+    minimum_points: int = MINIMUM_POINTS_PER_TRACK,
+    mmsi: str | None = None,
+) -> TemporalSequence | None:
+    """Build the latest valid window from one contiguous real-AIS segment."""
+    obs_list = list(observations)
+    mmsi_val = mmsi or (str(obs_list[0].mmsi) if obs_list else "")
+    segments = _split_track_on_gaps(obs_list)
+    if not segments:
+        return None
+    return _build_sequence_from_observations(
+        segments[-1],
+        sequence_length=int(sequence_length),
+        minimum_points=int(minimum_points),
+        mmsi=mmsi_val,
     )
 
 
@@ -217,16 +257,46 @@ def build_temporal_sequences(
     *,
     sequence_length: int = DEFAULT_SEQUENCE_LENGTH,
     minimum_points: int = MINIMUM_POINTS_PER_TRACK,
+    max_windows_per_track: int = 8,
 ) -> list[TemporalSequence]:
+    """Build multiple non-overlapping windows from contiguous real-AIS segments.
+
+    Windows never cross a large receive-time gap and never overlap. Non-overlap
+    avoids overweighting long tracks and keeps future train/validation grouping
+    by MMSI meaningful. Only complete windows of real observations are emitted.
+    """
     if isinstance(tracks, dict):
         items = list(tracks.items())
     else:
         items = list(tracks)
     result: list[TemporalSequence] = []
+    window = int(sequence_length)
+    minimum = int(minimum_points)
+    cap = max(1, int(max_windows_per_track))
     for mmsi, obs in items:
-        seq = build_temporal_sequence(obs, sequence_length=sequence_length, minimum_points=minimum_points, mmsi=str(mmsi))
-        if seq is not None:
-            result.append(seq)
+        emitted = 0
+        for segment in _split_track_on_gaps(obs):
+            if len(segment) < max(window, minimum):
+                continue
+            # Keep the newest complete windows when a long segment exceeds the
+            # cap. This preserves the most recent real operational context.
+            starts = list(range(0, len(segment) - window + 1, window))
+            if len(starts) > cap:
+                starts = starts[-cap:]
+            for start in starts:
+                seq = _build_sequence_from_observations(
+                    segment[start : start + window],
+                    sequence_length=window,
+                    minimum_points=minimum,
+                    mmsi=str(mmsi),
+                )
+                if seq is not None:
+                    result.append(seq)
+                    emitted += 1
+                    if emitted >= cap:
+                        break
+            if emitted >= cap:
+                break
     return result
 
 
