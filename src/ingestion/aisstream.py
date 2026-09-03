@@ -56,6 +56,10 @@ class AISStreamProvider(AISProvider):
     PositionReport.Timestamp is retained as the AIS UTC second within the
     minute. It is never combined with server date/time to fabricate an
     absolute observation datetime; ``received_at`` is the MIE receive time.
+
+    ``max_vessels`` limits the presentation list only. It never evicts an MMSI
+    from ``_tracks`` because temporal analytics need the complete retained
+    session history.
     """
 
     def __init__(
@@ -70,7 +74,7 @@ class AISStreamProvider(AISProvider):
         self.api_key = api_key
         self.bbox = bbox
         self.max_messages = max_messages
-        self.max_vessels = max_vessels
+        self.max_vessels = max(1, max_vessels)
         self.stale_after_seconds = stale_after_seconds
         self.config_error = config_error
         self._observations: list[AISObservation] = []
@@ -335,9 +339,6 @@ class AISStreamProvider(AISProvider):
         self._tracks[observation.mmsi].append(observation)
         if len(self._observations) > self.max_messages:
             self._observations = self._observations[-self.max_messages :]
-        if len(self._tracks) > self.max_vessels:
-            oldest_mmsi = min(self._tracks, key=lambda key: self._tracks[key][-1].received_at)
-            del self._tracks[oldest_mmsi]
 
     def fetch_vessels(self) -> list[VesselSnapshot]:
         now = datetime.now(timezone.utc)
@@ -362,7 +363,7 @@ class AISStreamProvider(AISProvider):
                     stale=(now - latest.received_at).total_seconds() > self.stale_after_seconds,
                 )
             )
-        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)
+        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)[: self.max_vessels]
 
     def fetch_tracks(self) -> dict[str, list[AISObservation]]:
         return {mmsi: list(track) for mmsi, track in self._tracks.items()}
