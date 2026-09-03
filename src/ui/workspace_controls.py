@@ -115,6 +115,35 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
         st.caption(f"Last network error · {status.last_error}")
 
 
+def _render_historical_persistence(engine: MaritimeIntelligenceEngine, settings: AppSettings) -> None:
+    """Expose historical persistence configuration and latest write status in System."""
+    historical_enabled = st.checkbox(
+        "Historical Persistence",
+        value=settings.historical_persistence_enabled,
+        key="historical_persistence_enabled_body",
+        disabled=settings.database_url is None,
+        help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
+        on_change=_sync_historical_persistence,
+    )
+    if settings.database_url is None:
+        historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
+    elif historical_enabled:
+        historical_state = "HISTORICAL PERSISTENCE ENABLED"
+    else:
+        historical_state = "HISTORICAL PERSISTENCE OFF"
+    st.markdown(
+        f"<div class='data-value side-muted'>{historical_state}</div>",
+        unsafe_allow_html=True,
+    )
+    result = engine.snapshot().historical_result
+    if result is not None:
+        st.caption(f"Persisted observations · {result.persisted_observations}")
+        if result.duplicate_observations:
+            st.caption(f"Duplicate observations skipped · {result.duplicate_observations}")
+        if result.reason:
+            st.caption(f"Persist detail · {result.reason}")
+
+
 def render_aux_workspace_controls(
     engine: MaritimeIntelligenceEngine,
     settings: AppSettings,
@@ -123,24 +152,12 @@ def render_aux_workspace_controls(
     """Render DATA, ANALYSIS, and SYSTEM into supplied main-content columns."""
     with columns[0]:
         with st.popover("DATA", use_container_width=True):
-            historical_enabled = st.checkbox(
-                "Historical Persistence",
-                value=settings.historical_persistence_enabled,
-                key="historical_persistence_enabled_body",
-                disabled=settings.database_url is None,
-                help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
-                on_change=_sync_historical_persistence,
-            )
-            if settings.database_url is None:
-                historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
-            elif historical_enabled:
-                historical_state = "HISTORICAL PERSISTENCE ENABLED"
-            else:
-                historical_state = "HISTORICAL PERSISTENCE OFF"
-            st.markdown(
-                f"<div class='data-value side-muted'>{historical_state}</div>",
-                unsafe_allow_html=True,
-            )
+            st.caption("Data quality and session-level observation diagnostics.")
+            report = engine.snapshot().quality
+            st.write(f"**Quality:** `{report.quality_percent:.1f}%`")
+            st.write(f"**Messages:** `{report.messages_processed:,}`")
+            st.write(f"**Invalid:** `{report.invalid_records:,}`")
+            st.write(f"**Duplicates:** `{report.duplicate_records:,}`")
 
     with columns[1]:
         with st.popover("ANALYSIS", use_container_width=True):
@@ -172,6 +189,8 @@ def render_aux_workspace_controls(
             _render_freshness_status(engine)
             _render_reconnect_telemetry(engine)
             _render_temporal_readiness(engine)
+            st.markdown("<div class='data-label'>HISTORICAL PERSISTENCE</div>", unsafe_allow_html=True)
+            _render_historical_persistence(engine, settings)
             st.selectbox(
                 "Operator timezone",
                 OPERATOR_TIMEZONE_OPTIONS,
