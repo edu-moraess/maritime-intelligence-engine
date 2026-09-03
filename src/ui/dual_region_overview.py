@@ -11,7 +11,7 @@ from src.geospatial.map_data import filter_rows_to_bboxes, live_vessel_rows, ves
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui import _pages_map_render as map_render
 from src.ui.pages_overview import _render_workspace_controls
-from src.ui.pages_helpers import _render_vessel_map, _selected_vessel
+from src.ui.pages_helpers import _render_vessel_map
 from src.ui.presentation import render_ops_bar
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
@@ -42,7 +42,7 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
 
 
 def _capture_region_selection(event, selection_key: str) -> None:
-    """Persist a map click in region-local state before the shared renderer reruns."""
+    """Store a click in region-local state and rerun without touching global selection."""
     try:
         selection = event.selection if event is not None else None
         objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
@@ -61,7 +61,17 @@ def _capture_region_selection(event, selection_key: str) -> None:
         return
     mmsi = str(mmsi).strip()
     if mmsi.isdigit() and len(mmsi) == 9:
-        st.session_state[selection_key] = mmsi
+        if st.session_state.get(selection_key) != mmsi:
+            st.session_state[selection_key] = mmsi
+            st.rerun()
+
+
+def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
+    """Resolve a vessel only from the selection belonging to this region."""
+    selected_mmsi = st.session_state.get(selection_key)
+    if not selected_mmsi:
+        return None
+    return next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
 
 
 def _render_region_map(
@@ -73,7 +83,18 @@ def _render_region_map(
     engine: MaritimeIntelligenceEngine,
 ) -> None:
     """Render one independent tactical map and its region-local vessel panel."""
-    min_speed, include_stale, map_style, show_vectors, show_trails, show_behavior, show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots = controls
+    (
+        min_speed,
+        include_stale,
+        map_style,
+        show_vectors,
+        show_trails,
+        show_behavior,
+        show_hexbin,
+        show_anomaly_types,
+        show_freshness,
+        show_anomaly_hotspots,
+    ) = controls
     region_snapshot = _regional_snapshot(snapshot, bbox)
     region_settings = replace(settings, bbox=bbox, monitoring_bboxes=(bbox,))
     rows = vessel_rows(region_snapshot.vessels) if include_stale else live_vessel_rows(region_snapshot.vessels)
@@ -84,19 +105,15 @@ def _render_region_map(
             for row in rows
             if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
         ]
+
     region_name = region_name_for_bbox(bbox) or label
     selection_key = f"selected_mmsi_{label.lower()}"
+    previous_global_selection = st.session_state.get("selected_mmsi")
+    region_selection = st.session_state.get(selection_key)
 
-    # Each map gets its own selection state. The shared renderer still exposes
-    # the legacy selected_mmsi state, so scope that value for this invocation
-    # and capture clicks before the renderer triggers Streamlit rerun.
-    st.session_state.selected_mmsi = st.session_state.get(selection_key)
-    original_apply_selection = map_render._apply_map_selection
-
-    def _scoped_apply_selection(event) -> None:
-        _capture_region_selection(event, selection_key)
-        original_apply_selection(event)
-
+    # The shared map renderer reads the legacy global key. Scope it only for
+    # this invocation, then restore it so Region A cannot leak into Region B.
+    st.session_state.selected_mmsi = region_selection
     original_pydeck_chart = st.__dict__["pydeck_chart"]
 
     def _scoped_pydeck_chart(*args, **kwargs):
@@ -104,6 +121,11 @@ def _render_region_map(
         return original_pydeck_chart(*args, **kwargs)
 
     st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
+    original_apply_selection = map_render._apply_map_selection
+
+    def _scoped_apply_selection(event) -> None:
+        _capture_region_selection(event, selection_key)
+
     map_render._apply_map_selection = _scoped_apply_selection
     try:
         st.caption(f"{label} · {region_name} · {format_bbox(bbox)}")
@@ -123,8 +145,9 @@ def _render_region_map(
     finally:
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
+        st.session_state.selected_mmsi = previous_global_selection
 
-    selected = _selected_vessel(region_snapshot.vessels)
+    selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
         with st.container(key=f"tactical-vessel-panel-{label.lower()}", border=True):
             render_vessel_quick_intelligence(
