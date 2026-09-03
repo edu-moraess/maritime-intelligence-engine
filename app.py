@@ -226,7 +226,7 @@ def _render_sidebar(
             range(len(duration_options)),
             key=lambda i: abs(duration_options[i] - settings.collection_seconds),
         )
-        selected_duration = st.selectbox(
+        st.selectbox(
             "Collection duration",
             duration_options,
             index=duration_index,
@@ -234,6 +234,7 @@ def _render_sidebar(
             key="collection_duration_seconds",
             label_visibility="collapsed",
         )
+        selected_duration = st.session_state["collection_duration_seconds"]
         if float(selected_duration) != settings.collection_seconds:
             settings = _with_settings(
                 settings,
@@ -248,7 +249,9 @@ def _render_sidebar(
             "Region A + Region B use one MIE app and one AISStream subscription."
         )
 
-        existing = list(settings.monitoring_bboxes) or [settings.bbox]
+        existing = list(
+            st.session_state.get("monitoring_bboxes", settings.monitoring_bboxes)
+        ) or [settings.bbox]
         bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
         bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
 
@@ -262,6 +265,7 @@ def _render_sidebar(
 
         if region_error is None:
             settings = _with_settings(settings, bboxes=bboxes, bbox=bbox_a)
+            st.session_state["monitoring_bboxes"] = bboxes
             if region_changed:
                 st.warning(
                     "Monitoring regions changed. The previous live session "
@@ -285,54 +289,48 @@ def _render_sidebar(
         )
         clear = st.button("Clear Session", width="stretch")
 
-        st.markdown(
-            "<div class='side-section-title'>DATA</div>",
-            unsafe_allow_html=True,
-        )
-        historical_enabled = st.checkbox(
-            "Historical Persistence",
-            value=settings.historical_persistence_enabled,
-            key="historical_persistence_enabled",
-            disabled=settings.database_url is None,
-            help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
-        )
-        if bool(historical_enabled) != settings.historical_persistence_enabled:
-            settings = _with_settings(
-                settings,
-                historical_persistence_enabled=bool(historical_enabled),
+        with st.expander("DATA", expanded=False):
+            historical_enabled = st.checkbox(
+                "Historical Persistence",
+                value=settings.historical_persistence_enabled,
+                key="historical_persistence_enabled",
+                disabled=settings.database_url is None,
+                help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
+            )
+            if bool(historical_enabled) != settings.historical_persistence_enabled:
+                settings = _with_settings(
+                    settings,
+                    historical_persistence_enabled=bool(historical_enabled),
+                )
+
+            if settings.database_url is None:
+                historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
+            elif settings.historical_persistence_enabled:
+                historical_state = "HISTORICAL PERSISTENCE ENABLED"
+            else:
+                historical_state = "HISTORICAL PERSISTENCE OFF"
+            st.markdown(
+                f"<div class='data-value side-muted'>{historical_state}</div>",
+                unsafe_allow_html=True,
             )
 
-        if settings.database_url is None:
-            historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
-        elif settings.historical_persistence_enabled:
-            historical_state = "HISTORICAL PERSISTENCE ENABLED"
-        else:
-            historical_state = "HISTORICAL PERSISTENCE OFF"
-        st.markdown(
-            f"<div class='data-value side-muted'>{historical_state}</div>",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            "<div class='side-section-title'>ANALYSIS</div>",
-            unsafe_allow_html=True,
-        )
-        module = st.radio(
-            "Workspace module",
-            list(NAVIGATION),
-            label_visibility="collapsed",
-            key="workspace_module",
-        )
-        views = NAVIGATION[module]
-        if len(views) == 1:
-            page = views[0]
-        else:
-            page = st.radio(
-                f"{module} subarea",
-                views,
+        with st.expander("ANALYSIS", expanded=False):
+            module = st.radio(
+                "Workspace module",
+                list(NAVIGATION),
                 label_visibility="collapsed",
-                key=f"workspace_subarea_{module}",
+                key="workspace_module",
             )
+            views = NAVIGATION[module]
+            if len(views) == 1:
+                page = views[0]
+            else:
+                page = st.radio(
+                    f"{module} subarea",
+                    views,
+                    label_visibility="collapsed",
+                    key=f"workspace_subarea_{module}",
+                )
 
         engine = _engine_for(settings)
         conn = _connection_state(settings, engine)
@@ -383,6 +381,7 @@ def main() -> None:
     if clear:
         engine.clear_session_data()
         st.session_state.pop("selected_mmsi", None)
+        st.session_state.pop("monitoring_bboxes", None)
         st.rerun()
 
     if collect:
