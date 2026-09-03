@@ -44,21 +44,20 @@ def _render_region_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, s
     region_name = region_name_for_bbox(bbox) or label
     st.caption(f"{label} · {region_name} · {format_bbox(bbox)}")
 
-    # The shared map renderer historically used one fixed Streamlit key. Two
-    # region maps are separate stateful PyDeck widgets, so scope that key to
-    # the region while the renderer executes. This preserves its selection
-    # handling without duplicating the whole tactical map implementation.
-    original_pydeck_chart = st.pydeck_chart
+    # Streamlit exposes pydeck_chart as a module-level alias to the main
+    # DeltaGenerator method. Patch the module dictionary so the shared map
+    # renderer resolves this scoped wrapper for this invocation.
+    original_pydeck_chart = st.__dict__["pydeck_chart"]
 
     def _scoped_pydeck_chart(*args, **kwargs):
         kwargs["key"] = f"operational_ais_map_{label.lower()}"
         return original_pydeck_chart(*args, **kwargs)
 
-    st.pydeck_chart = _scoped_pydeck_chart
+    st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
     try:
         _render_vessel_map(rows, snapshot=region_snapshot, settings=region_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
     finally:
-        st.pydeck_chart = original_pydeck_chart
+        st.__dict__["pydeck_chart"] = original_pydeck_chart
 
 
 def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
