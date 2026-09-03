@@ -145,7 +145,7 @@ class MaritimeIntelligenceEngine:
         return len(restored)
 
     def collect(self, seconds: float | None = None) -> int:
-        """Collect a bounded real-time window; returns only actual observations received."""
+        """Collect a bounded real-time window; processing time is excluded from the window metric."""
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -157,13 +157,15 @@ class MaritimeIntelligenceEngine:
                 stop_event.set()
                 break
         stop_event.set()
+        collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
+        self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
         if collected:
             self.store.extend(collected)
             self.historical_result = self.historical_writer.persist_collection(
                 collected,
                 self.settings.bbox,
-                time.monotonic() - started,
+                collection_elapsed,
                 started_at,
                 ended_at,
             )
@@ -187,7 +189,6 @@ class MaritimeIntelligenceEngine:
                     )
         else:
             self.historical_result = None
-        self.last_collection_seconds = time.monotonic() - started
         self._recompute()
         return len(collected)
 
