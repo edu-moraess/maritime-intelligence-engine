@@ -14,6 +14,8 @@ DEFAULT_COLLECTION_SECONDS = 60.0
 MIN_COLLECTION_SECONDS = 30.0
 MAX_COLLECTION_SECONDS = 900.0
 COLLECTION_DURATION_OPTIONS = (30, 60, 120, 180, 300, 600, 900)
+DEFAULT_MAX_MESSAGES = 10000
+MAX_ALLOWED_MESSAGES = 20000
 
 
 def _secret_or_env(name: str, secrets: Any | None = None) -> str:
@@ -47,7 +49,7 @@ class AppSettings:
     bbox: RegionBBox = DEFAULT_BBOX
     monitoring_bboxes: tuple[RegionBBox, ...] = (DEFAULT_BBOX,)
     collection_seconds: float = DEFAULT_COLLECTION_SECONDS
-    max_messages: int = 3000
+    max_messages: int = DEFAULT_MAX_MESSAGES
     max_vessels: int = 1000
     stale_after_seconds: int = 180
     provider: str = "aisstream"
@@ -107,7 +109,7 @@ class AppSettings:
                 max(float_setting("AIS_COLLECTION_SECONDS", DEFAULT_COLLECTION_SECONDS), MIN_COLLECTION_SECONDS),
                 MAX_COLLECTION_SECONDS,
             ),
-            max_messages=min(int_setting("AIS_MAX_MESSAGES", 3000), 10000),
+            max_messages=min(int_setting("AIS_MAX_MESSAGES", DEFAULT_MAX_MESSAGES), MAX_ALLOWED_MESSAGES),
             max_vessels=min(int_setting("AIS_MAX_VESSELS", 1000), 5000),
             stale_after_seconds=int_setting("AIS_STALE_AFTER_SECONDS", 180),
             provider=provider,
