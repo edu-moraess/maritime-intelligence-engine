@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.config.settings import AppSettings
 from src.intelligence.engine import MaritimeIntelligenceEngine
+from src.ml.temporal.diagnostics import analyze_temporal_tracks
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 NAVIGATION = {
@@ -56,6 +57,30 @@ def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
         "<div class='data-label'>Signal freshness</div>"
         f"<div class='data-value'>LIVE {live_count} · STALE {stale_count}</div>"
         f"<div class='side-muted'>Threshold {threshold}s · Last report age {age_label}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_temporal_readiness(engine: MaritimeIntelligenceEngine) -> None:
+    """Expose real-track coverage needed by the temporal model."""
+    diagnostics = analyze_temporal_tracks(engine.store.tracks())
+    total = diagnostics.nonempty_tracks
+    counts = diagnostics.tracks_by_min_points
+    eligible_4 = counts.get(4, 0)
+    eligible_8 = counts.get(8, 0)
+    eligible_16 = counts.get(16, 0)
+    eligible_32 = counts.get(32, 0)
+    if eligible_8 >= 8:
+        state = "READY"
+    elif eligible_4 >= 8:
+        state = "EARLY COVERAGE"
+    else:
+        state = "NOT READY"
+    ratio = (eligible_8 / total * 100.0) if total else 0.0
+    st.markdown(
+        "<div class='data-label'>Temporal readiness</div>"
+        f"<div class='data-value'>{state} · T8 {ratio:.0f}%</div>"
+        f"<div class='side-muted'>Tracks ≥4: {eligible_4} · ≥8: {eligible_8} · ≥16: {eligible_16} · ≥32: {eligible_32}</div>",
         unsafe_allow_html=True,
     )
 
@@ -115,6 +140,7 @@ def render_aux_workspace_controls(
                 unsafe_allow_html=True,
             )
             _render_freshness_status(engine)
+            _render_temporal_readiness(engine)
             st.selectbox(
                 "Operator timezone",
                 OPERATOR_TIMEZONE_OPTIONS,
