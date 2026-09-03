@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from src.ingestion.models import AISObservation
 
 from .writer import _database_url_for_connection
 
+RegionBBox = tuple[tuple[float, float], tuple[float, float]]
+
 
 def load_recent_observations(
     database_url: str | None,
-    bbox: tuple[tuple[float, float], tuple[float, float]],
+    bbox: RegionBBox,
     *,
     limit: int = 3000,
     connect_fn: Callable[[str], Any] | None = None,
 ) -> list[AISObservation]:
-    """Load recent persisted AIS observations for the active monitoring bbox.
+    """Load recent persisted AIS observations for one monitoring bbox.
 
     This is intentionally read-only. Persisted observations are historical
     context only; they are never treated as live data and are merged into the
@@ -84,6 +86,59 @@ def load_recent_observations(
                 connection.close()
             except Exception:
                 pass
+
+
+def load_recent_observations_for_bboxes(
+    database_url: str | None,
+    bboxes: Sequence[RegionBBox],
+    *,
+    limit: int = 3000,
+    connect_fn: Callable[[str], Any] | None = None,
+) -> list[AISObservation]:
+    """Load recent persisted AIS history across multiple monitoring bboxes.
+
+    Each region receives an equal hydration budget so a high-volume region
+    cannot consume the entire temporal history. Overlapping bboxes are
+    deduplicated before the final global limit is applied. With one bbox this
+    delegates to the legacy loader, preserving the single-region path.
+    """
+    normalized = tuple(bboxes)
+    if not database_url or limit <= 0 or not normalized:
+        return []
+    if len(normalized) == 1:
+        return load_recent_observations(
+            database_url,
+            normalized[0],
+            limit=limit,
+            connect_fn=connect_fn,
+        )
+
+    per_region_limit = max(1, (int(limit) + len(normalized) - 1) // len(normalized))
+    candidates: list[AISObservation] = []
+    for bbox in normalized:
+        candidates.extend(
+            load_recent_observations(
+                database_url,
+                bbox,
+                limit=per_region_limit,
+                connect_fn=connect_fn,
+            )
+        )
+
+    deduplicated: dict[tuple[Any, ...], AISObservation] = {}
+    for observation in candidates:
+        key = (
+            observation.raw.get("session_id"),
+            observation.mmsi,
+            observation.received_at,
+            observation.ais_timestamp_second,
+            observation.latitude,
+            observation.longitude,
+        )
+        deduplicated[key] = observation
+
+    ordered = sorted(deduplicated.values(), key=lambda observation: observation.received_at)
+    return ordered[-int(limit):]
 
 
 def load_vessel_observations(
