@@ -112,3 +112,16 @@ def test_no_map_controls_in_sidebar():
         "overview_show_anomaly_hotspots",
     ):
         assert forbidden not in fn_source, forbidden
+
+
+def test_clear_session_resets_all_contact_selection_state():
+    """Clearing a live session must remove every region selection namespace."""
+    source = _source(APP_PATH)
+    clear_block = source[source.index('if clear:'):source.index('if collect:')]
+    for key in (
+        '"selected_mmsi"',
+        '"selected_mmsi_a"',
+        '"selected_mmsi_b"',
+        '"selected_mmsi_unified"',
+    ):
+        assert key in clear_block
