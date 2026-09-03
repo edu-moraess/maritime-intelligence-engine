@@ -23,6 +23,10 @@ def _in_bbox(latitude: float | None, longitude: float | None, bbox: RegionBBox) 
     return min_lat <= float(latitude) <= max_lat and min_lon <= float(longitude) <= max_lon
 
 
+def _inside_bboxes(latitude: float | None, longitude: float | None, bboxes: tuple[RegionBBox, ...]) -> bool:
+    return any(_in_bbox(latitude, longitude, bbox) for bbox in bboxes)
+
+
 def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnapshot:
     """Create a presentation-only snapshot containing only one operational area."""
     observations = [o for o in snapshot.observations if _in_bbox(o.latitude, o.longitude, bbox)]
@@ -30,6 +34,19 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
     findings = [f for f in snapshot.findings if _in_bbox(f.latitude, f.longitude, bbox)]
     current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _in_bbox(o.latitude, o.longitude, bbox)]
     current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _in_bbox(f.latitude, f.longitude, bbox)]
+    speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
+    summary = dict(snapshot.summary)
+    summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
+    return replace(snapshot, observations=observations, current_session_observations=current_session_observations, vessels=vessels, findings=findings, current_session_findings=current_session_findings, summary=summary)
+
+
+def _unified_snapshot(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...]) -> EngineSnapshot:
+    """Create a presentation-only A+B snapshot for every auxiliary map layer."""
+    observations = [o for o in snapshot.observations if _inside_bboxes(o.latitude, o.longitude, bboxes)]
+    vessels = [v for v in snapshot.vessels if _inside_bboxes(v.latitude, v.longitude, bboxes)]
+    findings = [f for f in snapshot.findings if _inside_bboxes(f.latitude, f.longitude, bboxes)]
+    current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _inside_bboxes(o.latitude, o.longitude, bboxes)]
+    current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _inside_bboxes(f.latitude, f.longitude, bboxes)]
     speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
     summary = dict(snapshot.summary)
     summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
@@ -116,14 +133,11 @@ def _unified_rows(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...], *, i
     """Build unified targets without dropping the real operational picture on rerun."""
     rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, bboxes)
-    # If the live-only view has aged past the stale threshold, keep real AIS
-    # contacts visible in UNIFIED rather than replacing the map with an empty
-    # state. They remain marked STALE by vessel_rows and are never fabricated.
     if not rows and not include_stale:
         rows = filter_rows_to_bboxes(vessel_rows(snapshot.vessels), bboxes)
     if selected_mmsi and not include_stale:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
-        if selected is not None and any(_in_bbox(selected.latitude, selected.longitude, bbox) for bbox in bboxes):
+        if selected is not None and _inside_bboxes(selected.latitude, selected.longitude, bboxes):
             if not any(str(row.get("mmsi")) == str(selected_mmsi) for row in rows):
                 rows.append(vessel_rows([selected])[0])
     return rows
@@ -136,7 +150,8 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     unified_settings = replace(settings, bbox=unified_bbox, monitoring_bboxes=bboxes)
     unified_selection_key = "selected_mmsi_unified"
     unified_selection = st.session_state.get(unified_selection_key)
-    rows = _unified_rows(snapshot, bboxes, include_stale=include_stale, selected_mmsi=unified_selection)
+    unified_snapshot = _unified_snapshot(snapshot, bboxes)
+    rows = _unified_rows(unified_snapshot, bboxes, include_stale=include_stale, selected_mmsi=unified_selection)
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
     previous_global_selection = st.session_state.get("selected_mmsi")
@@ -169,7 +184,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     map_render._apply_map_selection = _capture_unified_selection
     try:
         st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
-        _render_vessel_map(rows, snapshot=snapshot, settings=unified_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
+        _render_vessel_map(rows, snapshot=unified_snapshot, settings=unified_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
     finally:
         map_render._apply_map_selection = original_apply_selection
         st.__dict__["pydeck_chart"] = original_pydeck_chart
