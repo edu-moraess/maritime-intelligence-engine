@@ -83,6 +83,7 @@ class AISStreamProvider(AISProvider):
         self._last_received_at: datetime | None = None
         self._last_ais_timestamp_second: int | None = None
         self._messages_received = 0
+        self._window_messages_received = 0
         self._frames_received = 0
         self._position_reports_received = 0
         self._position_reports_accepted = 0
@@ -128,6 +129,7 @@ class AISStreamProvider(AISProvider):
         self._last_received_at = None
         self._last_ais_timestamp_second = None
         self._messages_received = 0
+        self._window_messages_received = 0
         self._frames_received = 0
         self._position_reports_received = 0
         self._position_reports_accepted = 0
@@ -184,11 +186,11 @@ class AISStreamProvider(AISProvider):
             return
         stop_event = stop_event or threading.Event()
         deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
-        messages_at_start = self._messages_received
+        self._window_messages_received = 0
         backoff = 1.0
         opened = False
         had_disconnect = False
-        while not stop_event.is_set() and self._messages_received < self.max_messages:
+        while not stop_event.is_set() and self._window_messages_received < self.max_messages:
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
@@ -216,7 +218,7 @@ class AISStreamProvider(AISProvider):
                 had_disconnect = False
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
-                while not stop_event.is_set() and self._messages_received < self.max_messages:
+                while not stop_event.is_set() and self._window_messages_received < self.max_messages:
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     try:
@@ -261,7 +263,7 @@ class AISStreamProvider(AISProvider):
                 self._websocket_status = "CLOSED"
             if deadline is not None and time.monotonic() >= deadline:
                 break
-        received_this_window = self._messages_received > messages_at_start
+        received_this_window = self._window_messages_received > 0
         self._websocket_status = "CLOSED"
         if not received_this_window and opened:
             self._state = "REAL AIS DATA UNAVAILABLE"
@@ -330,6 +332,7 @@ class AISStreamProvider(AISProvider):
 
     def _record(self, observation: AISObservation) -> None:
         self._messages_received += 1
+        self._window_messages_received += 1
         self._position_reports_accepted += 1
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
