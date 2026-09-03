@@ -51,6 +51,68 @@ st.set_page_config(
 
 inject_css()
 
+# Keep the native Streamlit sidebar as the widget host, but turn it into an
+# overlay drawer so opening it does not permanently consume workspace width.
+# The native collapse control remains responsible for opening/closing it.
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        position: fixed !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        z-index: 1000000 !important;
+        width: min(22rem, 88vw) !important;
+        box-shadow: 14px 0 36px rgba(0, 0, 0, .32);
+        border-right: 1px solid var(--line) !important;
+        transition: transform .22s ease, box-shadow .22s ease;
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        width: 100% !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        padding-top: .7rem;
+    }
+
+    /* Streamlit hides the sidebar through its own state classes/attributes.
+       These rules prevent the hidden state from leaving a dead visual rail. */
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        width: 0 !important;
+        min-width: 0 !important;
+        transform: translateX(-100%);
+        box-shadow: none;
+        border-right: 0 !important;
+        overflow: hidden;
+    }
+
+    [data-testid="stSidebar"][aria-expanded="false"] > div:first-child {
+        width: 0 !important;
+        min-width: 0 !important;
+    }
+
+    /* Main workspace remains full-width; the drawer overlays it instead of
+       pushing content sideways. */
+    [data-testid="stAppViewContainer"] > .main {
+        margin-left: 0 !important;
+    }
+
+    [data-testid="stSidebar"] button[kind="headerNoPadding"] {
+        margin-left: .15rem;
+    }
+
+    @media (max-width: 760px) {
+        [data-testid="stSidebar"] {
+            width: min(19rem, 92vw) !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def _read_settings() -> AppSettings:
     """Load runtime settings from Streamlit secrets/environment."""
