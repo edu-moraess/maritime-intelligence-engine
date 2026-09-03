@@ -213,6 +213,87 @@ def _install_floating_sidebar_controller() -> None:
         width: 100% !important;
       }
 
+      /* P0.6 — compact the high-frequency operational surfaces without
+         shrinking the map or altering Streamlit widget behavior. */
+      [data-testid="stColumn"].${PANEL_CLASS} {
+        padding: .5rem .6rem !important;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .vessel-id {
+        margin: .05rem 0 .3rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .vessel-id .name {
+        font-size: 1rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .vessel-live-line {
+        margin: .15rem 0 .35rem;
+        gap: .3rem .4rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .vessel-live-line .telem {
+        font-size: .78rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .section-kicker {
+        margin: .35rem 0 .18rem;
+        padding-top: .3rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .section-kicker:first-child {
+        margin-top: .05rem;
+        padding-top: 0;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .data-label {
+        font-size: .54rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .data-value {
+        font-size: .72rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .small-note {
+        font-size: .62rem;
+        line-height: 1.25;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} .notice {
+        padding: .38rem .5rem;
+        font-size: .68rem;
+        line-height: 1.3;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} [data-testid="stExpander"] {
+        margin-bottom: .25rem;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} [data-testid="stExpander"] details > summary {
+        padding: .28rem .4rem !important;
+        min-height: 0 !important;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} [data-testid="stExpander"] details > div {
+        padding: .25rem .4rem .35rem !important;
+      }
+      [data-testid="stColumn"].${PANEL_CLASS} [data-testid="stExpander"] .stCaption {
+        margin-top: .1rem;
+        margin-bottom: .1rem;
+      }
+
+      /* P0.6 — keep the mission controls compact while retaining touch-safe
+         controls and the existing draggable sidebar interaction. */
+      [data-testid="stSidebar"].mie-floating-sidebar .stMarkdown {
+        margin-bottom: .15rem;
+      }
+      [data-testid="stSidebar"] .side-header {
+        margin-bottom: .5rem;
+        padding-bottom: .4rem;
+      }
+      [data-testid="stSidebar"] .side-section-title {
+        margin: .6rem 0 .3rem;
+        padding-top: .4rem;
+      }
+      [data-testid="stSidebar"] .side-section-label {
+        margin: .4rem 0 .18rem;
+      }
+      [data-testid="stSidebar"] .stButton > button {
+        min-height: 2rem;
+        padding: .25rem .5rem;
+      }
+      [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+      [data-testid="stSidebar"] div[data-baseweb="input"] > div {
+        min-height: 2rem;
+      }
+
       @media (max-width: 980px) {
         [data-testid="stColumn"].${PANEL_CLASS} {
           width: min(24rem, 44vw) !important;
@@ -233,7 +314,7 @@ def _install_floating_sidebar_controller() -> None:
           max-width: none !important;
           height: min(58vh, 34rem) !important;
           border-radius: 4px !important;
-          padding: .6rem .65rem !important;
+          padding: .5rem .55rem !important;
         }
         [data-testid="stHorizontalBlock"].${CANVAS_CLASS} {
           flex-wrap: wrap !important;
