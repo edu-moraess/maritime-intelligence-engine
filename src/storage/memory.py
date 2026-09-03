@@ -18,6 +18,11 @@ class ObservationStore:
     validated observations after collection without feeding history back into
     runtime analytics. Exact duplicate payloads are ignored while their count
     remains available for QA.
+
+    ``max_messages`` bounds the raw session footprint. ``max_vessels`` is kept
+    as a compatibility setting for callers/UI, but it must not evict MMSIs
+    from the analytical history: active-contact presentation is a separate
+    concern from temporal track retention.
     """
 
     def __init__(self, max_messages: int = 3000, max_vessels: int = 1000) -> None:
@@ -59,15 +64,8 @@ class ObservationStore:
     def _trim_unlocked(self) -> None:
         if len(self._items) > self.max_messages:
             del self._items[: len(self._items) - self.max_messages]
-        vessels = {item.mmsi for item in self._items}
-        while len(vessels) > self.max_vessels:
-            latest_by_vessel = {
-                mmsi: max(item.received_at for item in self._items if item.mmsi == mmsi)
-                for mmsi in vessels
-            }
-            oldest_mmsi = min(latest_by_vessel, key=latest_by_vessel.get)
-            self._items = [item for item in self._items if item.mmsi != oldest_mmsi]
-            vessels.remove(oldest_mmsi)
+        # Do not evict whole MMSI histories here. A vessel-count display limit
+        # must never destroy temporal evidence used by trajectories/GRU.
         self._seen = {_observation_key(item) for item in self._items}
 
     def all(self) -> list[AISObservation]:
