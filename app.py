@@ -216,78 +216,43 @@ def _render_sidebar(
     region_changed = False
     with st.sidebar:
         connection_placeholder = st.empty()
-        st.markdown(
-            "<div class='side-section-title'>MISSION CONTEXT</div>",
-            unsafe_allow_html=True,
-        )
-
-        duration_options = list(COLLECTION_DURATION_OPTIONS)
-        duration_index = min(
-            range(len(duration_options)),
-            key=lambda i: abs(duration_options[i] - settings.collection_seconds),
-        )
-        st.selectbox(
-            "Collection duration",
-            duration_options,
-            index=duration_index,
-            format_func=lambda seconds: f"Collection duration · {seconds} s",
-            key="collection_duration_seconds",
-            label_visibility="collapsed",
-        )
-        selected_duration = st.session_state["collection_duration_seconds"]
-        if float(selected_duration) != settings.collection_seconds:
-            settings = _with_settings(
-                settings,
-                collection_seconds=float(selected_duration),
-            )
-
-        st.markdown(
-            "<div class='side-section-label'>LIVE MONITORING REGIONS</div>",
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            "Region A + Region B use one MIE app and one AISStream subscription."
-        )
+        mission_placeholder = st.empty()
 
         existing = list(
             st.session_state.get("monitoring_bboxes", settings.monitoring_bboxes)
         ) or [settings.bbox]
-        bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
-        bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
 
-        if name_a == name_b and name_a != "Custom":
-            error_b = "Region A and Region B must be different."
-
-        region_error = error_a or error_b
-        bboxes = (bbox_a, bbox_b)
-        previous = tuple(existing)
-        region_changed = _normalize_bboxes(bboxes) != _normalize_bboxes(previous)
-
-        if region_error is None:
-            settings = _with_settings(settings, bboxes=bboxes, bbox=bbox_a)
-            st.session_state["monitoring_bboxes"] = bboxes
-            if region_changed:
-                st.warning(
-                    "Monitoring regions changed. The previous live session "
-                    "will be discarded when the new subscription is collected."
-                )
-        else:
-            st.error(region_error)
-            settings = _with_settings(
-                settings,
-                bboxes=bboxes,
-                bbox=bbox_a,
-                config_error=region_error,
+        with st.expander("MAP CONFIGURATION", expanded=False):
+            st.caption(
+                "Region A + Region B use one MIE app and one AISStream subscription."
             )
+            bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
+            bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
 
-        can_collect = settings.config_error is None
-        collect = st.button(
-            "Collect Real AIS · 2 Regions",
-            width="stretch",
-            type="primary",
-            disabled=not can_collect,
-        )
-        clear = st.button("Clear Session", width="stretch")
+            if name_a == name_b and name_a != "Custom":
+                error_b = "Region A and Region B must be different."
+
+            region_error = error_a or error_b
+            bboxes = (bbox_a, bbox_b)
+            previous = tuple(existing)
+            region_changed = _normalize_bboxes(bboxes) != _normalize_bboxes(previous)
+
+            if region_error is None:
+                settings = _with_settings(settings, bboxes=bboxes, bbox=bbox_a)
+                st.session_state["monitoring_bboxes"] = bboxes
+                if region_changed:
+                    st.warning(
+                        "Monitoring regions changed. The previous live session "
+                        "will be discarded when the new subscription is collected."
+                    )
+            else:
+                st.error(region_error)
+                settings = _with_settings(
+                    settings,
+                    bboxes=bboxes,
+                    bbox=bbox_a,
+                    config_error=region_error,
+                )
 
         with st.expander("DATA", expanded=False):
             historical_enabled = st.checkbox(
@@ -349,6 +314,7 @@ def _render_sidebar(
             "<span class='side-provider'>AISSTREAM</span></div></div>",
             unsafe_allow_html=True,
         )
+
         with st.expander("SYSTEM", expanded=False):
             st.markdown(
                 f"<div class='data-label'>Connection</div><div class='data-value'>{conn}</div>",
@@ -362,6 +328,42 @@ def _render_sidebar(
                 format_func=lambda value: f"Operator time · {value}",
                 label_visibility="collapsed",
             )
+
+        can_collect = settings.config_error is None
+        collect = False
+        clear = False
+        with mission_placeholder.container():
+            with st.expander("MISSION CONTEXT", expanded=False):
+                duration_options = list(COLLECTION_DURATION_OPTIONS)
+                duration_index = min(
+                    range(len(duration_options)),
+                    key=lambda i: abs(
+                        duration_options[i] - settings.collection_seconds
+                    ),
+                )
+                st.selectbox(
+                    "Collection duration",
+                    duration_options,
+                    index=duration_index,
+                    format_func=lambda seconds: f"Collection duration · {seconds} s",
+                    key="collection_duration_seconds",
+                    label_visibility="collapsed",
+                )
+                selected_duration = st.session_state["collection_duration_seconds"]
+                if float(selected_duration) != settings.collection_seconds:
+                    settings = _with_settings(
+                        settings,
+                        collection_seconds=float(selected_duration),
+                    )
+
+                can_collect = settings.config_error is None
+                collect = st.button(
+                    "Collect Real AIS · 2 Regions",
+                    width="stretch",
+                    type="primary",
+                    disabled=not can_collect,
+                )
+                clear = st.button("Clear Session", width="stretch")
 
     return settings, page, collect, clear, region_changed
 
