@@ -135,10 +135,13 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
             previous_engine.historical_writer.close()
         st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
-        st.session_state.pop("selected_mmsi", None)
-        st.session_state.pop("selected_mmsi_a", None)
-        st.session_state.pop("selected_mmsi_b", None)
-        st.session_state.pop("selected_mmsi_unified", None)
+        for key in (
+            "selected_mmsi",
+            "selected_mmsi_a",
+            "selected_mmsi_b",
+            "selected_mmsi_unified",
+        ):
+            st.session_state.pop(key, None)
 
     engine = st.session_state.engine
     engine.configure_historical_writer(
