@@ -5,7 +5,7 @@ import streamlit as st
 
 from src.config.regions import region_name_for_bbox
 from src.config.settings import AppSettings
-from src.geospatial.map_data import vessel_rows
+from src.geospatial.map_data import live_vessel_rows, vessel_rows
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui.pages_helpers import (
     MAP_STYLES,
@@ -63,10 +63,11 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
             0.5,
             key="overview_min_speed",
         )
-        only_fresh = st.checkbox(
-            "Fresh reports only",
+        include_stale = st.checkbox(
+            "Include stale session targets",
             value=False,
-            key="overview_only_fresh",
+            key="overview_include_stale",
+            help="Off keeps the operational map live-only. Session observations and temporal tracks are never deleted.",
         )
         map_style = st.selectbox(
             "Basemap",
@@ -87,7 +88,7 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
 
     return (
         min_speed,
-        only_fresh,
+        include_stale,
         map_style,
         show_vectors,
         show_trails,
@@ -136,7 +137,7 @@ def render_overview(
 
     (
         min_speed,
-        only_fresh,
+        include_stale,
         map_style,
         show_vectors,
         show_trails,
@@ -147,15 +148,13 @@ def render_overview(
         show_anomaly_hotspots,
     ) = _render_workspace_controls(engine, settings)
 
-    rows = vessel_rows(snapshot.vessels)
+    rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     if min_speed > 0:
         rows = [
             row
             for row in rows
             if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
         ]
-    if only_fresh:
-        rows = [row for row in rows if not bool(row.get("stale", False))]
 
     _render_vessel_map(
         rows,
