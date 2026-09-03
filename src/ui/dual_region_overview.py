@@ -125,6 +125,30 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
             render_vessel_quick_intelligence(selected, region_snapshot, show_gemini_hook=True, engine=engine)
 
 
+def _unified_rows(
+    snapshot: EngineSnapshot,
+    bboxes: tuple[RegionBBox, ...],
+    *,
+    include_stale: bool,
+    selected_mmsi: str | None,
+) -> list[dict]:
+    """Build unified targets while preserving an explicitly selected stale contact.
+
+    The operational default remains live-only. A Streamlit rerun caused by a
+    map click, however, can happen after the target crosses the stale threshold.
+    In that case the selected real AIS contact must remain renderable so the
+    selection does not turn the unified map into an empty state.
+    """
+    rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
+    rows = filter_rows_to_bboxes(rows, bboxes)
+    if selected_mmsi and not include_stale:
+        selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
+        if selected is not None and _in_bbox(selected.latitude, selected.longitude, bboxes[0]) or selected is not None and any(_in_bbox(selected.latitude, selected.longitude, bbox) for bbox in bboxes):
+            if not any(str(row.get("mmsi")) == str(selected_mmsi) for row in rows):
+                rows.append(vessel_rows([selected])[0])
+    return rows
+
+
 def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot, settings: AppSettings, controls, engine: MaritimeIntelligenceEngine) -> None:
     """Render all monitored regions in one enclosing tactical viewport."""
     unified_bbox = _unified_bbox(bboxes)
@@ -133,8 +157,9 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
         show_hexbin, show_anomaly_types, show_freshness, show_anomaly_hotspots,
     ) = controls
     unified_settings = replace(settings, bbox=unified_bbox, monitoring_bboxes=bboxes)
-    rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
-    rows = filter_rows_to_bboxes(rows, bboxes)
+    unified_selection_key = "selected_mmsi_unified"
+    unified_selection = st.session_state.get(unified_selection_key)
+    rows = _unified_rows(snapshot, bboxes, include_stale=include_stale, selected_mmsi=unified_selection)
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
 
@@ -142,9 +167,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     # renderer still reads the legacy global key, so that key is scoped only
     # for the render and restored afterwards; the durable selection lives in
     # selected_mmsi_unified across Streamlit reruns.
-    unified_selection_key = "selected_mmsi_unified"
     previous_global_selection = st.session_state.get("selected_mmsi")
-    unified_selection = st.session_state.get(unified_selection_key)
     st.session_state.selected_mmsi = unified_selection
     original_pydeck_chart = st.__dict__["pydeck_chart"]
     original_apply_selection = map_render._apply_map_selection
