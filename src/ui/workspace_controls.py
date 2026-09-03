@@ -149,7 +149,7 @@ def render_aux_workspace_controls(
     settings: AppSettings,
     columns,
 ) -> None:
-    """Render ANALYSIS and SYSTEM into supplied main-content columns."""
+    """Render ANALYSIS and SYSTEM into equally sized workspace columns."""
     with columns[0]:
         with st.popover("ANALYSIS", use_container_width=True):
             module = st.radio(
