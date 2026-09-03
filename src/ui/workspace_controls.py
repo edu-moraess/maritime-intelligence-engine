@@ -85,6 +85,36 @@ def _render_temporal_readiness(engine: MaritimeIntelligenceEngine) -> None:
     )
 
 
+def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
+    """Expose bounded WebSocket recovery telemetry without exposing secrets."""
+    status = engine.snapshot().status
+    attempts = status.reconnect_attempts
+    last_reconnect = status.last_reconnect_at
+    last_disconnect = status.last_disconnect_at
+    reconnect_label = (
+        last_reconnect.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+        if last_reconnect is not None
+        else "—"
+    )
+    disconnect_label = (
+        last_disconnect.astimezone(timezone.utc).strftime("%H:%M:%S UTC")
+        if last_disconnect is not None
+        else "—"
+    )
+    if attempts:
+        state = f"{attempts} retry" if attempts == 1 else f"{attempts} retries"
+    else:
+        state = "STABLE"
+    st.markdown(
+        "<div class='data-label'>WebSocket recovery</div>"
+        f"<div class='data-value'>{state}</div>"
+        f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>",
+        unsafe_allow_html=True,
+    )
+    if status.last_error:
+        st.caption(f"Last network error · {status.last_error}")
+
+
 def render_aux_workspace_controls(
     engine: MaritimeIntelligenceEngine,
     settings: AppSettings,
@@ -140,6 +170,7 @@ def render_aux_workspace_controls(
                 unsafe_allow_html=True,
             )
             _render_freshness_status(engine)
+            _render_reconnect_telemetry(engine)
             _render_temporal_readiness(engine)
             st.selectbox(
                 "Operator timezone",
