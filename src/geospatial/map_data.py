@@ -33,6 +33,11 @@ def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
     return rows
 
 
+def live_vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
+    """Return only operationally live vessel targets without touching session history."""
+    return vessel_rows([vessel for vessel in vessels if not vessel.stale])
+
+
 def heading_endpoint(latitude: float, longitude: float, heading: float, distance_degrees: float = 0.045) -> tuple[float, float]:
     """Return a short visual heading segment; it is not a navigation projection."""
     angle = radians(heading)
