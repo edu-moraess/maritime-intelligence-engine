@@ -9,7 +9,7 @@ from src.config.regions import format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, RegionBBox
 from src.geospatial.map_data import filter_rows_to_bboxes, live_vessel_rows, vessel_rows
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
-from src.ui.pages_overview import _render_map_controls, _render_workspace_controls
+from src.ui.pages_overview import _render_workspace_controls
 from src.ui.pages_helpers import _render_vessel_map, _selected_vessel
 from src.ui.presentation import render_ops_bar
 from src.ui.vessel_popup import render_vessel_quick_intelligence
@@ -29,14 +29,7 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
     findings = [f for f in snapshot.findings if _in_bbox(f.latitude, f.longitude, bbox)]
     speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
     summary = dict(snapshot.summary)
-    summary.update(
-        {
-            "active_vessels": len(vessels),
-            "messages": len(observations),
-            "anomalies": len(findings),
-            "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0,
-        }
-    )
+    summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
     return replace(snapshot, observations=observations, vessels=vessels, findings=findings, summary=summary)
 
 
@@ -78,9 +71,6 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     else:
         render_vessel_quick_intelligence(selected, snapshot, show_gemini_hook=True, engine=engine)
 
-    st.caption(
-        "Operational intelligence derived from live AIS observations. "
-        f"Regions: {region} · AIS REAL ONLY · Each region is geographically isolated in the tactical view."
-    )
+    st.caption("Operational intelligence derived from live AIS observations. " + f"Regions: {region} · AIS REAL ONLY · Each region is geographically isolated in the tactical view.")
     if controls[2] == "Nautical Chart":
         st.caption("Nautical chart: © Open Waters: Seamap · © OpenStreetMap contributors · CC BY 4.0. Not for navigational use; consult official nautical charts.")
