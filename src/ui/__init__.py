@@ -332,3 +332,4 @@ def _install_floating_sidebar_controller() -> None:
 
 
 _patch_openwaters_pydeck_provider()
+_install_floating_sidebar_controller()
