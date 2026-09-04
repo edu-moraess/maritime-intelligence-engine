@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from src.config.regions import REGION_OPTIONS, REGION_PRESETS, format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, COLLECTION_DURATION_OPTIONS, _validate_bbox
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
-from src.ui.pages import render_data_quality, render_intelligence, render_overview, render_system
+from src.ui.pages import render_intelligence, render_overview, render_system
 from src.ui.presentation import inject_css, notice, render_header
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
@@ -143,8 +143,6 @@ def main():
         render_intelligence(engine, snapshot, settings)
     else:
         render_system(engine, snapshot, settings)
-        with st.expander("Data quality", expanded=False):
-            render_data_quality(engine, snapshot, settings)
 
 
 if __name__ == "__main__":
