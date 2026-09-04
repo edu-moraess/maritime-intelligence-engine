@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from statistics import mean
+from statistics import mean, pstdev
 
 from src.ingestion.models import AISObservation
 from src.processing.quality import haversine_km
@@ -20,8 +20,19 @@ class HistoricalVesselProfile:
     distance_km: float | None
     average_sog_knots: float | None
     max_sog_knots: float | None
+    sog_std_knots: float | None
     track_points: int
     status: str
+
+    def speed_baseline_deviation(self, sog_knots: float | None) -> float | None:
+        """Return absolute deviation from historical mean SOG in knots.
+
+        A baseline is only considered meaningful with at least three historical
+        speed observations. This is a descriptive comparison, not a risk score.
+        """
+        if sog_knots is None or self.average_sog_knots is None or self.observation_count < 3:
+            return None
+        return round(abs(float(sog_knots) - self.average_sog_knots), 2)
 
 
 def build_vessel_profile(
@@ -45,6 +56,7 @@ def build_vessel_profile(
             distance_km=None,
             average_sog_knots=None,
             max_sog_knots=None,
+            sog_std_knots=None,
             track_points=0,
             status="N/A",
         )
@@ -84,6 +96,7 @@ def build_vessel_profile(
         distance_km=distance_km,
         average_sog_knots=mean(speeds) if speeds else None,
         max_sog_knots=max(speeds) if speeds else None,
+        sog_std_knots=pstdev(speeds) if len(speeds) >= 2 else None,
         track_points=len(selected),
         status="READY" if len(selected) >= 2 else "PARTIAL",
     )
