@@ -103,6 +103,21 @@ def render_anomalies(
     with right:
         _render_anomaly_map(snapshot, findings)
 
+    counts = anomaly_counts(findings)
+    if not counts.empty:
+        fig = go.Figure(
+            go.Bar(
+                x=counts["category"],
+                y=counts["events"],
+                marker_color="#e9b857",
+            )
+        )
+        fig.update_layout(
+            **_plot_layout("Behavioral findings by category", "Category", "Events"),
+            height=300,
+        )
+        st.plotly_chart(fig, width="stretch")
+
 
 def render_traffic(
     engine: MaritimeIntelligenceEngine,
@@ -162,21 +177,6 @@ def render_traffic(
                 height=330,
             )
             st.plotly_chart(fig, width="stretch")
-
-    counts = anomaly_counts(snapshot.findings)
-    if not counts.empty:
-        fig = go.Figure(
-            go.Bar(
-                x=counts["category"],
-                y=counts["events"],
-                marker_color="#e9b857",
-            )
-        )
-        fig.update_layout(
-            **_plot_layout("Behavioral findings by category", "Category", "Events"),
-            height=300,
-        )
-        st.plotly_chart(fig, width="stretch")
 
 
 def render_data_quality(
