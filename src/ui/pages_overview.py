@@ -5,7 +5,7 @@ import streamlit as st
 
 from src.config.regions import region_name_for_bbox
 from src.config.settings import AppSettings
-from src.geospatial.map_data import vessel_rows
+from src.geospatial.map_data import live_vessel_rows, vessel_rows
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui.pages_helpers import (
     MAP_STYLES,
@@ -15,6 +15,7 @@ from src.ui.pages_helpers import (
 )
 from src.ui.presentation import render_ops_bar
 from src.ui.vessel_popup import render_vessel_quick_intelligence
+from src.ui.workspace_controls import render_aux_workspace_controls
 
 _WORKSTATION_CSS = """
 <style>
@@ -39,6 +40,24 @@ _WORKSTATION_CSS = """
     display: none !important;
 }
 
+/* Keep the three workspace controls as one equal-width horizontal rail. */
+.st-key-workspace-controls > div {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.st-key-workspace-controls [data-testid="column"] {
+    min-width: 0;
+    width: 100% !important;
+    align-self: stretch;
+}
+
+.st-key-workspace-controls [data-testid="stPopover"] > button {
+    width: 100%;
+}
+
 @media (max-width: 900px) {
     .st-key-tactical-vessel-panel {
         position: static;
@@ -46,14 +65,18 @@ _WORKSTATION_CSS = """
         max-height: none;
         margin-top: 0.75rem;
     }
+
+    .st-key-workspace-controls > div {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 """
 
 
-def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool]:
+def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool, bool, bool, bool, bool]:
     """Render compact map controls without consuming map width."""
-    with st.popover("MAP CONTROLS", use_container_width=False):
+    with container.popover("MAP CONTROLS", use_container_width=False):
         min_speed = st.slider(
             "Minimum SOG (kn)",
             0.0,
@@ -62,10 +85,11 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
             0.5,
             key="overview_min_speed",
         )
-        only_fresh = st.checkbox(
-            "Fresh reports only",
+        include_stale = st.checkbox(
+            "Include stale session targets",
             value=False,
-            key="overview_only_fresh",
+            key="overview_include_stale",
+            help="Off keeps the operational map live-only. Session observations and temporal tracks are never deleted.",
         )
         map_style = st.selectbox(
             "Basemap",
@@ -86,7 +110,7 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
 
     return (
         min_speed,
-        only_fresh,
+        include_stale,
         map_style,
         show_vectors,
         show_trails,
@@ -96,6 +120,15 @@ def _render_map_controls() -> tuple[float, bool, str, bool, bool, bool, bool, bo
         show_freshness,
         show_anomaly_hotspots,
     )
+
+
+def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
+    """Render Map Controls, Analysis, and System in one main-workspace row."""
+    with st.container(key="workspace-controls"):
+        columns = st.columns(3)
+        map_values = _render_map_controls(columns[0])
+        render_aux_workspace_controls(engine, settings, columns[1:])
+    return map_values
 
 
 def render_overview(
@@ -127,7 +160,7 @@ def render_overview(
 
     (
         min_speed,
-        only_fresh,
+        include_stale,
         map_style,
         show_vectors,
         show_trails,
@@ -136,17 +169,15 @@ def render_overview(
         show_anomaly_types,
         show_freshness,
         show_anomaly_hotspots,
-    ) = _render_map_controls()
+    ) = _render_workspace_controls(engine, settings)
 
-    rows = vessel_rows(snapshot.vessels)
+    rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     if min_speed > 0:
         rows = [
             row
             for row in rows
             if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
         ]
-    if only_fresh:
-        rows = [row for row in rows if not bool(row.get("stale", False))]
 
     _render_vessel_map(
         rows,
@@ -182,7 +213,7 @@ def render_overview(
     st.caption(
         "Operational intelligence derived from live AIS observations. "
         f"Region: {region} · AIS REAL ONLY · "
-        "Map controls float above the map without reducing its width."
+        "Map controls and workspace modules sit above the tactical map."
     )
     if map_style == "Nautical Chart":
         st.caption(

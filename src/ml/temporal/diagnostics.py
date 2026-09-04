@@ -11,7 +11,7 @@ from statistics import mean, median
 from typing import Sequence
 
 from src.ingestion.models import AISObservation
-from src.ml.temporal.types import MAX_TIME_DELTA_SECONDS
+from src.ml.temporal.types import MAX_TRACK_GAP_SECONDS
 
 DEFAULT_POINT_THRESHOLDS: tuple[int, ...] = (4, 8, 16, 32)
 DEFAULT_WINDOW_LENGTHS: tuple[int, ...] = (8, 16, 32)
@@ -54,12 +54,26 @@ def _clean_track(observations: Sequence[AISObservation]) -> list[AISObservation]
     )
 
 
+def _contiguous_segment_lengths(track: Sequence[AISObservation], gap_threshold_seconds: float) -> list[int]:
+    if not track:
+        return []
+    threshold = max(0.0, float(gap_threshold_seconds))
+    lengths = [1]
+    for previous, current in zip(track, track[1:]):
+        gap = (current.received_at - previous.received_at).total_seconds()
+        if gap > threshold:
+            lengths.append(1)
+        else:
+            lengths[-1] += 1
+    return lengths
+
+
 def analyze_temporal_tracks(
     tracks: dict[str, list[AISObservation]] | Sequence[tuple[str, list[AISObservation]]],
     *,
     point_thresholds: Sequence[int] = DEFAULT_POINT_THRESHOLDS,
     window_lengths: Sequence[int] = DEFAULT_WINDOW_LENGTHS,
-    gap_threshold_seconds: float = MAX_TIME_DELTA_SECONDS,
+    gap_threshold_seconds: float = MAX_TRACK_GAP_SECONDS,
 ) -> TemporalTrackDiagnostics:
     """Summarize temporal coverage without modifying the supplied tracks."""
     items = list(tracks.items()) if isinstance(tracks, dict) else list(tracks)
@@ -72,6 +86,7 @@ def analyze_temporal_tracks(
     intervals: list[float] = []
     gap_count = 0
     max_gap: float | None = None
+    segment_lengths_by_track: list[list[int]] = []
 
     for _mmsi, observations in items:
         track = _clean_track(observations)
@@ -79,8 +94,9 @@ def analyze_temporal_tracks(
             continue
         n = len(track)
         point_counts.append(n)
-        duration = max(0.0, float((track[-1].received_at - track[0].received_at).total_seconds()))
-        durations.append(duration)
+        durations.append(max(0.0, float((track[-1].received_at - track[0].received_at).total_seconds())))
+        segment_lengths = _contiguous_segment_lengths(track, gap_threshold)
+        segment_lengths_by_track.append(segment_lengths)
         for previous, current in zip(track, track[1:]):
             delta = (current.received_at - previous.received_at).total_seconds()
             if delta < 0:
@@ -92,8 +108,14 @@ def analyze_temporal_tracks(
                 max_gap = delta if max_gap is None else max(max_gap, delta)
 
     by_threshold = {threshold: sum(n >= threshold for n in point_counts) for threshold in thresholds}
-    sliding = {length: sum(max(0, n - length + 1) for n in point_counts) for length in lengths}
-    non_overlapping = {length: sum(n // length for n in point_counts) for length in lengths}
+    sliding = {
+        length: sum(max(0, segment_length - length + 1) for segments in segment_lengths_by_track for segment_length in segments)
+        for length in lengths
+    }
+    non_overlapping = {
+        length: sum(segment_length // length for segments in segment_lengths_by_track for segment_length in segments)
+        for length in lengths
+    }
 
     return TemporalTrackDiagnostics(
         total_tracks=len(items),
@@ -122,15 +144,15 @@ def select_adaptive_sequence_length(
     minimum_tracks: int,
     candidate_lengths: Sequence[int] = ADAPTIVE_SEQUENCE_LENGTHS,
 ) -> int | None:
-    """Choose the longest scale supported by enough real AIS tracks.
-
-    A track qualifies for a scale only when it contains at least that many
-    valid observations. This prevents resampling a short track into a longer
-    sequence and falsely implying temporal evidence that was never observed.
-    """
-    diagnostics = analyze_temporal_tracks(tracks, point_thresholds=candidate_lengths, window_lengths=())
+    """Choose the longest scale supported by enough contiguous real AIS tracks."""
+    items = list(tracks.items()) if isinstance(tracks, dict) else list(tracks)
     required = max(1, int(minimum_tracks))
     for length in sorted({int(value) for value in candidate_lengths if int(value) > 0}, reverse=True):
-        if diagnostics.tracks_by_min_points.get(length, 0) >= required:
+        eligible_vessels = 0
+        for _mmsi, observations in items:
+            track = _clean_track(observations)
+            if max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length:
+                eligible_vessels += 1
+        if eligible_vessels >= required:
             return length
     return None

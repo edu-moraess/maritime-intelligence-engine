@@ -1,4 +1,4 @@
-"""Sidebar surface contract tests (presentation only; no AIS/runtime)."""
+"""Sidebar and workspace surface contract tests (presentation only)."""
 
 from __future__ import annotations
 
@@ -9,37 +9,59 @@ from src.config.settings import COLLECTION_DURATION_OPTIONS
 
 
 APP_PATH = Path("app.py")
+WORKSPACE_PATH = Path("src/ui/workspace_controls.py")
+OVERVIEW_PATH = Path("src/ui/pages_overview.py")
 
 
-def _app_source() -> str:
-    return APP_PATH.read_text(encoding="utf-8")
+def _source(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
 def _render_sidebar_node() -> ast.FunctionDef:
-    tree = ast.parse(_app_source())
+    tree = ast.parse(_source(APP_PATH))
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "_render_sidebar":
             return node
     raise AssertionError("_render_sidebar not found in app.py")
 
 
-def test_sidebar_session_state_keys_preserved():
-    source = _app_source()
-    required_keys = [
-        "collection_duration_seconds",
-        "region_preset",
-        "bbox_min_lat",
-        "bbox_min_lon",
-        "bbox_max_lat",
-        "bbox_max_lon",
-        "active_bbox",
-        "historical_persistence_enabled",
-        "operator_timezone",
-        "workspace_module",
-        "workspace_subarea_",
-    ]
-    missing = [key for key in required_keys if key not in source]
-    assert missing == [], f"missing sidebar keys: {missing}"
+def test_sidebar_keeps_mission_and_map_controls():
+    source = _source(APP_PATH)
+    assert 'st.expander("MAP CONFIGURATION", expanded=False)' in source
+    assert 'st.expander("MISSION CONTEXT", expanded=False)' in source
+    assert '"Collect Real AIS · 2 Regions"' in source
+    assert '"Clear Session"' in source
+
+
+def test_sidebar_no_longer_renders_workspace_modules():
+    fn_source = ast.get_source_segment(_source(APP_PATH), _render_sidebar_node()) or ""
+    assert 'st.expander("DATA"' not in fn_source
+    assert 'st.expander("ANALYSIS"' not in fn_source
+    assert 'st.expander("SYSTEM"' not in fn_source
+
+
+def test_workspace_modules_live_in_main_content():
+    source = _source(WORKSPACE_PATH)
+    assert 'st.popover("DATA"' in source
+    assert 'st.popover("ANALYSIS"' in source
+    assert 'st.popover("SYSTEM"' in source
+    assert "render_aux_workspace_controls" in source
+
+
+def test_historical_persistence_lives_under_system_controls():
+    source = _source(WORKSPACE_PATH)
+    data_block = source[source.index('with st.popover("DATA"'):source.index('with st.popover("ANALYSIS"')]
+    system_block = source[source.index('with st.popover("SYSTEM"'):]
+    assert '"Historical Persistence"' not in data_block
+    assert '"Historical Persistence"' in system_block
+    assert "_render_historical_persistence(engine, settings)" in system_block
+
+
+def test_overview_places_map_controls_before_workspace_modules():
+    source = _source(OVERVIEW_PATH)
+    assert "columns = st.columns(4)" in source
+    assert "map_values = _render_map_controls(columns[0])" in source
+    assert "render_aux_workspace_controls(engine, settings, columns[1:])" in source
 
 
 def test_collection_duration_options_include_temporal_windows():
@@ -47,7 +69,8 @@ def test_collection_duration_options_include_temporal_windows():
 
 
 def test_navigation_structure_stable():
-    tree = ast.parse(_app_source())
+    source = _source(WORKSPACE_PATH)
+    tree = ast.parse(source)
     nav = None
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -59,7 +82,7 @@ def test_navigation_structure_stable():
         "Overview",
         "Vessels",
         "Movement & Behavior",
-        "Anomalies & Traffic",
+        "Anomaly & Traffic",
         "Data & System",
     ]
     assert nav["Overview"] == ("Overview",)
@@ -69,7 +92,7 @@ def test_navigation_structure_stable():
         "Behavior",
         "Similarity",
     )
-    assert nav["Anomalies & Traffic"] == ("Anomalies", "Traffic")
+    assert nav["Anomaly & Traffic"] == ("Anomalies", "Traffic")
     assert nav["Data & System"] == ("Data Quality", "System")
 
 
@@ -82,44 +105,32 @@ def test_render_sidebar_return_contract():
     assert len(last.value.elts) == 5
 
 
-def test_historical_disabled_when_no_database_url():
-    source = _app_source()
-    assert 'key="historical_persistence_enabled"' in source
-    assert "disabled=settings.database_url is None" in source
-
-
-def test_collect_button_primary_and_config_error_gate():
-    source = _app_source()
-    assert '"Collect Real AIS"' in source
-    assert 'type="primary"' in source
-    assert "disabled=settings.config_error is not None" in source
-    assert '"Clear Session"' in source
-
-
-def test_sidebar_sections_present():
-    source = _app_source()
-    for label in (
-        "MISSION CONTEXT",
-        "DATA",
-        "ANALYSIS",
-        "SYSTEM",
-        "MARITIME INTELLIGENCE",
-        "AISSTREAM",
-    ):
-        assert label in source, label
-
-
 def test_no_map_controls_in_sidebar():
-    """Sidebar UX v1 must not host map layer toggles."""
-    fn = _render_sidebar_node()
-    source = ast.get_source_segment(_app_source(), fn) or ""
+    """Sidebar must not host the tactical map layer toggles."""
+    fn_source = ast.get_source_segment(_source(APP_PATH), _render_sidebar_node()) or ""
     for forbidden in (
-        "map_show_heading",
-        "map_show_trails",
-        "map_show_density",
-        "map_show_hexbin",
-        "map_show_speed_field",
-        "map_show_anomaly_hotspots",
         "overview_min_speed",
+        "overview_only_fresh",
+        "overview_map_style",
+        "overview_show_vectors",
+        "overview_show_trails",
+        "overview_show_behavior",
+        "overview_show_hexbin",
+        "overview_show_anomaly_types",
+        "overview_show_freshness",
+        "overview_show_anomaly_hotspots",
     ):
-        assert forbidden not in source, forbidden
+        assert forbidden not in fn_source, forbidden
+
+
+def test_clear_session_resets_all_contact_selection_state():
+    """Clearing a live session must remove every region selection namespace."""
+    source = _source(APP_PATH)
+    clear_block = source[source.index('if clear:'):source.index('if collect:')]
+    for key in (
+        '"selected_mmsi"',
+        '"selected_mmsi_a"',
+        '"selected_mmsi_b"',
+        '"selected_mmsi_unified"',
+    ):
+        assert key in clear_block

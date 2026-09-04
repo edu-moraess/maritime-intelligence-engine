@@ -93,6 +93,49 @@ def test_store_counts_exact_duplicates():
     assert store.duplicate_count == 1
 
 
+def test_store_preserves_multiple_mmsi_histories_beyond_contact_cap():
+    store = ObservationStore(max_messages=20, max_vessels=2)
+    now = datetime.now(timezone.utc)
+    observations = [
+        AISObservation(str(368207620 + vessel), 25.0, -80.0, now + timedelta(seconds=vessel), ais_timestamp_second=vessel, raw={"id": vessel})
+        for vessel in range(1, 4)
+    ]
+    store.extend(observations)
+
+    assert store.vessel_count == 3
+    assert set(store.tracks()) == {"368207621", "368207622", "368207623"}
+
+
+def test_provider_contact_cap_does_not_evict_track_history():
+    provider = AISStreamProvider(
+        api_key="test-key",
+        bbox=[[[25.0, -81.0], [26.0, -80.0]]],
+        max_messages=20,
+        max_vessels=2,
+    )
+    now = datetime.now(timezone.utc)
+    for vessel in range(1, 4):
+        mmsi = str(368207620 + vessel)
+        for point in range(2):
+            provider._record(
+                AISObservation(
+                    mmsi,
+                    25.0 + point * 0.01,
+                    -80.0,
+                    now + timedelta(seconds=vessel * 10 + point),
+                    ais_timestamp_second=point,
+                    raw={"mmsi": mmsi, "point": point},
+                )
+            )
+
+    tracks = provider.fetch_tracks()
+    vessels = provider.fetch_vessels()
+
+    assert set(tracks) == {"368207621", "368207622", "368207623"}
+    assert all(len(track) == 2 for track in tracks.values())
+    assert len(vessels) == 2
+
+
 def test_engine_without_key_starts_in_explicit_disconnected_state():
     engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="", bbox=DEFAULT_BBOX))
     status = engine.snapshot().status

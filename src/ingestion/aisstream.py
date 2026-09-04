@@ -56,6 +56,10 @@ class AISStreamProvider(AISProvider):
     PositionReport.Timestamp is retained as the AIS UTC second within the
     minute. It is never combined with server date/time to fabricate an
     absolute observation datetime; ``received_at`` is the MIE receive time.
+
+    ``max_vessels`` limits the presentation list only. It never evicts an MMSI
+    from ``_tracks`` because temporal analytics need the complete retained
+    session history.
     """
 
     def __init__(
@@ -70,7 +74,7 @@ class AISStreamProvider(AISProvider):
         self.api_key = api_key
         self.bbox = bbox
         self.max_messages = max_messages
-        self.max_vessels = max_vessels
+        self.max_vessels = max(1, max_vessels)
         self.stale_after_seconds = stale_after_seconds
         self.config_error = config_error
         self._observations: list[AISObservation] = []
@@ -79,11 +83,16 @@ class AISStreamProvider(AISProvider):
         self._last_received_at: datetime | None = None
         self._last_ais_timestamp_second: int | None = None
         self._messages_received = 0
+        self._window_messages_received = 0
         self._frames_received = 0
         self._position_reports_received = 0
         self._position_reports_accepted = 0
         self._parse_errors = 0
         self._non_position_frames = 0
+        self._reconnect_attempts = 0
+        self._last_disconnect_at: datetime | None = None
+        self._last_reconnect_at: datetime | None = None
+        self._last_error: str | None = None
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -106,6 +115,10 @@ class AISStreamProvider(AISProvider):
             position_reports_accepted=self._position_reports_accepted,
             parse_errors=self._parse_errors,
             non_position_frames=self._non_position_frames,
+            reconnect_attempts=self._reconnect_attempts,
+            last_disconnect_at=self._last_disconnect_at,
+            last_reconnect_at=self._last_reconnect_at,
+            last_error=self._last_error,
         )
 
     def reset_session(self) -> None:
@@ -116,11 +129,16 @@ class AISStreamProvider(AISProvider):
         self._last_received_at = None
         self._last_ais_timestamp_second = None
         self._messages_received = 0
+        self._window_messages_received = 0
         self._frames_received = 0
         self._position_reports_received = 0
         self._position_reports_accepted = 0
         self._parse_errors = 0
         self._non_position_frames = 0
+        self._reconnect_attempts = 0
+        self._last_disconnect_at = None
+        self._last_reconnect_at = None
+        self._last_error = None
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -143,8 +161,16 @@ class AISStreamProvider(AISProvider):
             self._set_failure("AISSTREAM_API_KEY is not configured.")
             return False, self._reason
         try:
-            corners = ((float(self.bbox[0][0][0]), float(self.bbox[0][0][1])), (float(self.bbox[0][1][0]), float(self.bbox[0][1][1])))
-            _validate_bbox(corners)
+            if not self.bbox:
+                raise ValueError("At least one AIS bounding box is required.")
+            for box in self.bbox:
+                if not isinstance(box, (list, tuple)) or len(box) != 2:
+                    raise ValueError("Each AIS bounding box must contain two corners.")
+                corners = (
+                    (float(box[0][0]), float(box[0][1])),
+                    (float(box[1][0]), float(box[1][1])),
+                )
+                _validate_bbox(corners)
         except (IndexError, TypeError, ValueError) as exc:
             self._set_failure(f"Invalid AIS bounding box: {exc}")
             return False, self._reason
@@ -160,10 +186,11 @@ class AISStreamProvider(AISProvider):
             return
         stop_event = stop_event or threading.Event()
         deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
-        messages_at_start = self._messages_received
+        self._window_messages_received = 0
         backoff = 1.0
         opened = False
-        while not stop_event.is_set() and self._messages_received < self.max_messages:
+        had_disconnect = False
+        while not stop_event.is_set() and self._window_messages_received < self.max_messages:
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
@@ -173,15 +200,25 @@ class AISStreamProvider(AISProvider):
                     timeout=8,
                     enable_multithread=True,
                     compression="deflate",
+                    ping_interval=20,
+                    ping_timeout=10,
                 )
                 opened = True
-                self._connected_at = datetime.now(timezone.utc)
-                self._state = "CONNECTING"
-                self._reason = "Subscription sent; waiting for AIS messages."
+                now = datetime.now(timezone.utc)
+                self._connected_at = now
+                if had_disconnect:
+                    self._last_reconnect_at = now
+                    self._state = "LIVE AIS"
+                    self._reason = "AISStream WebSocket reconnected; receiving real AIS data."
+                else:
+                    self._state = "CONNECTING"
+                    self._reason = "Subscription sent; waiting for AIS messages."
                 self._websocket_status = "OPEN"
+                self._last_error = None if not had_disconnect else self._last_error
+                had_disconnect = False
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
-                while not stop_event.is_set() and self._messages_received < self.max_messages:
+                while not stop_event.is_set() and self._window_messages_received < self.max_messages:
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     try:
@@ -200,12 +237,17 @@ class AISStreamProvider(AISProvider):
                     self._record(observation)
                     yield observation
             except Exception as exc:
+                now = datetime.now(timezone.utc)
                 self._websocket_status = "CLOSED"
                 self._state = "DISCONNECTED"
                 self._reason = _safe_reason(exc, self.api_key)
+                self._last_error = self._reason
+                self._last_disconnect_at = now
+                had_disconnect = True
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
                 if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     break
+                self._reconnect_attempts += 1
                 sleep_for = min(backoff + random.uniform(0, 0.4), 8.0)
                 if deadline is not None:
                     sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
@@ -221,7 +263,7 @@ class AISStreamProvider(AISProvider):
                 self._websocket_status = "CLOSED"
             if deadline is not None and time.monotonic() >= deadline:
                 break
-        received_this_window = self._messages_received > messages_at_start
+        received_this_window = self._window_messages_received > 0
         self._websocket_status = "CLOSED"
         if not received_this_window and opened:
             self._state = "REAL AIS DATA UNAVAILABLE"
@@ -290,6 +332,7 @@ class AISStreamProvider(AISProvider):
 
     def _record(self, observation: AISObservation) -> None:
         self._messages_received += 1
+        self._window_messages_received += 1
         self._position_reports_accepted += 1
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
@@ -299,9 +342,6 @@ class AISStreamProvider(AISProvider):
         self._tracks[observation.mmsi].append(observation)
         if len(self._observations) > self.max_messages:
             self._observations = self._observations[-self.max_messages :]
-        if len(self._tracks) > self.max_vessels:
-            oldest_mmsi = min(self._tracks, key=lambda key: self._tracks[key][-1].received_at)
-            del self._tracks[oldest_mmsi]
 
     def fetch_vessels(self) -> list[VesselSnapshot]:
         now = datetime.now(timezone.utc)
@@ -326,7 +366,7 @@ class AISStreamProvider(AISProvider):
                     stale=(now - latest.received_at).total_seconds() > self.stale_after_seconds,
                 )
             )
-        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)
+        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)[: self.max_vessels]
 
     def fetch_tracks(self) -> dict[str, list[AISObservation]]:
         return {mmsi: list(track) for mmsi, track in self._tracks.items()}
@@ -335,6 +375,7 @@ class AISStreamProvider(AISProvider):
         self._state = "DISCONNECTED"
         self._reason = reason
         self._websocket_status = "CLOSED"
+        self._last_error = reason
 
 
 def _valid_mmsi(value: str) -> bool:

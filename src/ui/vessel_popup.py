@@ -76,12 +76,12 @@ def build_profile_for_ui(
     mmsi = str(vessel.mmsi)
     observations = [
         o
-        for o in (getattr(snapshot, "observations", None) or [])
+        for o in (getattr(snapshot, "current_session_observations", None) or [])
         if str(getattr(o, "mmsi", "")) == mmsi
     ]
     findings = [
         f
-        for f in (getattr(snapshot, "findings", None) or [])
+        for f in (getattr(snapshot, "current_session_findings", None) or [])
         if str(getattr(f, "mmsi", "")) == mmsi
     ]
     historical = _optional_historical_profile(mmsi, engine)

@@ -14,6 +14,8 @@ DEFAULT_COLLECTION_SECONDS = 60.0
 MIN_COLLECTION_SECONDS = 30.0
 MAX_COLLECTION_SECONDS = 900.0
 COLLECTION_DURATION_OPTIONS = (30, 60, 120, 180, 300, 600, 900)
+DEFAULT_MAX_MESSAGES = 10000
+MAX_ALLOWED_MESSAGES = 20000
 
 
 def _secret_or_env(name: str, secrets: Any | None = None) -> str:
@@ -36,20 +38,29 @@ def _bool_setting(name: str, default: bool = False, secrets: Any | None = None) 
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+RegionBBox = tuple[tuple[float, float], tuple[float, float]]
+
+
 @dataclass(frozen=True)
 class AppSettings:
     """Application settings; no setting creates or substitutes AIS observations."""
 
     aisstream_api_key: str
-    bbox: tuple[tuple[float, float], tuple[float, float]] = DEFAULT_BBOX
+    bbox: RegionBBox = DEFAULT_BBOX
+    monitoring_bboxes: tuple[RegionBBox, ...] = (DEFAULT_BBOX,)
     collection_seconds: float = DEFAULT_COLLECTION_SECONDS
-    max_messages: int = 3000
+    max_messages: int = DEFAULT_MAX_MESSAGES
     max_vessels: int = 1000
     stale_after_seconds: int = 180
     provider: str = "aisstream"
     config_error: str | None = None
     database_url: str | None = None
     historical_persistence_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        """Keep legacy single-bbox construction compatible with dual monitoring."""
+        if self.monitoring_bboxes == (DEFAULT_BBOX,) and self.bbox != DEFAULT_BBOX:
+            object.__setattr__(self, "monitoring_bboxes", (self.bbox,))
 
     @classmethod
     def from_runtime(cls, secrets: Any | None = None) -> "AppSettings":
@@ -93,11 +104,12 @@ class AppSettings:
         return cls(
             aisstream_api_key=_secret_or_env("AISSTREAM_API_KEY", secrets).strip(),
             bbox=bbox,
+            monitoring_bboxes=(bbox,),
             collection_seconds=min(
                 max(float_setting("AIS_COLLECTION_SECONDS", DEFAULT_COLLECTION_SECONDS), MIN_COLLECTION_SECONDS),
                 MAX_COLLECTION_SECONDS,
             ),
-            max_messages=min(int_setting("AIS_MAX_MESSAGES", 3000), 10000),
+            max_messages=min(int_setting("AIS_MAX_MESSAGES", DEFAULT_MAX_MESSAGES), MAX_ALLOWED_MESSAGES),
             max_vessels=min(int_setting("AIS_MAX_VESSELS", 1000), 5000),
             stale_after_seconds=int_setting("AIS_STALE_AFTER_SECONDS", 180),
             provider=provider,
@@ -108,7 +120,11 @@ class AppSettings:
 
     @property
     def bbox_payload(self) -> list[list[list[float]]]:
-        return [[list(self.bbox[0]), list(self.bbox[1])]]
+        """Serialize every active monitoring region for one AISStream subscription."""
+        return [
+            [list(region[0]), list(region[1])]
+            for region in self.monitoring_bboxes
+        ]
 
     def validate_for_connection(self) -> tuple[bool, str]:
         if self.config_error:
@@ -117,14 +133,17 @@ class AppSettings:
             return False, f"Unsupported provider '{self.provider}'. Only AISStream is enabled."
         if not self.aisstream_api_key:
             return False, "AISSTREAM_API_KEY is not configured."
+        if not self.monitoring_bboxes:
+            return False, "At least one monitoring region is required."
         try:
-            _validate_bbox(self.bbox)
+            for bbox in self.monitoring_bboxes:
+                _validate_bbox(bbox)
         except ValueError as exc:
             return False, str(exc)
         return True, "ready"
 
 
-def _validate_bbox(bbox: tuple[tuple[float, float], tuple[float, float]]) -> None:
+def _validate_bbox(bbox: RegionBBox) -> None:
     try:
         (min_lat, min_lon), (max_lat, max_lon) = bbox
         values = (float(min_lat), float(min_lon), float(max_lat), float(max_lon))

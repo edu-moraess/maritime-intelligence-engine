@@ -117,6 +117,10 @@ class IngestionStatus:
     position_reports_accepted: int = 0
     parse_errors: int = 0
     non_position_frames: int = 0
+    reconnect_attempts: int = 0
+    last_disconnect_at: datetime | None = None
+    last_reconnect_at: datetime | None = None
+    last_error: str | None = None
 
 
 @dataclass(frozen=True)
