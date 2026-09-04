@@ -31,6 +31,7 @@ def test_profile_empty_history_is_na():
     assert profile.session_count == 0
     assert profile.distance_km is None
     assert profile.sog_std_knots is None
+    assert profile.speed_observation_count == 0
 
 
 def test_profile_single_point_is_partial():
@@ -44,6 +45,7 @@ def test_profile_single_point_is_partial():
     assert profile.session_count == 1
     assert profile.distance_km is None
     assert profile.sog_std_knots is None
+    assert profile.speed_observation_count == 1
     assert profile.speed_baseline_deviation(12.0) is None
 
 
@@ -66,7 +68,22 @@ def test_profile_aggregates_multi_session_history():
     assert profile.average_sog_knots == 9.0
     assert profile.max_sog_knots == 10.0
     assert profile.sog_std_knots == 1.0
-    assert profile.speed_baseline_deviation(12.0) == 3.0
+    assert profile.speed_observation_count == 2
+    assert profile.speed_baseline_deviation(12.0) is None
+
+
+def test_profile_baseline_requires_three_speed_observations():
+    observations = [
+        _obs("219234000", 1, sog=8.0),
+        _obs("219234000", 2, sog=None),
+        _obs("219234000", 3, sog=10.0),
+        _obs("219234000", 4, sog=12.0),
+    ]
+
+    profile = build_vessel_profile("219234000", observations)
+
+    assert profile.speed_observation_count == 3
+    assert profile.speed_baseline_deviation(15.0) == 5.0
 
 
 def test_profile_explicit_session_count_is_deterministic():
