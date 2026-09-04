@@ -21,6 +21,7 @@ class HistoricalVesselProfile:
     average_sog_knots: float | None
     max_sog_knots: float | None
     sog_std_knots: float | None
+    speed_observation_count: int
     track_points: int
     status: str
 
@@ -30,7 +31,11 @@ class HistoricalVesselProfile:
         A baseline is only considered meaningful with at least three historical
         speed observations. This is a descriptive comparison, not a risk score.
         """
-        if sog_knots is None or self.average_sog_knots is None or self.observation_count < 3:
+        if (
+            sog_knots is None
+            or self.average_sog_knots is None
+            or self.speed_observation_count < 3
+        ):
             return None
         return round(abs(float(sog_knots) - self.average_sog_knots), 2)
 
@@ -57,6 +62,7 @@ def build_vessel_profile(
             average_sog_knots=None,
             max_sog_knots=None,
             sog_std_knots=None,
+            speed_observation_count=0,
             track_points=0,
             status="N/A",
         )
@@ -97,6 +103,7 @@ def build_vessel_profile(
         average_sog_knots=mean(speeds) if speeds else None,
         max_sog_knots=max(speeds) if speeds else None,
         sog_std_knots=pstdev(speeds) if len(speeds) >= 2 else None,
+        speed_observation_count=len(speeds),
         track_points=len(selected),
         status="READY" if len(selected) >= 2 else "PARTIAL",
     )
