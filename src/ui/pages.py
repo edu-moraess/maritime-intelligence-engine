@@ -5,6 +5,8 @@ Individual renderers remain isolated so this refactor does not change the
 underlying AIS, behavior, anomaly, historical, or temporal implementations.
 """
 
+import streamlit as st
+
 from src.ui.pages_helpers import _vessel_label  # noqa: F401
 
 from src.ui.pages_a import (
@@ -26,7 +28,7 @@ from src.ui.temporal_diagnostics import render_temporal_diagnostics
 
 def render_intelligence(engine, snapshot, settings):
     """Render all vessel-investigation capabilities in one workspace."""
-    subview = __import__("streamlit").radio(
+    subview = st.radio(
         "Investigation",
         ("Vessel", "Behavior", "Trajectory", "Anomalies"),
         horizontal=True,
