@@ -48,7 +48,7 @@ def _render_readiness(
     temporal = str(getattr(readiness, "temporal_status", "WAITING") or "WAITING")
     tracking = readiness.trajectory_status
     behavior = readiness.multitrack_status
-    anomaly = readiness.multitrack_status
+    anomaly = readiness.anomaly_status
 
     render_intelligence_status(
         [
