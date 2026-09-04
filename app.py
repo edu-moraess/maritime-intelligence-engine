@@ -8,11 +8,13 @@ from src.config.settings import AppSettings, COLLECTION_DURATION_OPTIONS, _valid
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
 from src.ui.pages import render_intelligence, render_overview, render_system
 from src.ui.presentation import inject_css, notice, render_header
+from src.ui.light_theme import inject_light_theme
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
 load_dotenv()
 st.set_page_config(page_title="Maritime Intelligence Engine", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
 inject_css()
+inject_light_theme()
 
 WORKSPACES = ("Overview", "Intelligence", "System")
 
