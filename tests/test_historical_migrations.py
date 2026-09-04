@@ -61,6 +61,7 @@ def test_all_historical_migrations_split_into_expected_statements() -> None:
         "001_initial_historical.sql": 10,
         "002_fix_historical_constraints.sql": 8,
         "003_fix_observation_conflict_target.sql": 1,
+        "004_harden_historical_schema.sql": 8,
     }
 
     for filename, expected_count in expected_statement_counts.items():
@@ -74,6 +75,7 @@ def test_historical_migrations_keep_required_schema_semantics() -> None:
     migration_001 = (MIGRATIONS_DIR / "001_initial_historical.sql").read_text(encoding="utf-8")
     migration_002 = (MIGRATIONS_DIR / "002_fix_historical_constraints.sql").read_text(encoding="utf-8")
     migration_003 = (MIGRATIONS_DIR / "003_fix_observation_conflict_target.sql").read_text(encoding="utf-8")
+    migration_004 = (MIGRATIONS_DIR / "004_harden_historical_schema.sql").read_text(encoding="utf-8")
 
     assert "payload_hash TEXT NOT NULL UNIQUE" in migration_001
     assert "ais_timestamp_second SMALLINT NULL CHECK (ais_timestamp_second BETWEEN 0 AND 63)" in migration_001
@@ -81,6 +83,8 @@ def test_historical_migrations_keep_required_schema_semantics() -> None:
     assert "CHECK (ais_timestamp_second BETWEEN 0 AND 59)" in migration_002
     assert "UNIQUE (session_id, payload_hash)" in migration_002
     assert "ON ais_observations (session_id, payload_hash)" in migration_003
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_ais_observations_session_payload_hash" in migration_004
+    assert "CREATE EXTENSION IF NOT EXISTS postgis" in migration_004
 
     # The known problematic comment must not contain a statement delimiter.
     assert "ordinary seconds; they are" not in migration_002
