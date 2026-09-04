@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from src.config.regions import REGION_OPTIONS, REGION_PRESETS, format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, COLLECTION_DURATION_OPTIONS, _validate_bbox
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
-from src.ui.pages import render_anomalies, render_behavior, render_data_quality, render_overview, render_system, render_trajectory_analysis, render_vessel_intelligence
+from src.ui.pages import render_data_quality, render_intelligence, render_overview, render_system
 from src.ui.presentation import inject_css, notice, render_header
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
@@ -110,18 +110,6 @@ def _sidebar(settings):
     return settings, collect, clear, changed
 
 
-def _intelligence(engine, snapshot, settings):
-    subview = st.radio("Investigation", ("Vessel", "Behavior", "Trajectory", "Anomalies"), horizontal=True, label_visibility="collapsed")
-    if subview == "Vessel":
-        render_vessel_intelligence(engine, snapshot, settings)
-    elif subview == "Behavior":
-        render_behavior(engine, snapshot, settings)
-    elif subview == "Trajectory":
-        render_trajectory_analysis(engine, snapshot, settings)
-    else:
-        render_anomalies(engine, snapshot, settings)
-
-
 def main():
     settings = _read_settings()
     settings, collect, clear, region_changed = _sidebar(settings)
@@ -152,7 +140,7 @@ def main():
     if workspace == "Overview":
         render_overview(engine, snapshot, settings)
     elif workspace == "Intelligence":
-        _intelligence(engine, snapshot, settings)
+        render_intelligence(engine, snapshot, settings)
     else:
         render_system(engine, snapshot, settings)
         with st.expander("Data quality", expanded=False):
