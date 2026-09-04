@@ -27,13 +27,17 @@ from src.ui.temporal_diagnostics import render_temporal_diagnostics
 
 
 def render_intelligence(engine, snapshot, settings):
-    """Render all vessel-investigation capabilities in one workspace."""
+    """Render the investigation flow from target to anomaly explanation."""
+    st.subheader("Investigation")
+    st.caption("Observe a vessel → assess behavior → inspect trajectory → explain anomalies")
+
     subview = st.radio(
-        "Investigation",
+        "Investigation view",
         ("Vessel", "Behavior", "Trajectory", "Anomalies"),
         horizontal=True,
         label_visibility="collapsed",
     )
+
     if subview == "Vessel":
         render_vessel_intelligence(engine, snapshot, settings)
     elif subview == "Behavior":
