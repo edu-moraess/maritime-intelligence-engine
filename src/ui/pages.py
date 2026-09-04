@@ -45,8 +45,10 @@ def render_intelligence(engine, snapshot, settings):
 
 
 def render_system(engine, snapshot, settings):
-    """Render system status plus optional temporal diagnostics."""
+    """Render system status, data quality, and optional temporal diagnostics."""
     _render_system(engine, snapshot, settings)
+    with st.expander("Data quality", expanded=False):
+        render_data_quality(engine, snapshot, settings)
     render_temporal_diagnostics(engine)
 
 
