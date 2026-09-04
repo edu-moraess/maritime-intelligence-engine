@@ -67,71 +67,56 @@ def render_anomalies(
 
     findings = snapshot.findings
 
-    metric_strip(
-        {
-            "FINDINGS": len(findings),
-            "VESSELS": len({f.mmsi for f in findings}),
-            "HIGH SCORE": f"{max((f.score for f in findings), default=0):.2f}",
-        }
-    )
+    metric_strip({
+        "FINDINGS": len(findings),
+        "VESSELS": len({finding.mmsi for finding in findings}),
+        "CRITICAL": sum(str(finding.severity).upper() == "CRITICAL" for finding in findings),
+        "ANOMALY": sum(str(finding.severity).upper() == "ANOMALY" for finding in findings),
+        "SOURCE": "REAL AIS",
+    })
+
+    st.write("")
 
     if not findings:
         empty_state(
-            "Anomalies are calculated only from currently observed real AIS "
-            "reports. No finding is fabricated when data is insufficient. "
-            "Collect real AIS data for longer or select a denser monitoring "
-            "region if more history is required.",
-            "NO BEHAVIORAL ANOMALIES",
+            _no_real_data_reason(snapshot.status.reason)
+            if not snapshot.vessels
+            else "No behavioral findings are currently present in this real AIS session.",
+            "NO ACTIVE FINDINGS",
         )
         return
 
-    categories = ["All categories"] + sorted(
-        {finding.category for finding in findings}
-    )
+    left, right = st.columns([1.15, 1], gap="medium")
 
-    selected_category = st.selectbox(
-        "Category",
-        categories,
-        label_visibility="collapsed",
-    )
+    with left:
+        rows = []
+        for finding in findings:
+            rows.append({
+                "MMSI": finding.mmsi,
+                "Category": finding.category,
+                "Severity": finding.severity,
+                "Score": round(float(finding.score), 3),
+                "Reason": finding.reason,
+            })
+        st.dataframe(frame_for_table(pd.DataFrame(rows)), hide_index=True, width="stretch")
 
-    filtered = (
-        findings
-        if selected_category == "All categories"
-        else [f for f in findings if f.category == selected_category]
-    )
+    with right:
+        _render_anomaly_map(snapshot, findings)
 
-    table = pd.DataFrame(
-        [
-            {
-                "Timestamp": _utc(f.received_at),
-                "MMSI": f.mmsi,
-                "Location": f"{f.latitude:.4f}, {f.longitude:.4f}",
-                "Score": f"{f.score:.2f}",
-                "Category": f.category,
-                "Confidence": (
-                    f"{f.confidence:.2f}"
-                    if f.confidence is not None
-                    else "N/A"
-                ),
-                "Explanation": f.explanation,
-            }
-            for f in filtered
-        ]
-    )
-
-    st.dataframe(
-        table,
-        hide_index=True,
-        width="stretch",
-    )
-
-    _render_anomaly_map(filtered, settings)
-
-    notice(
-        "Interpretation guardrail: these are behavioral anomalies in "
-        "observed movement data, not determinations of hostile intent."
-    )
+    counts = anomaly_counts(findings)
+    if not counts.empty:
+        fig = go.Figure(
+            go.Bar(
+                x=counts["category"],
+                y=counts["events"],
+                marker_color="#e9b857",
+            )
+        )
+        fig.update_layout(
+            **_plot_layout("Behavioral findings by category", "Category", "Events"),
+            height=300,
+        )
+        st.plotly_chart(fig, width="stretch")
 
 
 def render_traffic(
@@ -139,55 +124,35 @@ def render_traffic(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("Traffic analytics")
-
-    summary = snapshot.summary
-
-    metric_strip(
-        {
-            "ACTIVE VESSELS": summary["active_vessels"],
-            "MESSAGES": f"{summary['messages']:,}",
-            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
-            "REGIONS": summary["regions"],
-            "ANOMALIES": summary["anomalies"],
-        }
-    )
+    st.subheader("Traffic and activity")
 
     if not snapshot.observations:
-        empty_state(_no_real_data_reason(snapshot.status.reason))
+        empty_state(
+            _no_real_data_reason(snapshot.status.reason),
+            "NO REAL AIS OBSERVATIONS",
+        )
         return
 
     left, right = st.columns(2, gap="medium")
 
     with left:
         volume = hourly_volume(snapshot.observations)
-
-        fig = go.Figure(
-            go.Bar(
-                x=volume["hour"],
-                y=volume["messages"],
-                marker_color="#35c2c9",
-                hovertemplate=(
-                    "UTC hour %{x}: %{y} real messages"
-                    "<extra></extra>"
+        if volume.empty:
+            empty_state("Hourly volume requires timestamped real AIS observations.", "NO TIME SERIES")
+        else:
+            fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"]))
+            fig.update_layout(
+                **_plot_layout(
+                    "Observed AIS message volume by UTC hour",
+                    "UTC hour",
+                    "Real AIS messages",
                 ),
+                height=330,
             )
-        )
-
-        fig.update_layout(
-            **_plot_layout(
-                "Observed AIS message volume by UTC hour",
-                "UTC hour",
-                "Real AIS messages",
-            ),
-            height=330,
-        )
-
-        st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch")
 
     with right:
         speeds = speed_distribution(snapshot.vessels)
-
         if speeds.empty:
             empty_state(
                 "SOG distribution requires real AIS reports with a valid "
@@ -200,13 +165,9 @@ def render_traffic(
                     x=speeds["sog_knots"],
                     nbinsx=18,
                     marker_color="#51c79b",
-                    hovertemplate=(
-                        "SOG %{x:.1f} kn<br>"
-                        "Vessels %{y}<extra></extra>"
-                    ),
+                    hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>",
                 )
             )
-
             fig.update_layout(
                 **_plot_layout(
                     "Observed speed-over-ground distribution",
@@ -215,30 +176,7 @@ def render_traffic(
                 ),
                 height=330,
             )
-
             st.plotly_chart(fig, width="stretch")
-
-    counts = anomaly_counts(snapshot.findings)
-
-    if not counts.empty:
-        fig = go.Figure(
-            go.Bar(
-                x=counts["category"],
-                y=counts["events"],
-                marker_color="#e9b857",
-            )
-        )
-
-        fig.update_layout(
-            **_plot_layout(
-                "Behavioral findings by category",
-                "Category",
-                "Events",
-            ),
-            height=300,
-        )
-
-        st.plotly_chart(fig, width="stretch")
 
 
 def render_data_quality(
@@ -289,36 +227,28 @@ def render_data_quality(
                 ],
             }
         )
-
-        st.dataframe(
-            rows,
-            hide_index=True,
-            width="stretch",
-        )
+        st.dataframe(rows, hide_index=True, width="stretch")
 
     with right:
         if report.messages_processed == 0:
             empty_state(
-                "Quality metrics will populate after real AIS messages "
-                "are received.",
+                "Quality metrics will populate after real AIS messages are received.",
                 "NO REAL AIS OBSERVATIONS",
             )
         elif report.quality_percent >= 95:
             notice(
-                "Data quality is within the operational review threshold "
-                "for this session.",
+                "Data quality is within the operational review threshold for this session.",
                 "green",
             )
         else:
             notice(
-                "Data quality requires operator review before using "
-                "downstream behavioral analysis.",
+                "Data quality requires operator review before using downstream behavioral analysis.",
                 "red",
             )
 
     notice(
-        "Quality percentages describe the current in-memory session window "
-        "only. No unobserved data is estimated."
+        "Quality percentages describe the current in-memory session window only. "
+        "No unobserved data is estimated."
     )
 
 
@@ -327,7 +257,7 @@ def render_system(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("System and pipeline status")
+    st.subheader("System health")
 
     status = snapshot.status
 
@@ -362,32 +292,78 @@ def render_system(
         )
 
     with right:
+        panel_title("Advanced Intelligence", "optional temporal layer")
+        temporal = snapshot.temporal
+        if temporal is None:
+            metric_strip({
+                "STATUS": "WAITING",
+                "MODEL": "TCN Temporal AE",
+                "TRACKS": "—",
+                "TRAINING": "—",
+                "LOSS": "—",
+                "INFERENCE": "no",
+            })
+            notice(
+                "Advanced temporal modeling has not run yet. It is optional and requires "
+                "enough real AIS trajectory history.",
+                "gray",
+            )
+        else:
+            loss = f"{temporal.best_loss:.6f}" if temporal.best_loss is not None else "—"
+            train_s = f"{temporal.training_seconds:.2f} s" if temporal.training_seconds else "—"
+            epochs = str(temporal.epochs_completed) if temporal.epochs_completed else "—"
+            metric_strip({
+                "STATUS": temporal.status,
+                "MODEL": temporal.method,
+                "TRACKS": f"{temporal.n_tracks_usable}/{temporal.n_tracks_seen}",
+                "TRAINING": f"{epochs} ep · {train_s}",
+                "LOSS": loss,
+                "INFERENCE": "yes" if temporal.inference_available else "no",
+            })
+            st.write(f"**Reason:** {temporal.reason}")
+            if temporal.scores:
+                top = sorted(temporal.scores, key=lambda s: s.deep_anomaly_score, reverse=True)[:5]
+                lines = [
+                    f"`{s.mmsi}`  recon={s.reconstruction_error:.6f}  deep={s.deep_anomaly_score:.3f}"
+                    for s in top
+                ]
+                st.markdown(
+                    "**Top deep scores (session-relative ranking):**\n\n"
+                    + "\n\n".join(lines)
+                )
+            if temporal.status == "READY":
+                notice(
+                    "Advanced temporal modeling trained on real AIS only. "
+                    "deep_anomaly_score is session-relative ranking, not probability.",
+                    "green",
+                )
+            elif temporal.status == "NOT_READY":
+                notice(temporal.reason, "gray")
+            elif temporal.status in {"FAILED", "UNAVAILABLE"}:
+                notice(temporal.reason, "red")
+
+    with st.expander("Pipeline and persistence", expanded=False):
         panel_title("Pipeline", "real AIS")
 
         st.markdown(
             "`AISStream WebSocket`  →  `Validation`  →  "
             "`Trajectory features`  →  `Runtime PCA / IsolationForest`  →  "
-            "`Deep Temporal (TCN-AE)`  →  `Streamlit`"
+            "`Streamlit`"
+        )
+        st.caption(
+            "Advanced temporal modeling is optional and session-gated; it does not "
+            "replace the core rule-based / IsolationForest anomaly path."
         )
 
-        st.write("")
-
-        st.write(
-            f"**Historical persistence:** `{snapshot.historical_status}`"
-        )
+        st.write(f"**Historical persistence:** `{snapshot.historical_status}`")
 
         if snapshot.historical_result is not None:
             result = snapshot.historical_result
-
-            st.write(
-                f"**Persisted observations:** "
-                f"`{result.persisted_observations}`"
-            )
+            st.write(f"**Persisted observations:** `{result.persisted_observations}`")
 
             if result.duplicate_observations:
                 st.write(
-                    f"**Duplicate observations skipped:** "
-                    f"`{result.duplicate_observations}`"
+                    f"**Duplicate observations skipped:** `{result.duplicate_observations}`"
                 )
 
             if result.reason:
@@ -398,59 +374,14 @@ def render_system(
             "only on real observations received in this session."
         )
 
-    st.write("")
-    panel_title("Deep Temporal", "TCN autoencoder · real AIS only")
-    temporal = snapshot.temporal
-    if temporal is None:
-        metric_strip({
-            "STATUS": "WAITING",
-            "MODEL": "TCN Temporal AE",
-            "TRACKS": "—",
-            "TRAINING": "—",
-            "LOSS": "—",
-            "INFERENCE": "no",
-        })
-        notice("Deep Temporal has not run yet. Collect real AIS tracks.", "gray")
-    else:
-        loss = f"{temporal.best_loss:.6f}" if temporal.best_loss is not None else "—"
-        train_s = f"{temporal.training_seconds:.2f} s" if temporal.training_seconds else "—"
-        epochs = str(temporal.epochs_completed) if temporal.epochs_completed else "—"
-        metric_strip({
-            "STATUS": temporal.status,
-            "MODEL": temporal.method,
-            "TRACKS": f"{temporal.n_tracks_usable}/{temporal.n_tracks_seen}",
-            "TRAINING": f"{epochs} ep · {train_s}",
-            "LOSS": loss,
-            "INFERENCE": "yes" if temporal.inference_available else "no",
-        })
-        st.write(f"**Reason:** {temporal.reason}")
-        if temporal.scores:
-            top = sorted(temporal.scores, key=lambda s: s.deep_anomaly_score, reverse=True)[:5]
-            lines = [
-                f"`{s.mmsi}`  recon={s.reconstruction_error:.6f}  deep={s.deep_anomaly_score:.3f}"
-                for s in top
-            ]
-            st.markdown("**Top deep scores (session-relative ranking):**\n\n" + "\n\n".join(lines))
-        if temporal.status == "READY":
-            notice(
-                "Deep Temporal trained on real AIS only. "
-                "deep_anomaly_score is session-relative ranking, not probability.",
-                "green",
-            )
-        elif temporal.status == "NOT_READY":
-            notice(temporal.reason, "gray")
-        elif temporal.status in {"FAILED", "UNAVAILABLE"}:
-            notice(temporal.reason, "red")
-
     if status.state == "LIVE AIS":
         notice(
-            "The application is receiving real AIS position reports "
-            "from AISStream.",
+            "The application is receiving real AIS position reports from AISStream.",
             "green",
         )
     else:
         notice(
-            "REAL AIS DATA UNAVAILABLE. The application intentionally "
-            "renders an empty state instead of fabricated traffic.",
+            "REAL AIS DATA UNAVAILABLE. The application intentionally renders an "
+            "empty state instead of fabricated traffic.",
             "red",
         )
