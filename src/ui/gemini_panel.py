@@ -94,6 +94,31 @@ def _render_historical_profile(
                 else "N/A"
             )
         )
+        st.write(
+            "**Historical SOG variation:** "
+            + (
+                f"±{profile.sog_std_knots:.1f} kn"
+                if profile.sog_std_knots is not None
+                else "N/A"
+            )
+        )
+
+    deviation = profile.speed_baseline_deviation(getattr(vessel, "sog_knots", None))
+    if deviation is not None and profile.average_sog_knots is not None:
+        current_sog = float(vessel.sog_knots)
+        direction = "above" if current_sog >= profile.average_sog_knots else "below"
+        notice(
+            f"Current SOG {current_sog:.1f} kn is {deviation:.1f} kn {direction} "
+            f"the vessel's historical average ({profile.average_sog_knots:.1f} kn). "
+            "This is a descriptive behavioral baseline, not an anomaly probability.",
+            "gray",
+        )
+    elif profile.observation_count < 3:
+        notice(
+            "Historical behavioral baseline is waiting for at least 3 persisted "
+            "speed observations for this vessel.",
+            "gray",
+        )
 
     if profile.status == "PARTIAL":
         notice(
