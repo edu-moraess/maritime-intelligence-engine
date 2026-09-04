@@ -113,7 +113,7 @@ def _render_historical_profile(
             "This is a descriptive behavioral baseline, not an anomaly probability.",
             "gray",
         )
-    elif profile.observation_count < 3:
+    elif profile.speed_observation_count < 3:
         notice(
             "Historical behavioral baseline is waiting for at least 3 persisted "
             "speed observations for this vessel.",
