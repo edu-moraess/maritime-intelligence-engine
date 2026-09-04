@@ -257,7 +257,7 @@ def render_system(
     snapshot: EngineSnapshot,
     settings: AppSettings,
 ) -> None:
-    st.subheader("System and pipeline status")
+    st.subheader("System health")
 
     status = snapshot.status
 
@@ -292,6 +292,57 @@ def render_system(
         )
 
     with right:
+        panel_title("Advanced Intelligence", "optional temporal layer")
+        temporal = snapshot.temporal
+        if temporal is None:
+            metric_strip({
+                "STATUS": "WAITING",
+                "MODEL": "TCN Temporal AE",
+                "TRACKS": "—",
+                "TRAINING": "—",
+                "LOSS": "—",
+                "INFERENCE": "no",
+            })
+            notice(
+                "Advanced temporal modeling has not run yet. It is optional and requires "
+                "enough real AIS trajectory history.",
+                "gray",
+            )
+        else:
+            loss = f"{temporal.best_loss:.6f}" if temporal.best_loss is not None else "—"
+            train_s = f"{temporal.training_seconds:.2f} s" if temporal.training_seconds else "—"
+            epochs = str(temporal.epochs_completed) if temporal.epochs_completed else "—"
+            metric_strip({
+                "STATUS": temporal.status,
+                "MODEL": temporal.method,
+                "TRACKS": f"{temporal.n_tracks_usable}/{temporal.n_tracks_seen}",
+                "TRAINING": f"{epochs} ep · {train_s}",
+                "LOSS": loss,
+                "INFERENCE": "yes" if temporal.inference_available else "no",
+            })
+            st.write(f"**Reason:** {temporal.reason}")
+            if temporal.scores:
+                top = sorted(temporal.scores, key=lambda s: s.deep_anomaly_score, reverse=True)[:5]
+                lines = [
+                    f"`{s.mmsi}`  recon={s.reconstruction_error:.6f}  deep={s.deep_anomaly_score:.3f}"
+                    for s in top
+                ]
+                st.markdown(
+                    "**Top deep scores (session-relative ranking):**\n\n"
+                    + "\n\n".join(lines)
+                )
+            if temporal.status == "READY":
+                notice(
+                    "Advanced temporal modeling trained on real AIS only. "
+                    "deep_anomaly_score is session-relative ranking, not probability.",
+                    "green",
+                )
+            elif temporal.status == "NOT_READY":
+                notice(temporal.reason, "gray")
+            elif temporal.status in {"FAILED", "UNAVAILABLE"}:
+                notice(temporal.reason, "red")
+
+    with st.expander("Pipeline and persistence", expanded=False):
         panel_title("Pipeline", "real AIS")
 
         st.markdown(
@@ -303,8 +354,6 @@ def render_system(
             "Advanced temporal modeling is optional and session-gated; it does not "
             "replace the core rule-based / IsolationForest anomaly path."
         )
-
-        st.write("")
 
         st.write(f"**Historical persistence:** `{snapshot.historical_status}`")
 
@@ -324,57 +373,6 @@ def render_system(
             "Model checkpoint: none. The current representation is fitted "
             "only on real observations received in this session."
         )
-
-    st.write("")
-    panel_title("Advanced Intelligence", "optional temporal layer · real AIS only")
-    temporal = snapshot.temporal
-    if temporal is None:
-        metric_strip({
-            "STATUS": "WAITING",
-            "MODEL": "TCN Temporal AE",
-            "TRACKS": "—",
-            "TRAINING": "—",
-            "LOSS": "—",
-            "INFERENCE": "no",
-        })
-        notice(
-            "Advanced temporal modeling has not run yet. It is optional and requires "
-            "enough real AIS trajectory history.",
-            "gray",
-        )
-    else:
-        loss = f"{temporal.best_loss:.6f}" if temporal.best_loss is not None else "—"
-        train_s = f"{temporal.training_seconds:.2f} s" if temporal.training_seconds else "—"
-        epochs = str(temporal.epochs_completed) if temporal.epochs_completed else "—"
-        metric_strip({
-            "STATUS": temporal.status,
-            "MODEL": temporal.method,
-            "TRACKS": f"{temporal.n_tracks_usable}/{temporal.n_tracks_seen}",
-            "TRAINING": f"{epochs} ep · {train_s}",
-            "LOSS": loss,
-            "INFERENCE": "yes" if temporal.inference_available else "no",
-        })
-        st.write(f"**Reason:** {temporal.reason}")
-        if temporal.scores:
-            top = sorted(temporal.scores, key=lambda s: s.deep_anomaly_score, reverse=True)[:5]
-            lines = [
-                f"`{s.mmsi}`  recon={s.reconstruction_error:.6f}  deep={s.deep_anomaly_score:.3f}"
-                for s in top
-            ]
-            st.markdown(
-                "**Top deep scores (session-relative ranking):**\n\n"
-                + "\n\n".join(lines)
-            )
-        if temporal.status == "READY":
-            notice(
-                "Advanced temporal modeling trained on real AIS only. "
-                "deep_anomaly_score is session-relative ranking, not probability.",
-                "green",
-            )
-        elif temporal.status == "NOT_READY":
-            notice(temporal.reason, "gray")
-        elif temporal.status in {"FAILED", "UNAVAILABLE"}:
-            notice(temporal.reason, "red")
 
     if status.state == "LIVE AIS":
         notice(
