@@ -30,6 +30,7 @@ def test_profile_empty_history_is_na():
     assert profile.observation_count == 0
     assert profile.session_count == 0
     assert profile.distance_km is None
+    assert profile.sog_std_knots is None
 
 
 def test_profile_single_point_is_partial():
@@ -42,6 +43,8 @@ def test_profile_single_point_is_partial():
     assert profile.observation_count == 1
     assert profile.session_count == 1
     assert profile.distance_km is None
+    assert profile.sog_std_knots is None
+    assert profile.speed_baseline_deviation(12.0) is None
 
 
 def test_profile_aggregates_multi_session_history():
@@ -62,6 +65,8 @@ def test_profile_aggregates_multi_session_history():
     assert profile.distance_km is not None and profile.distance_km > 0
     assert profile.average_sog_knots == 9.0
     assert profile.max_sog_knots == 10.0
+    assert profile.sog_std_knots == 1.0
+    assert profile.speed_baseline_deviation(12.0) == 3.0
 
 
 def test_profile_explicit_session_count_is_deterministic():
