@@ -42,7 +42,10 @@ def test_engine_keeps_historical_store_but_fits_live_analytics_only():
     historical = _tracks("900000")
     current = _tracks("800000")
 
-    engine.store.extend([item for track in historical.values() for item in track])
+    engine.store.extend(
+        [item for track in historical.values() for item in track]
+        + [item for track in current.values() for item in track]
+    )
     engine.current_session_observations = [
         observation
         for track in current.values()
@@ -62,7 +65,7 @@ def test_engine_keeps_historical_store_but_fits_live_analytics_only():
 
 
 def test_similarity_results_are_labeled_as_current_session():
-    tracks = _tracks("8")
+    tracks = _tracks("800000")
     adapter = TrajectoryEmbeddingAdapter()
     result = adapter.fit(tracks)
 
