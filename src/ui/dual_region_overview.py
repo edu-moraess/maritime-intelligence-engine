@@ -57,15 +57,24 @@ def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
     return ((min(b[0][0] for b in bboxes), min(b[0][1] for b in bboxes)), (max(b[1][0] for b in bboxes), max(b[1][1] for b in bboxes)))
 
 
-def _unified_map_zoom(rows: list[dict], *, min_zoom: float = 1.5, max_zoom: float = 9.0) -> float:
-    """Choose a zoom that keeps all real unified targets in the initial viewport."""
-    if not rows:
-        return 7.5
-    latitudes = [float(row["latitude"]) for row in rows]
-    longitudes = [float(row["longitude"]) for row in rows]
-    lat_span = max(latitudes) - min(latitudes)
-    lon_span = max(longitudes) - min(longitudes)
-    span = max(lat_span, lon_span, 0.01)
+def _unified_map_zoom(
+    rows: list[dict],
+    bboxes: tuple[RegionBBox, ...],
+    *,
+    min_zoom: float = 1.5,
+    max_zoom: float = 9.0,
+) -> float:
+    """Choose a viewport scale from real targets or the monitored regions."""
+    if rows:
+        latitudes = [float(row["latitude"]) for row in rows]
+        longitudes = [float(row["longitude"]) for row in rows]
+        lat_span = max(latitudes) - min(latitudes)
+        lon_span = max(longitudes) - min(longitudes)
+    else:
+        (min_lat, min_lon), (max_lat, max_lon) = _unified_bbox(bboxes)
+        lat_span = max_lat - min_lat
+        lon_span = max_lon - min_lon
+    span = max(float(lat_span), float(lon_span), 0.01)
     zoom = log2(360.0 / (span * 1.25))
     return max(min_zoom, min(max_zoom, zoom))
 
@@ -110,8 +119,6 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
     rows = vessel_rows(region_snapshot.vessels) if include_stale else live_vessel_rows(region_snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, (bbox,))
     region_selection = st.session_state.get(selection_key)
-    if not rows and not include_stale:
-        rows = filter_rows_to_bboxes(vessel_rows(region_snapshot.vessels), (bbox,))
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
     if region_selection and not include_stale:
@@ -173,7 +180,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     previous_global_selection = st.session_state.get("selected_mmsi")
     previous_zoom = st.session_state.get("tactical_map_zoom")
     st.session_state.selected_mmsi = unified_selection
-    st.session_state.tactical_map_zoom = _unified_map_zoom(rows)
+    st.session_state.tactical_map_zoom = _unified_map_zoom(rows, bboxes)
 
     def _capture_unified_selection(event) -> None:
         try:
