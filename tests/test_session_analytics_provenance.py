@@ -39,8 +39,8 @@ def _tracks(prefix: str, offset: float = 0.0) -> dict[str, list[AISObservation]]
 def test_engine_keeps_historical_store_but_fits_live_analytics_only():
     engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
 
-    historical = _tracks("9", offset=0.20)
-    current = _tracks("8")
+    historical = _tracks("900000")
+    current = _tracks("800000")
 
     engine.store.extend([item for track in historical.values() for item in track])
     engine.current_session_observations = [
@@ -68,7 +68,7 @@ def test_similarity_results_are_labeled_as_current_session():
 
     assert result is not None
 
-    current_mmsi = "8001"
+    current_mmsi = "800000001"
     similar = adapter.similar_tracks(
         tracks[current_mmsi],
         tracks,
