@@ -42,7 +42,7 @@ _SHIP_HULLS = {
     "OTHER": ((0.0,1.8),(0.34,1.28),(0.62,0.78),(0.62,-0.95),(0.36,-1.12),(-0.36,-1.12),(-0.62,-0.95),(-0.62,0.78),(-0.34,1.28)),
 }
 VECTOR_BASE_DEG, VECTOR_MAX_DEG, VECTOR_SOG_REF, SHIP_SCALE_DEG = 0.010, 0.040, 15.0, 0.0025
-TACTICAL_MAP_STYLE = None
+TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
 TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>" "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>" "<div style='color:#79939b;margin-bottom:4px'>MMSI {tooltip_mmsi}</div>" "<div>SOG {tooltip_sog}</div><div>COG {tooltip_cog}</div>" "<div>HDG {tooltip_hdg}</div><div>STATUS {tooltip_status}</div></div>")
 TACTICAL_TOOLTIP_STYLE = {"backgroundColor":"rgba(7,17,22,0.96)","color":"#d9e6e9","border":"1px solid #1b3640","padding":"9px 11px"}
 
