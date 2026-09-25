@@ -58,15 +58,18 @@ def _track_readiness_reason(module: str, current: int, required: int = 3) -> str
 
 
 def _render_similarity_search(engine, snapshot, track, current_mmsi):
-    panel_title("Similarity search", "real AIS session")
+    panel_title("Similarity search", "current real AIS session")
     if snapshot.embeddings is None:
         empty_state(
             _track_readiness_reason("Similarity", snapshot.readiness.tracks_with_history),
             "INSUFFICIENT REAL AIS DATA",
         )
     else:
+        session_tracks = {}
+        for observation in snapshot.current_session_observations:
+            session_tracks.setdefault(observation.mmsi, []).append(observation)
         similar = engine.embedding_adapter.similar_tracks(
-            track, engine.store.tracks(), current_mmsi=current_mmsi
+            track, session_tracks, current_mmsi=current_mmsi
         )
         if not similar:
             empty_state(
