@@ -90,3 +90,37 @@ def test_render_vessel_with_insufficient_observations():
         embeddings=None,
     )
     render_vessel_quick_intelligence(vessel, snapshot, show_gemini_hook=False)
+
+
+def test_build_profile_for_ui_keeps_restored_history_out_of_current_telemetry():
+    mmsi = "235102528"
+    vessel = SimpleNamespace(
+        mmsi=mmsi,
+        vessel_name="BF VOLUNTEER",
+        sog_knots=0.1,
+        cog_degrees=272.6,
+        heading_degrees=259.0,
+        latitude=51.32,
+        longitude=1.42,
+        navigational_status=None,
+        last_received=datetime.now(timezone.utc),
+    )
+    restored_observation = AISObservation(
+        mmsi=mmsi,
+        latitude=51.30,
+        longitude=1.40,
+        received_at=datetime(2026, 8, 30, tzinfo=timezone.utc),
+        sog_knots=9.0,
+    )
+    snapshot = SimpleNamespace(
+        observations=[restored_observation],
+        current_session_observations=[],
+        findings=[],
+        embeddings=None,
+    )
+
+    profile = build_profile_for_ui(vessel, snapshot, engine=None)
+
+    assert profile.telemetry.available is False
+    assert profile.telemetry.observation_count == 0
+    assert profile.historical.status == "N/A"
