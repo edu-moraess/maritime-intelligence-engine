@@ -84,6 +84,73 @@ class AISObservation:
         }
 
 
+@dataclass(frozen=True)
+class EnvironmentalObservation:
+    """A real external environmental observation for maritime context."""
+
+    source: str
+    observed_at: datetime
+    latitude: float
+    longitude: float
+    region: str | None = None
+    wave_height_m: float | None = None
+    wave_direction_deg: float | None = None
+    wave_period_s: float | None = None
+    wind_wave_height_m: float | None = None
+    swell_height_m: float | None = None
+    swell_direction_deg: float | None = None
+    ocean_current_velocity: float | None = None
+    ocean_current_direction_deg: float | None = None
+    sea_surface_temperature_c: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source.strip():
+            raise ValueError("source must not be empty")
+        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+            raise ValueError("observed_at must be timezone-aware")
+        object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
+        if not -90.0 <= self.latitude <= 90.0:
+            raise ValueError("latitude must be between -90 and 90 degrees")
+        if not -180.0 <= self.longitude <= 180.0:
+            raise ValueError("longitude must be between -180 and 180 degrees")
+        for name in (
+            "wave_height_m",
+            "wave_period_s",
+            "wind_wave_height_m",
+            "swell_height_m",
+            "ocean_current_velocity",
+        ):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be non-negative")
+        for name in (
+            "wave_direction_deg",
+            "swell_direction_deg",
+            "ocean_current_direction_deg",
+        ):
+            value = getattr(self, name)
+            if value is not None and not 0.0 <= value <= 360.0:
+                raise ValueError(f"{name} must be between 0 and 360 degrees")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "observed_at": self.observed_at.astimezone(timezone.utc).isoformat(),
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "region": self.region,
+            "wave_height_m": self.wave_height_m,
+            "wave_direction_deg": self.wave_direction_deg,
+            "wave_period_s": self.wave_period_s,
+            "wind_wave_height_m": self.wind_wave_height_m,
+            "swell_height_m": self.swell_height_m,
+            "swell_direction_deg": self.swell_direction_deg,
+            "ocean_current_velocity": self.ocean_current_velocity,
+            "ocean_current_direction_deg": self.ocean_current_direction_deg,
+            "sea_surface_temperature_c": self.sea_surface_temperature_c,
+        }
+
+
 @dataclass
 class VesselSnapshot:
     mmsi: str
