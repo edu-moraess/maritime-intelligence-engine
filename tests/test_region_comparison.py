@@ -75,3 +75,14 @@ def test_overlapping_observations_are_not_double_counted():
 
 def test_comparison_requires_exactly_two_regions():
     assert compare_regions([], [], [((0.0, 0.0), (1.0, 1.0))]) is None
+
+
+def test_overlapping_findings_are_excluded_from_both_regions():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((5.0, 5.0), (15.0, 15.0))]
+    findings = [_finding("111000001", 7.0, 7.0)]
+
+    comparison = compare_regions([], findings, bboxes)
+
+    assert comparison is not None
+    assert comparison.regions[0].anomalies == 0
+    assert comparison.regions[1].anomalies == 0
