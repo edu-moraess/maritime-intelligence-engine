@@ -131,6 +131,36 @@ def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: App
     return map_values
 
 
+def _render_environmental_context(snapshot: EngineSnapshot) -> None:
+    """Show environmental evidence separately from AIS intelligence."""
+    contexts = snapshot.environmental_contexts
+    if not contexts:
+        return
+    st.markdown("### Environmental Context")
+    columns = st.columns(len(contexts))
+    for column, (region_key, context) in zip(columns, contexts.items()):
+        with column:
+            label = region_key.replace("_", " ").upper()
+            latest = context.latest
+            st.caption(label)
+            if latest is None:
+                st.metric("Status", "UNAVAILABLE")
+                continue
+            st.metric(
+                "Wave height",
+                f"{latest.wave_height_m:.1f} m" if latest.wave_height_m is not None else "—",
+            )
+            details = []
+            if latest.wave_period_s is not None:
+                details.append(f"Period {latest.wave_period_s:.1f}s")
+            if latest.wave_direction_deg is not None:
+                details.append(f"Dir {latest.wave_direction_deg:.0f}°")
+            if latest.ocean_current_velocity is not None:
+                details.append(f"Current {latest.ocean_current_velocity:.2f}")
+            st.caption(" · ".join(details) if details else "Marine model data available")
+            st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone().strftime('%H:%M UTC')}")
+
+
 def render_overview(
     engine: MaritimeIntelligenceEngine,
     snapshot: EngineSnapshot,
@@ -178,6 +208,8 @@ def render_overview(
             for row in rows
             if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed
         ]
+
+    _render_environmental_context(snapshot)
 
     _render_vessel_map(
         rows,
