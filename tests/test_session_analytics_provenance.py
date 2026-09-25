@@ -22,7 +22,7 @@ def _obs(mmsi: str, seconds: int, *, lon: float) -> AISObservation:
         heading_degrees=90.0,
         vessel_name="TEST",
         ais_timestamp_second=seconds % 60,
-        raw={"MessageType": "PositionReport"},
+        raw={"MessageType": "PositionReport", "MMSI": mmsi, "Timestamp": seconds},
     )
 
 
