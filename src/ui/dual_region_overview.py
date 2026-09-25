@@ -98,7 +98,6 @@ def _capture_region_selection(event, selection_key: str) -> None:
     mmsi = str(mmsi).strip()
     if mmsi.isdigit() and len(mmsi) == 9 and st.session_state.get(selection_key) != mmsi:
         st.session_state[selection_key] = mmsi
-        st.rerun()
 
 
 def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
@@ -191,7 +190,6 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
         mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
         if mmsi is not None and str(mmsi).strip().isdigit() and len(str(mmsi).strip()) == 9:
             st.session_state[unified_selection_key] = str(mmsi).strip()
-            st.rerun()
 
     try:
         st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
