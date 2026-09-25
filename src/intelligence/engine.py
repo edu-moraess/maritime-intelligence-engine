@@ -217,22 +217,38 @@ class MaritimeIntelligenceEngine:
         return ReadinessSnapshot(distinct_vessels=len(tracks), tracks_with_history=tracks_with_history, trajectory_ready=tracks_with_history >= 1, embeddings_ready=self.embeddings is not None, embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"), anomaly_count=len(self.findings), temporal_status=temporal_status)
 
     def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
-        """Expose live and restored historical targets through one capped view."""
-        live = {vessel.mmsi: vessel for vessel in self.provider.fetch_vessels()}
+        """Build the vessel view exclusively from the session observation store."""
         now = datetime.now(timezone.utc)
+        vessels: list[VesselSnapshot] = []
         for mmsi, track in tracks.items():
-            if mmsi in live or not track:
+            if not track:
                 continue
             latest = max(track, key=lambda observation: observation.received_at)
-            live[mmsi] = VesselSnapshot(mmsi=mmsi, latitude=latest.latitude, longitude=latest.longitude, last_received=latest.received_at, sog_knots=latest.sog_knots, cog_degrees=latest.cog_degrees, heading_degrees=latest.heading_degrees, vessel_name=latest.vessel_name, message_count=len(track), stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds, ais_timestamp_second=latest.ais_timestamp_second, observed_at=latest.observed_at)
-        return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
+            vessels.append(
+                VesselSnapshot(
+                    mmsi=mmsi,
+                    latitude=latest.latitude,
+                    longitude=latest.longitude,
+                    last_received=latest.received_at,
+                    sog_knots=latest.sog_knots,
+                    cog_degrees=latest.cog_degrees,
+                    heading_degrees=latest.heading_degrees,
+                    vessel_name=latest.vessel_name,
+                    message_count=len(track),
+                    stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
+                    ais_timestamp_second=latest.ais_timestamp_second,
+                    observed_at=latest.observed_at,
+                )
+            )
+        return sorted(vessels, key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
 
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
         tracks = self.store.tracks()
         vessels = self._merged_vessels(tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=self.provider.status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
+        status = replace(self.provider.status, active_vessels=len(tracks))
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
 
     def clear_session_data(self) -> None:
         self.store.clear()
