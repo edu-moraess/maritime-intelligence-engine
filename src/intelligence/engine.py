@@ -20,6 +20,7 @@ from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
 from src.ml.temporal.types import TemporalFitResult
 from src.processing.quality import QualityReport, build_quality_report
+from src.processing.relevance import select_relevant_tracks
 from src.storage.memory import ObservationStore
 
 
@@ -187,14 +188,18 @@ class MaritimeIntelligenceEngine:
 
     def _recompute(self) -> None:
         tracks = self.store.tracks()
-        self.embeddings = self.embedding_adapter.fit(tracks)
-        self.findings = detect_anomalies(tracks, self.embeddings)
+        # Keep every real AIS observation in the store, but avoid spending
+        # trajectory/temporal-model capacity on tracks with no useful movement
+        # signal. The relevance filter is deliberately isolated and testable.
+        model_tracks = select_relevant_tracks(tracks)
+        self.embeddings = self.embedding_adapter.fit(model_tracks)
+        self.findings = detect_anomalies(model_tracks, self.embeddings)
         fingerprint = _track_fingerprint(tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             self.region_comparison = self._build_region_comparison()
             return
         try:
-            self.temporal = self.temporal_adapter.fit(tracks)
+            self.temporal = self.temporal_adapter.fit(model_tracks)
             self._temporal_fingerprint = fingerprint
         except Exception as exc:
             self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
