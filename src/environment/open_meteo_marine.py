@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from .models import EnvironmentalObservation
+from src.ingestion.models import EnvironmentalObservation
 
 
 MARINE_API_URL = "https://marine-api.open-meteo.com/v1/marine"
