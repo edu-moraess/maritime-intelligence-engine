@@ -74,9 +74,12 @@ def build_profile_for_ui(
 ) -> VesselIntelligenceProfile:
     """Assemble a VesselIntelligenceProfile from live snapshot + optional history."""
     mmsi = str(vessel.mmsi)
+    session_observations = getattr(snapshot, "current_session_observations", None)
+    if session_observations is None:
+        session_observations = getattr(snapshot, "observations", None) or []
     observations = [
         o
-        for o in (getattr(snapshot, "observations", None) or [])
+        for o in session_observations
         if str(getattr(o, "mmsi", "")) == mmsi
     ]
     findings = [

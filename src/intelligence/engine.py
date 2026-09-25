@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from src.analytics.traffic import traffic_summary
@@ -72,6 +72,7 @@ class EngineSnapshot:
     historical_status: str
     historical_result: HistoricalWriteResult | None
     temporal: TemporalFitResult | None = None
+    current_session_observations: list[AISObservation] = field(default_factory=list)
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -114,6 +115,7 @@ class MaritimeIntelligenceEngine:
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
         self._historical_loaded = False
+        self._current_session_observations: list[AISObservation] = []
         self.historical_writer = create_historical_writer(
             settings.database_url,
             settings.historical_persistence_enabled,
@@ -158,6 +160,7 @@ class MaritimeIntelligenceEngine:
         stop_event.set()
         ended_at = datetime.now(timezone.utc)
         if collected:
+            self._current_session_observations.extend(collected)
             self.store.extend(collected)
             self.historical_result = self.historical_writer.persist_collection(
                 collected,
@@ -264,10 +267,12 @@ class MaritimeIntelligenceEngine:
             historical_status=self.historical_writer.status,
             historical_result=self.historical_result,
             temporal=self.temporal,
+            current_session_observations=list(self._current_session_observations),
         )
 
     def clear_session_data(self) -> None:
         self.store.clear()
+        self._current_session_observations.clear()
         self.provider.reset_session()
         self.embeddings = None
         self.findings = []
