@@ -31,7 +31,12 @@ from src.ui.tactical_map import (
 )
 from src.ui.presentation import empty_state, frame_for_table, metric_strip, notice, panel_title
 
-MAP_STYLES = {"Tactical": None}
+MAP_STYLES = {
+    "Dark Matter": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+    "Positron": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    "Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    "Nautical Chart": "https://tiles.openwaters.io/seamap/style.json",
+}
 
 
 def _no_real_data_reason(status_reason: str) -> str:
