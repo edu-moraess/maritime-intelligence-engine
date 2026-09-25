@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from src.analytics.region_comparison import RegionComparison, compare_regions
+from src.analytics.regional_events import RegionalEvent, detect_regional_events
 from src.analytics.traffic import traffic_summary
 from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
@@ -64,6 +65,7 @@ class EngineSnapshot:
     historical_result: HistoricalWriteResult | None
     temporal: TemporalFitResult | None = None
     region_comparison: RegionComparison | None = None
+    regional_events: list[RegionalEvent] = field(default_factory=list)
     current_session_observations: list[AISObservation] = field(default_factory=list)
     current_session_findings: list[AnomalyFinding] = field(default_factory=list)
 
@@ -98,6 +100,7 @@ class MaritimeIntelligenceEngine:
         self.current_session_observations: list[AISObservation] = []
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
+        self.regional_events: list[RegionalEvent] = []
         self._temporal_fingerprint: str | None = None
         self.last_collection_seconds: float = 0.0
         self._historical_database_url = settings.database_url
@@ -197,6 +200,7 @@ class MaritimeIntelligenceEngine:
         fingerprint = _track_fingerprint(tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             self.region_comparison = self._build_region_comparison()
+            self.regional_events = self._build_regional_events(tracks)
             return
         try:
             self.temporal = self.temporal_adapter.fit(model_tracks)
@@ -205,11 +209,16 @@ class MaritimeIntelligenceEngine:
             self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
             self._temporal_fingerprint = fingerprint
         self.region_comparison = self._build_region_comparison()
+        self.regional_events = self._build_regional_events(tracks)
 
     def _build_region_comparison(self) -> RegionComparison | None:
         if len(self.settings.monitoring_bboxes) != 2:
             return None
         return compare_regions(self.store.all(), self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
+    def _build_regional_events(self, tracks: dict[str, list[AISObservation]]) -> list[RegionalEvent]:
+        if len(self.settings.monitoring_bboxes) != 2:
+            return []
+        return detect_regional_events(tracks, self.settings.monitoring_bboxes)
 
     def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
         tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
@@ -248,7 +257,7 @@ class MaritimeIntelligenceEngine:
         vessels = self._merged_vessels(tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         status = replace(self.provider.status, active_vessels=len(tracks))
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
 
     def clear_session_data(self) -> None:
         self.store.clear()
@@ -259,6 +268,7 @@ class MaritimeIntelligenceEngine:
         self.current_session_observations = []
         self.temporal = None
         self.region_comparison = None
+        self.regional_events = []
         self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
         self.historical_result = None
