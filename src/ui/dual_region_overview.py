@@ -122,25 +122,27 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
     previous_global_selection = st.session_state.get("selected_mmsi")
     region_selection = st.session_state.get(selection_key)
     st.session_state.selected_mmsi = region_selection
-    original_pydeck_chart = st.__dict__["pydeck_chart"]
-
-    def _scoped_pydeck_chart(*args, **kwargs):
-        kwargs["key"] = map_key
-        return original_pydeck_chart(*args, **kwargs)
-
-    st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
-    original_apply_selection = map_render._apply_map_selection
-
     def _scoped_apply_selection(event) -> None:
         _capture_region_selection(event, selection_key)
 
-    map_render._apply_map_selection = _scoped_apply_selection
     try:
         st.caption(f"{label} · {region_name} · {format_bbox(bbox)}")
-        _render_vessel_map(rows, snapshot=region_snapshot, settings=region_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
+        _render_vessel_map(
+            rows,
+            snapshot=region_snapshot,
+            settings=region_settings,
+            show_heading=show_vectors,
+            show_trails=show_trails,
+            show_anomalies=show_behavior,
+            show_hexbin=show_hexbin,
+            show_anomaly_types=show_anomaly_types,
+            show_freshness=show_freshness,
+            show_anomaly_hotspots=show_anomaly_hotspots,
+            map_style=map_style,
+            map_key=map_key,
+            selection_handler=_scoped_apply_selection,
+        )
     finally:
-        map_render._apply_map_selection = original_apply_selection
-        st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
     selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
@@ -180,13 +182,6 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     # center, but derive a zoom from the complete real-target extent so distant
     # A/B regions remain visible instead of appearing as an empty map.
     st.session_state.tactical_map_zoom = _unified_map_zoom(rows)
-    original_pydeck_chart = st.__dict__["pydeck_chart"]
-    original_apply_selection = map_render._apply_map_selection
-
-    def _scoped_pydeck_chart(*args, **kwargs):
-        kwargs["key"] = "operational_ais_map_unified"
-        return original_pydeck_chart(*args, **kwargs)
-
     def _capture_unified_selection(event) -> None:
         try:
             selection = event.selection if event is not None else None
@@ -204,14 +199,24 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
             st.session_state[unified_selection_key] = str(mmsi).strip()
             st.rerun()
 
-    st.__dict__["pydeck_chart"] = _scoped_pydeck_chart
-    map_render._apply_map_selection = _capture_unified_selection
     try:
         st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
-        _render_vessel_map(rows, snapshot=unified_snapshot, settings=unified_settings, show_heading=show_vectors, show_trails=show_trails, show_anomalies=show_behavior, show_hexbin=show_hexbin, show_anomaly_types=show_anomaly_types, show_freshness=show_freshness, show_anomaly_hotspots=show_anomaly_hotspots, map_style=map_style)
+        _render_vessel_map(
+            rows,
+            snapshot=unified_snapshot,
+            settings=unified_settings,
+            show_heading=show_vectors,
+            show_trails=show_trails,
+            show_anomalies=show_behavior,
+            show_hexbin=show_hexbin,
+            show_anomaly_types=show_anomaly_types,
+            show_freshness=show_freshness,
+            show_anomaly_hotspots=show_anomaly_hotspots,
+            map_style=map_style,
+            map_key="operational_ais_map_unified",
+            selection_handler=_capture_unified_selection,
+        )
     finally:
-        map_render._apply_map_selection = original_apply_selection
-        st.__dict__["pydeck_chart"] = original_pydeck_chart
         st.session_state.selected_mmsi = previous_global_selection
         if previous_zoom is None:
             st.session_state.pop("tactical_map_zoom", None)
