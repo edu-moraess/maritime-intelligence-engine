@@ -63,6 +63,7 @@ class EngineSnapshot:
     summary: dict[str, float | int]
     readiness: ReadinessSnapshot
     last_collection_seconds: float
+    last_collection_breakdown: dict[str, float]
     historical_status: str
     historical_result: HistoricalWriteResult | None
     temporal: TemporalFitResult | None = None
@@ -108,6 +109,7 @@ class MaritimeIntelligenceEngine:
         self.regional_events: list[RegionalEvent] = []
         self._temporal_fingerprint: str | None = None
         self.last_collection_seconds: float = 0.0
+        self.last_collection_breakdown: dict[str, float] = {}
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
         self._historical_loaded = False
@@ -355,6 +357,7 @@ class MaritimeIntelligenceEngine:
         self.regional_events = []
         self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
+        self.last_collection_breakdown = {}
         self.historical_result = None
         self._historical_loaded = True
         if self.settings.config_error or not self.settings.aisstream_api_key:
