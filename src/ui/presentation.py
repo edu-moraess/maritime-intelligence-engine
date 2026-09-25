@@ -266,6 +266,48 @@ def _intel_chip_class(status: str) -> str:
     return "intel-waiting"
 
 
+def render_region_comparison(comparison) -> None:
+    """Render shared-session regional intelligence without ranking regions."""
+    if comparison is None:
+        return
+    st.markdown(
+        "<div class='panel-title'><span>REGIONAL INTELLIGENCE</span>"
+        "<span class='mono'>SHARED SESSION · DERIVED</span></div>",
+        unsafe_allow_html=True,
+    )
+    columns = st.columns(2)
+    for column, region in zip(columns, comparison.regions):
+        with column:
+            st.markdown(f"**{escape(region.label)}**")
+            metric_strip(
+                {
+                    "Vessels": region.unique_vessels,
+                    "Reports": region.position_reports,
+                    "Avg speed": f"{region.average_speed_knots:.1f} kn",
+                    "Anomalies": region.anomalies,
+                }
+            )
+            temporal_score = (
+                f"{region.average_temporal_score:.4f}"
+                if region.average_temporal_score is not None
+                else "—"
+            )
+            st.caption(
+                "Temporal score: " + temporal_score
+                + " · top-quartile rate: "
+                + f"{region.temporal_top_quartile_rate:.1%}"
+                + " · anomaly rate: "
+                + f"{region.anomaly_rate:.1%}"
+            )
+    if comparison.ambiguous_observations:
+        st.caption(
+            f"{comparison.ambiguous_observations:,} observation(s) fell inside both regions "
+            "and were excluded from both regional metrics to avoid double-counting."
+        )
+    else:
+        st.caption("Regional metrics use the same real-AIS session and shared analytical models.")
+
+
 def render_intelligence_status(items: list[tuple[str, str]]) -> None:
     """Compact intelligence readiness strip. items = [(label, status), ...]."""
     chips = []
