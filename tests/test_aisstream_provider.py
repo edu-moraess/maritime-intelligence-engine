@@ -14,29 +14,31 @@ def _obs(mmsi: str, minute: int) -> AISObservation:
     )
 
 
-def test_provider_derives_tracks_from_bounded_observations():
-    provider = AISStreamProvider(api_key="key", bbox=[[[25.0, -81.0], [26.0, -80.0]]], max_messages=2)
+def test_provider_is_stream_only():
+    provider = AISStreamProvider(
+        api_key="key",
+        bbox=[[[25.0, -81.0], [26.0, -80.0]]],
+        max_messages=2,
+    )
 
     provider._record(_obs("111000001", 1))
     provider._record(_obs("111000001", 2))
-    provider._record(_obs("222000001", 3))
 
-    tracks = provider.fetch_tracks()
-
-    assert tracks == {
-        "111000001": [provider._observations[0]],
-        "222000001": [provider._observations[1]],
-    }
+    assert not hasattr(provider, "_observations")
     assert not hasattr(provider, "_tracks")
+    assert provider.status.messages_received == 2
+    assert provider.status.active_vessels == 0
 
 
-def test_provider_vessel_view_uses_the_same_observation_buffer():
-    provider = AISStreamProvider(api_key="key", bbox=[[[25.0, -81.0], [26.0, -80.0]]], max_messages=10)
+def test_provider_reset_keeps_no_observation_state():
+    provider = AISStreamProvider(
+        api_key="key",
+        bbox=[[[25.0, -81.0], [26.0, -80.0]]],
+    )
     provider._record(_obs("111000001", 1))
-    provider._record(_obs("111000001", 2))
 
-    vessels = provider.fetch_vessels()
+    provider.reset_session()
 
-    assert len(vessels) == 1
-    assert vessels[0].mmsi == "111000001"
-    assert vessels[0].message_count == 2
+    assert not hasattr(provider, "_observations")
+    assert provider.status.messages_received == 0
+    assert provider.status.state == "DISCONNECTED"
