@@ -43,7 +43,7 @@ def _unified_snapshot(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...]) 
     """Create a presentation-only A+B snapshot for every auxiliary map layer."""
     observations = [o for o in snapshot.observations if _inside_bboxes(o.latitude, o.longitude, bboxes)]
     vessels = [v for v in snapshot.vessels if _inside_bboxes(v.latitude, v.longitude, bboxes)]
-    findings = [f for f in snapshot.findings if _inside_bboxes(f.latitude, o.longitude, bboxes)]
+    findings = [f for f in snapshot.findings if _inside_bboxes(f.latitude, f.longitude, bboxes)]
     current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _inside_bboxes(o.latitude, o.longitude, bboxes)]
     current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _inside_bboxes(f.latitude, f.longitude, bboxes)]
     speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
@@ -110,24 +110,15 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
     rows = vessel_rows(region_snapshot.vessels) if include_stale else live_vessel_rows(region_snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, (bbox,))
     region_selection = st.session_state.get(selection_key)
-
-    # Preserve the operational picture when a rerun happens after the collection
-    # window and all targets have crossed the freshness threshold. The unified
-    # view already follows this contract; SPLIT must do the same.
     if not rows and not include_stale:
         rows = filter_rows_to_bboxes(vessel_rows(region_snapshot.vessels), (bbox,))
-
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
-
-    # Keep the selected real target visible even when its signal is stale or it
-    # falls below the optional speed filter, matching the unified-view contract.
     if region_selection and not include_stale:
         selected = next((v for v in region_snapshot.vessels if str(v.mmsi) == str(region_selection)), None)
         if selected is not None and _in_bbox(selected.latitude, selected.longitude, bbox):
             if not any(str(row.get("mmsi")) == str(region_selection) for row in rows):
                 rows.append(vessel_rows([selected])[0])
-
     region_name = region_name_for_bbox(bbox) or label
     previous_global_selection = st.session_state.get("selected_mmsi")
     st.session_state.selected_mmsi = region_selection
@@ -217,7 +208,6 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
             show_heading=show_vectors,
             show_trails=show_trails,
             show_anomalies=show_behavior,
-            show_hexbin=show_hexbin,
             show_freshness=show_freshness,
             show_anomaly_types=show_anomaly_types,
             show_anomaly_hotspots=show_anomaly_hotspots,
