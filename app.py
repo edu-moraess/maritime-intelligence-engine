@@ -448,6 +448,21 @@ def main() -> None:
             st.warning(result_message)
 
     snapshot = engine.snapshot()
+    if snapshot.last_collection_breakdown:
+        with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
+            breakdown = snapshot.last_collection_breakdown
+            diagnostic_rows = (
+                ("AIS stream", "ais_stream"),
+                ("Historical restore", "historical_restore"),
+                ("Postgres persist", "postgres_persist"),
+                ("Region persistence", "region_persist"),
+                ("Environmental", "environmental"),
+                ("Recompute / ML", "recompute"),
+                ("Findings", "findings"),
+                ("Total", "total"),
+            )
+            for label, key in diagnostic_rows:
+                st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
     render_header(snapshot.status, page)
 
     if page != "Overview":
