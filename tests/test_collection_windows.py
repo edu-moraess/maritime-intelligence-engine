@@ -66,7 +66,10 @@ def test_sequential_windows_reset_only_window_message_limit(monkeypatch):
     assert len(first) == 1
     assert len(second) == 1
     assert provider.status.messages_received == 2
-    assert len(provider.fetch_tracks()["367000001"]) == 2
+    observations = first + second
+    assert [observation.mmsi for observation in observations] == [367000001, 367000001]
+    assert [observation.latitude for observation in observations] == [1.0, 1.1]
+    assert [observation.longitude for observation in observations] == [2.0, 2.1]
     assert len(sockets) == 2
     assert all(socket.sent for socket in sockets)
     assert all(socket.closed for socket in sockets)
