@@ -1,4 +1,4 @@
-"""Operational relevance filtering for expensive vessel-model processing.
+"""Model-interest candidate selection for expensive vessel-model processing.
 
 The filter is deliberately conservative: raw AIS observations remain in the
 session store and historical sink. It only selects tracks that are useful
@@ -31,7 +31,7 @@ def _distance_km(a: AISObservation, b: AISObservation) -> float:
     return 6371.0088 * 2 * asin(min(1.0, sqrt(hav)))
 
 
-def track_is_relevant(
+def track_is_interesting(
     track: Sequence[AISObservation],
     *,
     min_track_points: int = DEFAULT_MIN_TRACK_POINTS,
@@ -39,14 +39,14 @@ def track_is_relevant(
     min_speed_observations: int = DEFAULT_MIN_SPEED_OBSERVATIONS,
     min_displacement_km: float = DEFAULT_MIN_DISPLACEMENT_KM,
 ) -> bool:
-    """Return whether a track has enough movement information for model input.
+    """Return whether a track is interesting enough to enter model processing.
 
     A track is retained when it has enough observations and demonstrates either
     sustained AIS speed or measurable displacement. Requiring two speed-bearing
     observations avoids promoting a vessel because of one isolated SOG reading.
 
-    Tracks that do not pass remain available in the raw store and UI; they only
-    stop consuming trajectory/temporal-model capacity.
+    Tracks that do not pass remain available in the raw store and UI; they are only
+    not prioritized for trajectory/temporal-model processing.
     """
     if len(track) < min_track_points:
         return False
@@ -65,7 +65,7 @@ def track_is_relevant(
     return displacement >= min_displacement_km
 
 
-def select_relevant_tracks(
+def select_interesting_tracks(
     tracks: dict[str, list[AISObservation]],
     *,
     min_track_points: int = DEFAULT_MIN_TRACK_POINTS,
@@ -73,11 +73,11 @@ def select_relevant_tracks(
     min_speed_observations: int = DEFAULT_MIN_SPEED_OBSERVATIONS,
     min_displacement_km: float = DEFAULT_MIN_DISPLACEMENT_KM,
 ) -> dict[str, list[AISObservation]]:
-    """Select model candidates while preserving the original track mapping."""
+    """Select interesting model candidates while preserving the original track mapping."""
     return {
         mmsi: track
         for mmsi, track in tracks.items()
-        if track_is_relevant(
+        if track_is_interesting(
             track,
             min_track_points=min_track_points,
             min_speed_knots=min_speed_knots,
