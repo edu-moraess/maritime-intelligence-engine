@@ -287,7 +287,21 @@ def profile_from_engine_track(
     mmsi: str,
     engine: Any,
 ) -> BehavioralProfile:
-    """Adapter: load session track from engine.store.tracks() when available."""
+    """Adapter: load the latest live-session track when available.
+
+    The in-memory store intentionally accumulates real AIS history, so this
+    adapter must not silently broaden session-relative behavioral analysis to
+    historical observations.
+    """
+    session_observations = getattr(engine, "current_session_observations", None)
+    if session_observations is not None:
+        obs = [
+            observation
+            for observation in session_observations
+            if str(getattr(observation, "mmsi", "")) == str(mmsi)
+        ]
+        return build_behavioral_profile(mmsi, obs)
+
     tracks: dict[str, list[AISObservation]] = {}
     store = getattr(engine, "store", None)
     if store is not None and hasattr(store, "tracks"):
