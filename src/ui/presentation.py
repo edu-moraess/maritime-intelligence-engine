@@ -308,6 +308,23 @@ def render_region_comparison(comparison) -> None:
         st.caption("Regional metrics use the same real-AIS session and shared analytical models.")
 
 
+def render_regional_events(events) -> None:
+    """Render a compact temporal event feed from deterministic AIS evidence."""
+    if not events:
+        return
+    recent = list(events[-8:])[::-1]
+    st.markdown(
+        "<div class='panel-title'><span>REGIONAL EVENT FEED</span>"
+        "<span class='mono'>REAL AIS · DERIVED</span></div>",
+        unsafe_allow_html=True,
+    )
+    rows = []
+    for event in recent:
+        timestamp = event.timestamp.strftime("%H:%M:%S UTC")
+        duration = f"{event.duration_seconds:.0f}s" if event.duration_seconds is not None else "—"
+        rows.append(f"{timestamp} · {escape(event.mmsi)} · {escape(event.event_type)} · {escape(event.region_label)} · {duration}")
+    st.code("\\n".join(rows), language=None)
+
 def render_intelligence_status(items: list[tuple[str, str]]) -> None:
     """Compact intelligence readiness strip. items = [(label, status), ...]."""
     chips = []
