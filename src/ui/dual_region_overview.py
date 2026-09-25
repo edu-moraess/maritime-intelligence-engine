@@ -14,7 +14,7 @@ from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui import _pages_map_render as map_render
 from src.ui.pages_overview import _render_workspace_controls
 from src.ui.pages_helpers import _render_vessel_map
-from src.ui.presentation import render_ops_bar
+from src.ui.presentation import render_ops_bar, render_region_comparison
 from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 
@@ -237,6 +237,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
     render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
+    render_region_comparison(snapshot.region_comparison)
     controls = _render_workspace_controls(engine, settings)
     if len(monitoring) >= 2:
         map_mode = st.segmented_control("DISPLAY MODE", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
