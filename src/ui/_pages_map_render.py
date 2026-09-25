@@ -236,12 +236,15 @@ def _render_vessel_map(
     show_operational_strip: bool = True,
     map_key: str = "operational_ais_map",
     selection_handler=None,
+    selected_mmsi: str | None = None,
+    map_zoom: float | None = None,
 ) -> None:
     if not rows:
         empty_state("No real AIS position reports are available for the operational map.", "NO REAL AIS POSITION DATA")
         return
 
-    selected_mmsi = st.session_state.get("selected_mmsi")
+    if selected_mmsi is None:
+        selected_mmsi = st.session_state.get("selected_mmsi")
     anomaly_mmsis, critical_mmsis = anomaly_mmsi_sets(snapshot.findings)
     rows = enrich_tactical_rows(rows, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
     layers: list[pdk.Layer] = []
@@ -353,11 +356,11 @@ def _render_vessel_map(
         focus = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
         if focus:
             center_lat, center_lon = float(focus[0]["latitude"]), float(focus[0]["longitude"])
-            zoom = float(st.session_state.get("tactical_map_zoom", 9.5))
+            zoom = float(map_zoom if map_zoom is not None else st.session_state.get("tactical_map_zoom", 9.5))
         else:
             center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
             center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
-            zoom = float(st.session_state.get("tactical_map_zoom", 7.5))
+            zoom = float(map_zoom if map_zoom is not None else st.session_state.get("tactical_map_zoom", 7.5))
     else:
         center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
         center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
