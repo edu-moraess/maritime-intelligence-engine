@@ -199,14 +199,19 @@ class MaritimeIntelligenceEngine:
                 pass
             contexts[region] = context
         self.environmental_contexts = contexts
+    def _current_session_tracks(self) -> dict[str, list[AISObservation]]:
+        """Return only observations collected in the latest live window."""
+        tracks: dict[str, list[AISObservation]] = {}
+        for observation in self.current_session_observations:
+            tracks.setdefault(observation.mmsi, []).append(observation)
+        return tracks
+
     def _detect_current_session_findings(self) -> list[AnomalyFinding]:
         """Detect findings only from observations collected in the latest window."""
-        if not self.current_session_observations:
+        tracks = self._current_session_tracks()
+        if not tracks:
             return []
-        by_mmsi: dict[str, list[AISObservation]] = {}
-        for observation in self.current_session_observations:
-            by_mmsi.setdefault(observation.mmsi, []).append(observation)
-        return detect_anomalies(by_mmsi, self.embeddings)
+        return detect_anomalies(tracks, self.embeddings)
 
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
         """Switch only the optional historical sink; preserve all live state."""
@@ -221,10 +226,10 @@ class MaritimeIntelligenceEngine:
         self.settings = replace(self.settings, database_url=database_url, historical_persistence_enabled=persistence_enabled)
 
     def _recompute(self) -> None:
-        tracks = self.store.tracks()
-        # Keep every real AIS observation in the store, but avoid spending
-        # trajectory/temporal-model capacity on tracks with no useful movement
-        # signal. The model-interest candidate selector is deliberately isolated and testable.
+        # Keep every real AIS observation in the store for persistence and
+        # cross-session context, but fit session-relative analytics only on the
+        # latest operator-triggered live window.
+        tracks = self._current_session_tracks()
         model_tracks = select_interesting_tracks(tracks)
         self.embeddings = self.embedding_adapter.fit(model_tracks)
         self.findings = detect_anomalies(model_tracks, self.embeddings)
@@ -245,7 +250,7 @@ class MaritimeIntelligenceEngine:
     def _build_region_comparison(self) -> RegionComparison | None:
         if len(self.settings.monitoring_bboxes) != 2:
             return None
-        return compare_regions(self.store.all(), self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
+        return compare_regions(self.current_session_observations, self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
     def _build_regional_events(self, tracks: dict[str, list[AISObservation]]) -> list[RegionalEvent]:
         if len(self.settings.monitoring_bboxes) != 2:
             return []
@@ -286,9 +291,10 @@ class MaritimeIntelligenceEngine:
         observations = self.store.all()
         tracks = self.store.tracks()
         vessels = self._merged_vessels(tracks)
+        analysis_tracks = self._current_session_tracks()
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         status = replace(self.provider.status, active_vessels=len(tracks))
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(analysis_tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
 
     def clear_session_data(self) -> None:
         self.store.clear()
