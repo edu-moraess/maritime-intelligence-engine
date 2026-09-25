@@ -13,6 +13,8 @@ from src.analytics.traffic import traffic_summary
 from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
+from src.environment.context import EnvironmentalContext
+from src.environment.open_meteo_marine import OpenMeteoMarineProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.historical.session_regions import persist_collection_session_regions
@@ -68,6 +70,7 @@ class EngineSnapshot:
     regional_events: list[RegionalEvent] = field(default_factory=list)
     current_session_observations: list[AISObservation] = field(default_factory=list)
     current_session_findings: list[AnomalyFinding] = field(default_factory=list)
+    environmental_contexts: dict[str, EnvironmentalContext] = field(default_factory=dict)
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -98,6 +101,8 @@ class MaritimeIntelligenceEngine:
         self.findings: list[AnomalyFinding] = []
         self.current_session_findings: list[AnomalyFinding] = []
         self.current_session_observations: list[AISObservation] = []
+        self.environmental_provider = OpenMeteoMarineProvider()
+        self.environmental_contexts: dict[str, EnvironmentalContext] = {}
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
         self.regional_events: list[RegionalEvent] = []
@@ -170,10 +175,30 @@ class MaritimeIntelligenceEngine:
                     self.historical_result = replace(self.historical_result, reason=f"{self.historical_result.reason} Exact multi-region session provenance could not be persisted.")
         else:
             self.historical_result = None
+        self._refresh_environmental_contexts()
         self._recompute()
         self.current_session_findings = self._detect_current_session_findings()
         return len(collected)
 
+    def _refresh_environmental_contexts(self) -> None:
+        """Fetch real marine context independently of AIS anomaly scoring."""
+        contexts: dict[str, EnvironmentalContext] = {}
+        for index, bbox in enumerate(self.settings.monitoring_bboxes, start=1):
+            region = f"region_{index}"
+            context = EnvironmentalContext(region=region)
+            latitude = (bbox[0][0] + bbox[1][0]) / 2.0
+            longitude = (bbox[0][1] + bbox[1][1]) / 2.0
+            try:
+                observation = self.environmental_provider.current(
+                    latitude=latitude,
+                    longitude=longitude,
+                    region=region,
+                )
+                context = context.add(observation)
+            except Exception:
+                pass
+            contexts[region] = context
+        self.environmental_contexts = contexts
     def _detect_current_session_findings(self) -> list[AnomalyFinding]:
         """Detect findings only from observations collected in the latest window."""
         if not self.current_session_observations:
@@ -263,7 +288,7 @@ class MaritimeIntelligenceEngine:
         vessels = self._merged_vessels(tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         status = replace(self.provider.status, active_vessels=len(tracks))
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings))
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
 
     def clear_session_data(self) -> None:
         self.store.clear()
@@ -272,6 +297,7 @@ class MaritimeIntelligenceEngine:
         self.findings = []
         self.current_session_findings = []
         self.current_session_observations = []
+        self.environmental_contexts = {}
         self.temporal = None
         self.region_comparison = None
         self.regional_events = []
