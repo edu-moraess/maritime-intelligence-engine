@@ -129,9 +129,16 @@ class AISStreamProvider(AISProvider):
         if not self.api_key:
             self._set_failure("AISSTREAM_API_KEY is not configured.")
             return False, self._reason
+        if not self.bbox:
+            self._set_failure("At least one AIS bounding box is required.")
+            return False, self._reason
         try:
-            corners = ((float(self.bbox[0][0][0]), float(self.bbox[0][0][1])), (float(self.bbox[0][1][0]), float(self.bbox[0][1][1])))
-            _validate_bbox(corners)
+            for region in self.bbox:
+                corners = (
+                    (float(region[0][0]), float(region[0][1])),
+                    (float(region[1][0]), float(region[1][1])),
+                )
+                _validate_bbox(corners)
         except (IndexError, TypeError, ValueError) as exc:
             self._set_failure(f"Invalid AIS bounding box: {exc}")
             return False, self._reason
@@ -150,7 +157,7 @@ class AISStreamProvider(AISProvider):
         messages_at_start = self._messages_received
         backoff = 1.0
         opened = False
-        while not stop_event.is_set() and self._messages_received < self.max_messages:
+        while not stop_event.is_set() and (self._messages_received - messages_at_start) < self.max_messages:
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
@@ -280,8 +287,6 @@ class AISStreamProvider(AISProvider):
         self._position_reports_accepted += 1
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
-        self._state = "LIVE AIS"
-        self._reason = "Receiving real AIS position reports from AISStream."
         self._state = "LIVE AIS"
         self._reason = "Receiving real AIS position reports from AISStream."
 
