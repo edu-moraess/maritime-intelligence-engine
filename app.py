@@ -413,6 +413,7 @@ def main() -> None:
         st.session_state.pop("monitoring_bboxes", None)
         st.rerun()
 
+    # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
     collection_result = st.session_state.pop("collection_result", None)
     if collect:
         with st.spinner(
