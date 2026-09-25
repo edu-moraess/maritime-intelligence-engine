@@ -134,11 +134,12 @@ class MaritimeIntelligenceEngine:
         return len(restored)
 
     def collect(self, seconds: float | None = None) -> int:
-        """Collect a bounded real-time window; processing time is excluded from the window metric."""
-        # Hydrate persisted real AIS history only when the operator actually
-        # starts collection. This keeps the initial dashboard render fast while
-        # preserving historical context for the analytical session.
-        self._restore_historical_context()
+        """Collect a bounded real-time window starting immediately at operator action.
+
+        Historical hydration is intentionally performed after the live window so
+        database latency cannot consume any part of the operator-selected AIS
+        collection duration.
+        """
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -153,6 +154,11 @@ class MaritimeIntelligenceEngine:
         collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
+
+        # Restore persisted real AIS only after the live window has finished.
+        # This keeps the selected 60/300/600 s window anchored to the operator
+        # action rather than to database/network hydration latency.
+        self._restore_historical_context()
         self.current_session_observations = list(collected)
         self.current_session_findings = []
         if collected:
