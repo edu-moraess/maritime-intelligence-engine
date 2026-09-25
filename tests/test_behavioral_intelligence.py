@@ -392,6 +392,30 @@ def test_speed_variation_numeric():
     assert speed.speed_variation == pytest.approx(6.0, abs=1e-6)
 
 
+
+def test_profile_from_engine_track_uses_current_session_not_accumulated_store():
+    from src.intelligence.behavior import profile_from_engine_track
+    from types import SimpleNamespace
+
+    mmsi = "123456789"
+    historical = [
+        _obs(mmsi=mmsi, t=0, lat=-23.0, lon=-43.0, sog=2.0),
+        _obs(mmsi=mmsi, t=60, lat=-23.001, lon=-43.0, sog=2.0),
+    ]
+    current = [
+        _obs(mmsi=mmsi, t=120, lat=-23.01, lon=-43.0, sog=12.0),
+        _obs(mmsi=mmsi, t=180, lat=-23.02, lon=-43.0, sog=12.0),
+    ]
+    engine = SimpleNamespace(
+        store=SimpleNamespace(tracks=lambda: {mmsi: historical + current}),
+        current_session_observations=current,
+    )
+
+    profile = profile_from_engine_track(mmsi, engine)
+
+    assert profile.evidence.valid_position_count == 2
+    assert profile.speed.average_sog == pytest.approx(12.0)
+
 def test_naive_and_missing_timestamps_excluded():
     """Naive / missing received_at must not enter cleaned trajectory or features."""
     from types import SimpleNamespace
