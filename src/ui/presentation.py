@@ -323,7 +323,7 @@ def render_regional_events(events) -> None:
         timestamp = event.timestamp.strftime("%H:%M:%S UTC")
         duration = f"{event.duration_seconds:.0f}s" if event.duration_seconds is not None else "—"
         rows.append(f"{timestamp} · {escape(event.mmsi)} · {escape(event.event_type)} · {escape(event.region_label)} · {duration}")
-    st.code("\\n".join(rows), language=None)
+    st.code("\n".join(rows), language=None)
 
 def render_intelligence_status(items: list[tuple[str, str]]) -> None:
     """Compact intelligence readiness strip. items = [(label, status), ...]."""
