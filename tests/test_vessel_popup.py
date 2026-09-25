@@ -90,3 +90,27 @@ def test_render_vessel_with_insufficient_observations():
         embeddings=None,
     )
     render_vessel_quick_intelligence(vessel, snapshot, show_gemini_hook=False)
+def test_build_profile_for_ui_distinguishes_historical_selection_without_current_session():
+    vessel = SimpleNamespace(
+        mmsi="538010091",
+        vessel_name="FEDERAL IMPACT",
+        sog_knots=None,
+        cog_degrees=None,
+        heading_degrees=None,
+        latitude=None,
+        longitude=None,
+        navigational_status=None,
+        last_received=datetime.now(timezone.utc),
+    )
+    snapshot = SimpleNamespace(
+        current_session_observations=[],
+        current_session_findings=[],
+        observations=[],
+        findings=[],
+        embeddings=None,
+    )
+    profile = build_profile_for_ui(vessel, snapshot, engine=None)
+    assert profile.telemetry.available is False
+    assert profile.session_observation_count == 0
+    assert profile.confidence.level == "N/A"
+
