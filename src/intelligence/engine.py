@@ -159,25 +159,71 @@ class MaritimeIntelligenceEngine:
         collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
+        breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
 
         # Restore persisted real AIS only after the live window has finished.
         # This keeps the selected 60/300/600 s window anchored to the operator
         # action rather than to database/network hydration latency.
+        phase_started = time.monotonic()
         self._restore_historical_context()
+        breakdown["historical_restore"] = time.monotonic() - phase_started
+
         self.current_session_observations = list(collected)
         self.current_session_findings = []
         if collected:
             self.store.extend(collected)
-            self.historical_result = self.historical_writer.persist_collection(collected, self.settings.bbox, collection_elapsed, started_at, ended_at)
-            if self.historical_result.session_id is not None and self._historical_persistence_enabled and len(self.settings.monitoring_bboxes) > 1:
-                regions_persisted = persist_collection_session_regions(self._historical_database_url, self.historical_result.session_id, self.settings.monitoring_bboxes)
+
+            phase_started = time.monotonic()
+            self.historical_result = self.historical_writer.persist_collection(
+                collected,
+                self.settings.bbox,
+                collection_elapsed,
+                started_at,
+                ended_at,
+            )
+            breakdown["postgres_persist"] = time.monotonic() - phase_started
+
+            if (
+                self.historical_result.session_id is not None
+                and self._historical_persistence_enabled
+                and len(self.settings.monitoring_bboxes) > 1
+            ):
+                phase_started = time.monotonic()
+                regions_persisted = persist_collection_session_regions(
+                    self._historical_database_url,
+                    self.historical_result.session_id,
+                    self.settings.monitoring_bboxes,
+                )
+                breakdown["region_persist"] = time.monotonic() - phase_started
                 if not regions_persisted:
-                    self.historical_result = replace(self.historical_result, reason=f"{self.historical_result.reason} Exact multi-region session provenance could not be persisted.")
+                    self.historical_result = replace(
+                        self.historical_result,
+                        reason=(
+                            f"{self.historical_result.reason} "
+                            "Exact multi-region session provenance could not be persisted."
+                        ),
+                    )
+            else:
+                breakdown["region_persist"] = 0.0
         else:
             self.historical_result = None
+            breakdown["postgres_persist"] = 0.0
+            breakdown["region_persist"] = 0.0
+
+        phase_started = time.monotonic()
         self._refresh_environmental_contexts()
+        breakdown["environmental"] = time.monotonic() - phase_started
+
+        phase_started = time.monotonic()
         self._recompute()
+        breakdown["recompute"] = time.monotonic() - phase_started
+
+        phase_started = time.monotonic()
         self.current_session_findings = self._detect_current_session_findings()
+        breakdown["findings"] = time.monotonic() - phase_started
+
+        breakdown["total"] = time.monotonic() - started
+        self.last_collection_breakdown = breakdown
         return len(collected)
 
     def _refresh_environmental_contexts(self) -> None:
@@ -294,7 +340,7 @@ class MaritimeIntelligenceEngine:
         analysis_tracks = self._current_session_tracks()
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
         status = replace(self.provider.status, active_vessels=len(tracks))
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(analysis_tracks), last_collection_seconds=self.last_collection_seconds, historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
+        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(analysis_tracks), last_collection_seconds=self.last_collection_seconds, last_collection_breakdown=dict(self.last_collection_breakdown), historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
 
     def clear_session_data(self) -> None:
         self.store.clear()
