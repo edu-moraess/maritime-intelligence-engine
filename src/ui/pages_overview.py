@@ -131,7 +131,7 @@ def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: App
     return map_values
 
 
-def _render_environmental_context(snapshot: EngineSnapshot) -> None:
+def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None:
     """Show environmental evidence separately from AIS intelligence."""
     contexts = snapshot.environmental_contexts
     if not contexts:
@@ -140,7 +140,9 @@ def _render_environmental_context(snapshot: EngineSnapshot) -> None:
     columns = st.columns(len(contexts))
     for column, (region_key, context) in zip(columns, contexts.items()):
         with column:
-            label = region_key.replace("_", " ").upper()
+            index = int(region_key.rsplit("_", 1)[-1]) - 1
+            bbox = bboxes[index] if bboxes is not None and index < len(bboxes) else None
+            label = (region_name_for_bbox(bbox) if bbox is not None else None) or region_key.replace("_", " ").upper()
             latest = context.latest
             st.caption(label)
             if latest is None:
