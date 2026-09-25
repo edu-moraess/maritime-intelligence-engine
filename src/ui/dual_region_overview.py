@@ -208,6 +208,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
             show_heading=show_vectors,
             show_trails=show_trails,
             show_anomalies=show_behavior,
+            show_hexbin=show_hexbin,
             show_freshness=show_freshness,
             show_anomaly_types=show_anomaly_types,
             show_anomaly_hotspots=show_anomaly_hotspots,
