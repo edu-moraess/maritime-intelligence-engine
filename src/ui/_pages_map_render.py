@@ -234,6 +234,8 @@ def _render_vessel_map(
     show_anomaly_hotspots: bool = False,
     map_style: str = "Dark Matter",
     show_operational_strip: bool = True,
+    map_key: str = "operational_ais_map",
+    selection_handler=None,
 ) -> None:
     if not rows:
         empty_state("No real AIS position reports are available for the operational map.", "NO REAL AIS POSITION DATA")
@@ -402,8 +404,8 @@ def _render_vessel_map(
         components.html(deck.to_html(as_string=True), height=580, scrolling=False)
         event = None
     else:
-        event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map", selection_mode="single-object", on_select="rerun")
-    _apply_map_selection(event)
+        event = st.pydeck_chart(deck, width="stretch", height=580, key=map_key, selection_mode="single-object", on_select="rerun")
+        (selection_handler or _apply_map_selection)(event)
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
         f"<span>N ▲</span><span>LAT {center_lat:.4f} · LON {center_lon:.4f}</span><span>TARGETS {len(rows)}</span></div>",
