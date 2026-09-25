@@ -56,7 +56,6 @@ def _apply_map_selection(event) -> None:
     if mmsi.isdigit() and len(mmsi) == 9:
         if st.session_state.get("selected_mmsi") != mmsi:
             st.session_state.selected_mmsi = mmsi
-            st.rerun()
 
 
 def _select_vessel(snapshot: EngineSnapshot, label: str) -> VesselSnapshot | None:
