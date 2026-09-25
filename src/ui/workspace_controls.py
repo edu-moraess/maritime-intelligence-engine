@@ -41,10 +41,11 @@ def _sync_operator_timezone() -> None:
 
 def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
     """Expose live/stale contact counts using the provider receive-time clock."""
-    vessels = engine.provider.fetch_vessels()
+    snapshot = engine.snapshot()
+    vessels = snapshot.vessels
     stale_count = sum(1 for vessel in vessels if vessel.stale)
     live_count = len(vessels) - stale_count
-    status = engine.snapshot().status
+    status = snapshot.status
     last_received = status.last_received_at
     age_seconds = (
         max(0.0, (datetime.now(timezone.utc) - last_received).total_seconds())
