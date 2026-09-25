@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from src.ingestion.models import AISObservation
 from src.processing.relevance import select_relevant_tracks, track_is_relevant
@@ -19,6 +19,14 @@ def test_single_observation_is_not_model_relevant():
     assert not track_is_relevant(track)
 
 
+def test_one_speed_observation_is_not_enough_by_itself():
+    track = [
+        _obs("111111111", -23.0, -46.0, seconds=0, speed=0.0),
+        _obs("111111111", -23.0, -46.0, seconds=10, speed=4.0),
+    ]
+    assert not track_is_relevant(track)
+
+
 def test_stationary_repeated_track_is_not_model_relevant():
     track = [
         _obs("111111111", -23.0, -46.0, seconds=0, speed=0.0),
@@ -27,9 +35,9 @@ def test_stationary_repeated_track_is_not_model_relevant():
     assert not track_is_relevant(track)
 
 
-def test_moving_track_is_model_relevant():
+def test_sustained_speed_makes_track_model_relevant():
     track = [
-        _obs("111111111", -23.0, -46.0, seconds=0, speed=0.0),
+        _obs("111111111", -23.0, -46.0, seconds=0, speed=3.0),
         _obs("111111111", -23.0, -46.0, seconds=10, speed=4.0),
     ]
     assert track_is_relevant(track)
@@ -45,7 +53,7 @@ def test_displacement_can_make_track_relevant_without_speed():
 
 def test_selector_keeps_only_relevant_tracks():
     moving = [
-        _obs("111111111", -23.0, -46.0, seconds=0, speed=0.0),
+        _obs("111111111", -23.0, -46.0, seconds=0, speed=3.0),
         _obs("111111111", -23.0, -46.0, seconds=10, speed=4.0),
     ]
     stationary = [
