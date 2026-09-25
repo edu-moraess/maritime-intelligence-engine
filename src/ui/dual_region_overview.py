@@ -9,6 +9,7 @@ import streamlit as st
 from src.config.regions import format_bbox, region_name_for_bbox
 from src.config.settings import AppSettings, RegionBBox
 from src.geospatial.map_data import filter_rows_to_bboxes, live_vessel_rows, vessel_rows
+from src.geospatial.region_membership import contains_point, belongs_to_any
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui import _pages_map_render as map_render
 from src.ui.pages_overview import _render_workspace_controls
@@ -18,14 +19,11 @@ from src.ui.vessel_popup import render_vessel_quick_intelligence
 
 
 def _in_bbox(latitude: float | None, longitude: float | None, bbox: RegionBBox) -> bool:
-    if latitude is None or longitude is None:
-        return False
-    (min_lat, min_lon), (max_lat, max_lon) = bbox
-    return min_lat <= float(latitude) <= max_lat and min_lon <= float(longitude) <= max_lon
+    return contains_point(latitude, longitude, bbox)
 
 
 def _inside_bboxes(latitude: float | None, longitude: float | None, bboxes: tuple[RegionBBox, ...]) -> bool:
-    return any(_in_bbox(latitude, longitude, bbox) for bbox in bboxes)
+    return belongs_to_any(latitude, longitude, bboxes)
 
 
 def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnapshot:
