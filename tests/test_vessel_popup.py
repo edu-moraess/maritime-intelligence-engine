@@ -61,7 +61,7 @@ def test_build_profile_for_ui_does_not_fabricate_when_history_disabled():
     assert profile.identity.mmsi == "235102528"
     assert profile.historical.status == "N/A"
     assert profile.movement.status == "INSUFFICIENT_DATA"
-    assert profile.confidence.level == "LOW"
+    assert profile.confidence.level == "N/A"
 
 
 def test_render_vessel_with_insufficient_observations():
