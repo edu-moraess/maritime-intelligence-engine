@@ -59,17 +59,17 @@ def compare_regions(
     region_observations: list[list[AISObservation]] = [[], []]
     ambiguous = 0
     for observation in observations:
-        membership = membership(observation.latitude, observation.longitude, bboxes)
-        if len(membership) == 1:
-            region_observations[membership[0]].append(observation)
-        elif len(membership) > 1:
+        region_indexes = membership(observation.latitude, observation.longitude, bboxes)
+        if len(region_indexes) == 1:
+            region_observations[region_indexes[0]].append(observation)
+        elif len(region_indexes) > 1:
             ambiguous += 1
 
     finding_counts = [0, 0]
     for finding in findings:
-        membership = membership(finding.latitude, finding.longitude, bboxes)
-        if len(membership) == 1:
-            finding_counts[membership[0]] += 1
+        region_indexes = membership(finding.latitude, finding.longitude, bboxes)
+        if len(region_indexes) == 1:
+            finding_counts[region_indexes[0]] += 1
 
     temporal_scores = {
         score.mmsi: score
