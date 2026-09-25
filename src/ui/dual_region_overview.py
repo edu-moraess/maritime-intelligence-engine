@@ -156,13 +156,6 @@ def _unified_rows(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...], *, i
     """Build unified targets without dropping the real operational picture on rerun."""
     rows = vessel_rows(snapshot.vessels) if include_stale else live_vessel_rows(snapshot.vessels)
     rows = filter_rows_to_bboxes(rows, bboxes)
-    if not rows and not include_stale:
-        rows = filter_rows_to_bboxes(vessel_rows(snapshot.vessels), bboxes)
-    if selected_mmsi and not include_stale:
-        selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
-        if selected is not None and _inside_bboxes(selected.latitude, selected.longitude, bboxes):
-            if not any(str(row.get("mmsi")) == str(selected_mmsi) for row in rows):
-                rows.append(vessel_rows([selected])[0])
     return rows
 
 
