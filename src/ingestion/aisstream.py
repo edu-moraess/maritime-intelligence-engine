@@ -18,7 +18,7 @@ from typing import Iterator
 
 from src.config.settings import _validate_bbox
 
-from .models import AISObservation, IngestionStatus, VesselSnapshot
+from .models import AISObservation, IngestionStatus
 
 try:
     import websocket
@@ -34,14 +34,6 @@ class AISProvider(ABC):
 
     @abstractmethod
     def connect(self) -> tuple[bool, str]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def fetch_vessels(self) -> list[VesselSnapshot]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def fetch_tracks(self) -> dict[str, list[AISObservation]]:
         raise NotImplementedError
 
     @abstractmethod
@@ -72,7 +64,6 @@ class AISStreamProvider(AISProvider):
         self.max_vessels = max_vessels
         self.stale_after_seconds = stale_after_seconds
         self.config_error = config_error
-        self._observations: list[AISObservation] = []
         self._connected_at: datetime | None = None
         self._last_received_at: datetime | None = None
         self._last_ais_timestamp_second: int | None = None
@@ -95,7 +86,7 @@ class AISStreamProvider(AISProvider):
             connected_at=self._connected_at,
             last_received_at=self._last_received_at,
             messages_received=self._messages_received,
-            active_vessels=len({item.mmsi for item in self._observations}),
+            active_vessels=0,
             latency_seconds=None,
             websocket_status=self._websocket_status,
             ais_timestamp_second=self._last_ais_timestamp_second,
@@ -108,7 +99,6 @@ class AISStreamProvider(AISProvider):
 
     def reset_session(self) -> None:
         """Start an isolated collection window; never mix regions or stale targets."""
-        self._observations.clear()
         self._connected_at = None
         self._last_received_at = None
         self._last_ais_timestamp_second = None
@@ -292,39 +282,8 @@ class AISStreamProvider(AISProvider):
         self._last_ais_timestamp_second = observation.ais_timestamp_second
         self._state = "LIVE AIS"
         self._reason = "Receiving real AIS position reports from AISStream."
-        self._observations.append(observation)
-        if len(self._observations) > self.max_messages:
-            self._observations = self._observations[-self.max_messages :]
-    def fetch_vessels(self) -> list[VesselSnapshot]:
-        now = datetime.now(timezone.utc)
-        result: list[VesselSnapshot] = []
-        for mmsi, track in self.fetch_tracks().items():
-            if not track:
-                continue
-            latest = track[-1]
-            result.append(
-                VesselSnapshot(
-                    mmsi=mmsi,
-                    latitude=latest.latitude,
-                    longitude=latest.longitude,
-                    last_received=latest.received_at,
-                    sog_knots=latest.sog_knots,
-                    cog_degrees=latest.cog_degrees,
-                    heading_degrees=latest.heading_degrees,
-                    vessel_name=latest.vessel_name,
-                    message_count=len(track),
-                    ais_timestamp_second=latest.ais_timestamp_second,
-                    observed_at=latest.observed_at,
-                    stale=(now - latest.received_at).total_seconds() > self.stale_after_seconds,
-                )
-            )
-        return sorted(result, key=lambda vessel: vessel.last_received, reverse=True)
-
-    def fetch_tracks(self) -> dict[str, list[AISObservation]]:
-        tracks: dict[str, list[AISObservation]] = {}
-        for observation in self._observations:
-            tracks.setdefault(observation.mmsi, []).append(observation)
-        return tracks
+        self._state = "LIVE AIS"
+        self._reason = "Receiving real AIS position reports from AISStream."
 
     def _set_failure(self, reason: str) -> None:
         self._state = "DISCONNECTED"
