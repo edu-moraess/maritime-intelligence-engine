@@ -126,7 +126,7 @@ def render_vessel_quick_intelligence(
     mmsi = identity.mmsi
     name = identity.vessel_name or "UNKNOWN VESSEL"
 
-    # Compact LIVE header (Operations Frontend)
+    # Target header reflects the current-session provenance.
     telem_parts = []
     if telemetry.sog_knots is not None:
         telem_parts.append(f"{telemetry.sog_knots:.1f} kn")
@@ -135,13 +135,15 @@ def render_vessel_quick_intelligence(
     elif telemetry.heading_degrees is not None:
         telem_parts.append(f"HDG {telemetry.heading_degrees:.0f}°")
     telem = " · ".join(telem_parts) if telem_parts else "—"
+    target_provenance = "LIVE" if telemetry.available else "HISTORICAL CONTEXT"
+    target_badge = provenance_badge(target_provenance)
 
     st.markdown(
         f"<div class='vessel-id'>"
         f"<div class='name'>{escape(name)}</div>"
         f"<div class='mmsi'>MMSI {escape(str(mmsi))}</div>"
         f"</div>"
-        f"<div class='vessel-live-line'>{provenance_badge('LIVE')}"
+        f"<div class='vessel-live-line'>{target_badge}"
         f"<span class='telem'>{escape(telem)}</span></div>",
         unsafe_allow_html=True,
     )
@@ -163,9 +165,12 @@ def render_vessel_quick_intelligence(
     )
     st.caption(f"Provenance · {identity.provenance}")
 
-    # Current telemetry — LIVE
+    # Current telemetry — explicitly scoped to the current session.
     section_kicker("Current telemetry")
-    st.markdown(provenance_badge("LIVE"), unsafe_allow_html=True)
+    st.markdown(
+        provenance_badge("LIVE") if telemetry.available else provenance_badge("NO CURRENT SESSION DATA"),
+        unsafe_allow_html=True,
+    )
     if not telemetry.available:
         notice("No valid session observation for this MMSI.", "yellow")
     else:
