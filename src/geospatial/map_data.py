@@ -5,9 +5,9 @@ from __future__ import annotations
 from math import cos, radians, sin
 from typing import Sequence
 
+from src.config.settings import RegionBBox
+from src.geospatial.region_membership import belongs_to_any
 from src.ingestion.models import AISObservation, VesselSnapshot
-
-RegionBBox = tuple[tuple[float, float], tuple[float, float]]
 
 
 def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
@@ -55,10 +55,10 @@ def filter_rows_to_bboxes(rows: list[dict], bboxes: Sequence[RegionBBox]) -> lis
     return [
         row
         for row in rows
-        if any(
-            min_lat <= float(row["latitude"]) <= max_lat
-            and min_lon <= float(row["longitude"]) <= max_lon
-            for (min_lat, min_lon), (max_lat, max_lon) in normalized
+        if belongs_to_any(
+            row.get("latitude"),
+            row.get("longitude"),
+            normalized,
         )
     ]
 
