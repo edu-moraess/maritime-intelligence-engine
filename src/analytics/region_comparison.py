@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from statistics import quantiles
 from typing import Iterable, Sequence
 
+from src.config.settings import RegionBBox
+from src.geospatial.region_membership import membership
 from src.ingestion.models import AISObservation, AnomalyFinding
 from src.ml.temporal.types import TemporalFitResult
-
-RegionBBox = tuple[tuple[float, float], tuple[float, float]]
 
 
 @dataclass(frozen=True)
@@ -36,15 +36,6 @@ class RegionComparison:
     ambiguous_observations: int = 0
 
 
-def _contains(bbox: RegionBBox, latitude: float, longitude: float) -> bool:
-    (min_lat, min_lon), (max_lat, max_lon) = bbox
-    return min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
-
-
-def _membership(latitude: float, longitude: float, bboxes: Sequence[RegionBBox]) -> tuple[int, ...]:
-    return tuple(index for index, bbox in enumerate(bboxes) if _contains(bbox, latitude, longitude))
-
-
 def compare_regions(
     observations: Iterable[AISObservation],
     findings: Iterable[AnomalyFinding],
@@ -68,7 +59,7 @@ def compare_regions(
     region_observations: list[list[AISObservation]] = [[], []]
     ambiguous = 0
     for observation in observations:
-        membership = _membership(observation.latitude, observation.longitude, bboxes)
+        membership = membership(observation.latitude, observation.longitude, bboxes)
         if len(membership) == 1:
             region_observations[membership[0]].append(observation)
         elif len(membership) > 1:
@@ -76,7 +67,7 @@ def compare_regions(
 
     finding_counts = [0, 0]
     for finding in findings:
-        membership = _membership(finding.latitude, finding.longitude, bboxes)
+        membership = membership(finding.latitude, finding.longitude, bboxes)
         if len(membership) == 1:
             finding_counts[membership[0]] += 1
 
