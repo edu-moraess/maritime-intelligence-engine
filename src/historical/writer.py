@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -153,13 +154,21 @@ class PostgresHistoricalWriter(HistoricalWriter):
             return result
 
         session_id = uuid4()
+        persist_started = time.perf_counter()
         try:
+            connection_started = time.perf_counter()
             connection = self._get_connection()
+            LOGGER.info("Historical persistence connection ready elapsed=%.3fs", time.perf_counter() - connection_started)
+
+            schema_started = time.perf_counter()
             self._ensure_schema(connection)
+            LOGGER.info("Historical persistence schema check elapsed=%.3fs", time.perf_counter() - schema_started)
+
             persisted = 0
             duplicates = 0
             with connection.cursor() as cursor:
                 region_id = self._region_id(cursor, region_name_for_bbox(bbox))
+                first_execute_started = time.perf_counter()
                 cursor.execute(
                     """
                     INSERT INTO collection_sessions
@@ -182,6 +191,8 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         "AISSTREAM",
                     ),
                 )
+                LOGGER.info("Historical persistence first business execute elapsed=%.3fs", time.perf_counter() - first_execute_started)
+                observation_loop_started = time.perf_counter()
                 for observation in valid_observations:
                     cursor.execute(
                         """
@@ -237,7 +248,16 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         duplicates += 1
                     else:
                         persisted += 1
+            observation_loop_elapsed = time.perf_counter() - observation_loop_started
+            commit_started = time.perf_counter()
             connection.commit()
+            commit_elapsed = time.perf_counter() - commit_started
+            LOGGER.info(
+                "Historical persistence timings observation_loop=%.3fs commit=%.3fs total=%.3fs",
+                observation_loop_elapsed,
+                commit_elapsed,
+                time.perf_counter() - persist_started,
+            )
             self._status = "HISTORICAL DATABASE AVAILABLE"
             result = HistoricalWriteResult(
                 status=self.status,
@@ -265,12 +285,24 @@ class PostgresHistoricalWriter(HistoricalWriter):
             return result
 
     def _get_connection(self) -> Any:
-        if self._connection is None or getattr(self._connection, "closed", False):
+        cached = self._connection is not None
+        closed = bool(getattr(self._connection, "closed", False)) if cached else False
+        if not cached or closed:
+            LOGGER.info("Historical persistence connection OPEN new=True cached=%s closed=%s", cached, closed)
+            connect_started = time.perf_counter()
             self._connection = self._connect_fn(self.database_url)
+            LOGGER.info(
+                "Historical persistence connection OPEN completed elapsed=%.3fs closed=%s",
+                time.perf_counter() - connect_started,
+                bool(getattr(self._connection, "closed", False)),
+            )
+        else:
+            LOGGER.info("Historical persistence connection REUSE cached=True closed=False")
         return self._connection
 
     def _ensure_schema(self, connection: Any) -> None:
         with connection.cursor() as cursor:
+            schema_execute_started = time.perf_counter()
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS mie_schema_migrations (
