@@ -119,9 +119,7 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
     region_name = region_name_for_bbox(bbox) or label
-    previous_global_selection = st.session_state.get("selected_mmsi")
     region_selection = st.session_state.get(selection_key)
-    st.session_state.selected_mmsi = region_selection
     def _scoped_apply_selection(event) -> None:
         _capture_region_selection(event, selection_key)
 
@@ -141,9 +139,8 @@ def _render_map(label: str, bbox: RegionBBox, snapshot: EngineSnapshot, settings
             map_style=map_style,
             map_key=map_key,
             selection_handler=_scoped_apply_selection,
+            selected_mmsi=region_selection,
         )
-    finally:
-        st.session_state.selected_mmsi = previous_global_selection
     selected = _selected_region_vessel(region_snapshot, selection_key)
     if selected is not None:
         with st.container(key=f"tactical-contact-panel-{label.lower()}", border=True):
@@ -175,13 +172,10 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     rows = _unified_rows(unified_snapshot, bboxes, include_stale=include_stale, selected_mmsi=unified_selection)
     if min_speed > 0:
         rows = [row for row in rows if row.get("sog_knots") is not None and float(row["sog_knots"]) >= min_speed]
-    previous_global_selection = st.session_state.get("selected_mmsi")
-    previous_zoom = st.session_state.get("tactical_map_zoom")
-    st.session_state.selected_mmsi = unified_selection
+    unified_zoom = _unified_map_zoom(rows)
     # _render_vessel_map centers on the mean of the real targets. Keep that
     # center, but derive a zoom from the complete real-target extent so distant
     # A/B regions remain visible instead of appearing as an empty map.
-    st.session_state.tactical_map_zoom = _unified_map_zoom(rows)
     def _capture_unified_selection(event) -> None:
         try:
             selection = event.selection if event is not None else None
@@ -215,13 +209,9 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
             map_style=map_style,
             map_key="operational_ais_map_unified",
             selection_handler=_capture_unified_selection,
+            selected_mmsi=unified_selection,
+            map_zoom=unified_zoom,
         )
-    finally:
-        st.session_state.selected_mmsi = previous_global_selection
-        if previous_zoom is None:
-            st.session_state.pop("tactical_map_zoom", None)
-        else:
-            st.session_state.tactical_map_zoom = previous_zoom
     selected_mmsi = st.session_state.get(unified_selection_key)
     if selected_mmsi:
         selected = next((v for v in snapshot.vessels if str(v.mmsi) == str(selected_mmsi)), None)
