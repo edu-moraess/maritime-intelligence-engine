@@ -149,11 +149,11 @@ class AISStreamProvider(AISProvider):
 
     def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
         """Read continuously for a finite collection window with bounded reconnects."""
+        stop_event = stop_event or threading.Event()
+        deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
         ready, _ = self.connect()
         if not ready:
             return
-        stop_event = stop_event or threading.Event()
-        deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
         messages_at_start = self._messages_received
         backoff = 1.0
         opened = False
@@ -175,7 +175,8 @@ class AISStreamProvider(AISProvider):
                 self._websocket_status = "OPEN"
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
-                while not stop_event.is_set() and self._messages_received < self.max_messages:
+                messages_at_socket_start = self._messages_received
+                while not stop_event.is_set() and (self._messages_received - messages_at_socket_start) < self.max_messages:
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     try:
