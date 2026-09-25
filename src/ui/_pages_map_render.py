@@ -383,7 +383,7 @@ def _render_vessel_map(
     by_mmsi_obs: dict[str, int] = {}
     if has_live_rows:
         for observation in list(snapshot.current_session_observations or []):
-        by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
+            by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
     tracks_count = sum(1 for n in by_mmsi_obs.values() if n >= 2)
     live_state = str(getattr(snapshot.status, "state", "DISCONNECTED") or "DISCONNECTED")
     region = "CUSTOM"
