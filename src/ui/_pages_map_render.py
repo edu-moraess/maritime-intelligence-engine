@@ -239,9 +239,9 @@ def _render_vessel_map(
     selected_mmsi: str | None = None,
     map_zoom: float | None = None,
 ) -> None:
-    if not rows:
-        empty_state("No real AIS position reports are available for the operational map.", "NO REAL AIS POSITION DATA")
-        return
+    has_live_rows = bool(rows)
+    if not has_live_rows:
+        empty_state("No real AIS position reports are currently available for the operational map.", "NO CURRENT AIS POSITION DATA")
 
     if selected_mmsi is None:
         selected_mmsi = st.session_state.get("selected_mmsi")
@@ -249,7 +249,7 @@ def _render_vessel_map(
     rows = enrich_tactical_rows(rows, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
     layers: list[pdk.Layer] = []
 
-    if show_hexbin and snapshot.observations:
+    if has_live_rows and show_hexbin and snapshot.observations:
         hex_rows = [
             {"longitude": float(o.longitude), "latitude": float(o.latitude)}
             for o in list(snapshot.observations)[:4000]
@@ -270,7 +270,7 @@ def _render_vessel_map(
                 )
             )
 
-    if show_anomaly_hotspots and snapshot.findings:
+    if has_live_rows and show_anomaly_hotspots and snapshot.findings:
         hot = [
             {"latitude": float(f.latitude), "longitude": float(f.longitude), "radius": 900 + min(2000, float(f.score) * 1500)}
             for f in snapshot.findings
@@ -279,7 +279,7 @@ def _render_vessel_map(
         if hot:
             layers.append(pdk.Layer("ScatterplotLayer", data=hot, get_position=["longitude", "latitude"], get_fill_color=[239, 107, 115, 55], get_radius="radius", radius_min_pixels=5, radius_max_pixels=30, pickable=False))
 
-    if show_anomaly_types and snapshot.findings:
+    if has_live_rows and show_anomaly_types and snapshot.findings:
         anomaly_rows = _build_anomaly_type_rows(snapshot.findings)
         if anomaly_rows:
             layers.append(
@@ -295,7 +295,7 @@ def _render_vessel_map(
                 )
             )
 
-    if show_freshness:
+    if has_live_rows and show_freshness:
         freshness_rows = _build_freshness_rows(rows, snapshot.status.last_received_at)
         if freshness_rows:
             layers.append(
@@ -311,7 +311,7 @@ def _render_vessel_map(
                 )
             )
 
-    if show_trails:
+    if has_live_rows and show_trails:
         by_mmsi: dict[str, list] = {}
         for observation in list(snapshot.observations or []):
             by_mmsi.setdefault(str(observation.mmsi), []).append(observation)
@@ -333,26 +333,27 @@ def _render_vessel_map(
     (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
     layers.append(pdk.Layer("PathLayer", data=[{"path": [[min_lon, min_lat], [max_lon, min_lat], [max_lon, max_lat], [min_lon, max_lat], [min_lon, min_lat]]}], get_path="path", get_color=[233, 184, 87, 90], get_width=1, width_min_pixels=1, pickable=False))
 
-    if show_heading:
+    if has_live_rows and show_heading:
         vector_rows = [r for r in rows if r.get("has_vector")]
         if vector_rows:
             layers.append(pdk.Layer("LineLayer", data=vector_rows, get_source_position=["longitude", "latitude"], get_target_position=["vector_end_lon", "vector_end_lat"], get_color=[233, 184, 87, 200], get_width=2, width_min_pixels=1, pickable=False))
 
-    layers.append(pdk.Layer("ScatterplotLayer", data=rows, get_position=["longitude", "latitude"], get_fill_color="halo_color", get_radius="halo_radius", radius_min_pixels=8, radius_max_pixels=26, pickable=False))
-    layers.append(pdk.Layer("PolygonLayer", data=rows, get_polygon="polygon", get_fill_color="fill_color", get_line_color=[7, 17, 22, 220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
-    layers.append(pdk.Layer("ScatterplotLayer", data=rows, id=AIS_TARGETS_LAYER_ID, get_position=["longitude", "latitude"], get_fill_color=[255, 255, 255, 1], get_radius="core_radius", radius_min_pixels=5, radius_max_pixels=14, pickable=True, auto_highlight=True))
+    if has_live_rows:
+        layers.append(pdk.Layer("ScatterplotLayer", data=rows, get_position=["longitude", "latitude"], get_fill_color="halo_color", get_radius="halo_radius", radius_min_pixels=8, radius_max_pixels=26, pickable=False))
+        layers.append(pdk.Layer("PolygonLayer", data=rows, get_polygon="polygon", get_fill_color="fill_color", get_line_color=[7, 17, 22, 220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
+        layers.append(pdk.Layer("ScatterplotLayer", data=rows, id=AIS_TARGETS_LAYER_ID, get_position=["longitude", "latitude"], get_fill_color=[255, 255, 255, 1], get_radius="core_radius", radius_min_pixels=5, radius_max_pixels=14, pickable=True, auto_highlight=True))
 
     if selected_mmsi:
         selected_rows = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
         if selected_rows:
             layers.append(pdk.Layer("ScatterplotLayer", data=selected_rows, get_position=["longitude", "latitude"], get_fill_color=[0, 0, 0, 0], get_radius=780, radius_min_pixels=14, radius_max_pixels=24, stroked=True, filled=False, get_line_color=[255, 255, 255, 235], line_width_min_pixels=2, pickable=False))
 
-    if show_anomalies and anomaly_mmsis:
+    if has_live_rows and show_anomalies and anomaly_mmsis:
         anomaly_rows = [r for r in rows if str(r.get("mmsi")) in anomaly_mmsis and (not selected_mmsi or str(r.get("mmsi")) != str(selected_mmsi))]
         if anomaly_rows:
             layers.append(pdk.Layer("ScatterplotLayer", data=anomaly_rows, get_position=["longitude", "latitude"], get_fill_color=[0, 0, 0, 0], get_radius=620, radius_min_pixels=11, radius_max_pixels=20, stroked=True, filled=False, get_line_color="ring_color", line_width_min_pixels=2, pickable=False))
 
-    if selected_mmsi:
+    if selected_mmsi and rows:
         focus = [r for r in rows if str(r.get("mmsi")) == str(selected_mmsi)]
         if focus:
             center_lat, center_lon = float(focus[0]["latitude"]), float(focus[0]["longitude"])
@@ -361,10 +362,15 @@ def _render_vessel_map(
             center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
             center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
             zoom = float(map_zoom if map_zoom is not None else st.session_state.get("tactical_map_zoom", 7.5))
-    else:
+    elif rows:
         center_lat = sum(float(r["latitude"]) for r in rows) / len(rows)
         center_lon = sum(float(r["longitude"]) for r in rows) / len(rows)
         zoom = float(st.session_state.get("tactical_map_zoom", 7.5))
+    else:
+        (min_lat, min_lon), (max_lat, max_lon) = settings.bbox
+        center_lat = (float(min_lat) + float(max_lat)) / 2.0
+        center_lon = (float(min_lon) + float(max_lon)) / 2.0
+        zoom = float(map_zoom if map_zoom is not None else st.session_state.get("tactical_map_zoom", 7.5))
 
     style = TACTICAL_MAP_STYLE if map_style in (None, "", "Dark Matter", "dark", "tactical") else MAP_STYLES.get(map_style, TACTICAL_MAP_STYLE)
     if isinstance(style, str) and style.startswith("https://tiles.openwaters.io/seamap/"):
@@ -375,7 +381,8 @@ def _render_vessel_map(
         map_projection = None
 
     by_mmsi_obs: dict[str, int] = {}
-    for observation in list(snapshot.observations or []):
+    if has_live_rows:
+        for observation in list(snapshot.current_session_observations or []):
         by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
     tracks_count = sum(1 for n in by_mmsi_obs.values() if n >= 2)
     live_state = str(getattr(snapshot.status, "state", "DISCONNECTED") or "DISCONNECTED")
