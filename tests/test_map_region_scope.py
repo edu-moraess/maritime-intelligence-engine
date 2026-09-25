@@ -1,5 +1,6 @@
 from src.config.regions import REGION_PRESETS
 from src.geospatial.map_data import filter_rows_to_bboxes
+from src.geospatial.region_membership import contains_point, membership
 from src.ui.dual_region_overview import _unified_map_zoom
 
 
@@ -47,3 +48,11 @@ def test_unified_map_zoom_keeps_local_regions_reasonably_detailed():
     zoom = _unified_map_zoom(rows)
 
     assert 5.0 <= zoom <= 6.5
+
+
+def test_shared_region_membership_matches_overlap_contract():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((5.0, 5.0), (15.0, 15.0))]
+
+    assert contains_point(0.0, 0.0, bboxes[0])
+    assert membership(7.0, 7.0, bboxes) == (0, 1)
+    assert membership(20.0, 20.0, bboxes) == ()
