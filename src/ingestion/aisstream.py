@@ -295,14 +295,10 @@ class AISStreamProvider(AISProvider):
         self._observations.append(observation)
         if len(self._observations) > self.max_messages:
             self._observations = self._observations[-self.max_messages :]
-        if len(self._tracks) > self.max_vessels:
-            oldest_mmsi = min(self._tracks, key=lambda key: self._tracks[key][-1].received_at)
-            del self._tracks[oldest_mmsi]
-
     def fetch_vessels(self) -> list[VesselSnapshot]:
         now = datetime.now(timezone.utc)
         result: list[VesselSnapshot] = []
-        for mmsi, track in self._tracks.items():
+        for mmsi, track in self.fetch_tracks().items():
             if not track:
                 continue
             latest = track[-1]
