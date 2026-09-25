@@ -9,7 +9,8 @@ between two exclusive monitored regions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime\nfrom typing import Literal, Sequence
+from datetime import datetime
+from typing import Literal, Sequence
 
 from src.config.settings import RegionBBox
 from src.geospatial.region_membership import membership
