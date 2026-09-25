@@ -54,3 +54,43 @@ def test_environmental_provider_failure_keeps_context_unavailable() -> None:
     context = engine.environmental_contexts["region_1"]
     assert context.status == "UNAVAILABLE"
     assert context.latest is None
+
+
+class SequencedEnvironmentalProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def current(self, latitude: float, longitude: float, region: str | None = None) -> EnvironmentalObservation:
+        self.calls += 1
+        return EnvironmentalObservation(
+            source="test-environment",
+            observed_at=datetime(2026, 9, 25, 3, self.calls, tzinfo=timezone.utc),
+            latitude=latitude,
+            longitude=longitude,
+            region=region,
+            wave_height_m=float(self.calls),
+        )
+
+
+def test_environmental_refresh_replaces_previous_context_instead_of_accumulating_stale_data() -> None:
+    engine = MaritimeIntelligenceEngine(
+        AppSettings(
+            aisstream_api_key="",
+            bbox=DEFAULT_BBOX,
+            monitoring_bboxes=(DEFAULT_BBOX,),
+        )
+    )
+    provider = SequencedEnvironmentalProvider()
+    engine.environmental_provider = provider
+
+    engine._refresh_environmental_contexts()
+    first = engine.environmental_contexts["region_1"].latest
+    engine._refresh_environmental_contexts()
+    second_context = engine.environmental_contexts["region_1"]
+
+    assert first is not None
+    assert second_context.status == "AVAILABLE"
+    assert len(second_context.observations) == 1
+    assert second_context.latest is not None
+    assert second_context.latest.wave_height_m == 2.0
+    assert second_context.latest.observed_at > first.observed_at
