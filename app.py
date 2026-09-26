@@ -32,6 +32,11 @@ def _normalize_bbox(bbox):
     return ((round(float(a), 5), round(float(b), 5)), (round(float(c), 5), round(float(d), 5)))
 
 
+def _engine_signature(settings: AppSettings):
+    """Return only the configuration that defines the live AIS session identity."""
+    return _normalize_bbox(settings.bbox)
+
+
 def _runtime(settings, *, bbox=None, collection_seconds=None, historical_persistence_enabled=None, config_error=None) -> AppSettings:
     return AppSettings(
         aisstream_api_key=settings.aisstream_api_key,
@@ -48,15 +53,16 @@ def _runtime(settings, *, bbox=None, collection_seconds=None, historical_persist
 
 
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    signature = (settings.aisstream_api_key, _normalize_bbox(settings.bbox), settings.max_messages, settings.max_vessels, settings.stale_after_seconds, settings.provider, settings.config_error)
-    if st.session_state.get("engine_signature") != signature:
-        previous = st.session_state.get("engine")
-        if previous is not None:
-            previous.historical_writer.close()
-        st.session_state.engine = create_engine(settings)
+    signature = _engine_signature(settings)
+    engine = st.session_state.get("engine")
+    previous_signature = st.session_state.get("engine_signature")
+    if engine is None or previous_signature != signature:
+        if engine is not None:
+            engine.historical_writer.close()
+        engine = create_engine(settings)
+        st.session_state.engine = engine
         st.session_state.engine_signature = signature
         st.session_state.pop("selected_mmsi", None)
-    engine = st.session_state.engine
     engine.configure_historical_writer(settings.database_url, settings.historical_persistence_enabled)
     return engine
 
