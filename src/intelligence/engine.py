@@ -195,15 +195,23 @@ class MaritimeIntelligenceEngine:
         )
         self._restore_historical_context()
 
+    def _current_session_tracks(self) -> dict[str, list[AISObservation]]:
+        """Group only observations received during the current live AIS session."""
+        grouped: dict[str, list[AISObservation]] = {}
+        for observation in self._current_session_observations:
+            grouped.setdefault(observation.mmsi, []).append(observation)
+        return grouped
+
     def _recompute(self) -> None:
         tracks = self.store.tracks()
+        current_session_tracks = self._current_session_tracks()
         self.embeddings = self.embedding_adapter.fit(tracks)
         self.findings = detect_anomalies(tracks, self.embeddings)
-        fingerprint = _track_fingerprint(tracks)
+        fingerprint = _track_fingerprint(current_session_tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             return
         try:
-            self.temporal = self.temporal_adapter.fit(tracks)
+            self.temporal = self.temporal_adapter.fit(current_session_tracks)
             self._temporal_fingerprint = fingerprint
         except Exception as exc:  # pragma: no cover — defensive isolation
             self.temporal = TemporalFitResult(
