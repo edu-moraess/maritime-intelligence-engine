@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from src.config.settings import AppSettings, DEFAULT_BBOX
 from src.ingestion.models import AISObservation
@@ -91,3 +92,43 @@ def test_collect_extends_store_without_resetting_prior_observations():
     tracks = engine.store.tracks()
     assert len(tracks) == 2
     assert len(engine.store.all()) == 2
+
+
+def test_temporal_path_ignores_restored_historical_observations():
+    """Deep temporal analytics must consume current-session tracks only."""
+    engine = create_engine(AppSettings(
+        aisstream_api_key="k",
+        bbox=DEFAULT_BBOX,
+        historical_persistence_enabled=False,
+    ))
+
+    historical = _obs("367000001")
+    historical = replace(
+        historical,
+        received_at=datetime.now(timezone.utc) - timedelta(days=24),
+        ais_timestamp_second=1,
+        raw={"MetaData": {"MMSI": 367000001, "time": 1}},
+    )
+    current = replace(
+        historical,
+        received_at=datetime.now(timezone.utc),
+        ais_timestamp_second=2,
+        raw={"MetaData": {"MMSI": 367000001, "time": 2}},
+    )
+
+    engine.store.extend([historical, current])
+    engine._current_session_observations = [current]
+
+    captured = {}
+    def capture(tracks):
+        captured["tracks"] = tracks
+        from src.ml.temporal.types import TemporalFitResult
+        return TemporalFitResult(status="NOT_READY", reason="test")
+
+    engine.temporal_adapter.fit = capture
+    engine._temporal_fingerprint = None
+    engine.temporal = None
+    engine._recompute()
+
+    assert list(captured["tracks"]) == ["367000001"]
+    assert captured["tracks"]["367000001"] == [current]
