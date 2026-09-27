@@ -8,6 +8,7 @@ mock, fallback, or fabricated AIS mode.
 from __future__ import annotations
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 from src.config.regions import (
@@ -381,6 +382,49 @@ def _render_sidebar(
     return settings, page, collect, clear, region_changed
 
 
+def _render_collection_timer(seconds: float) -> None:
+    """Render a compact client-side countdown while the blocking AIS collection runs."""
+    duration = max(1, int(round(float(seconds))))
+    components.html(
+        f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    color: #78909c; font-size: 12px; line-height: 1.2;
+                    padding: 2px 0 0; width: 100%;">
+          <div style="display:flex; align-items:center; gap:7px; white-space:nowrap;">
+            <span id="mie-dot" style="font-size:10px;">●</span>
+            <span id="mie-label">COLLECTING · {duration // 60:02d}:{duration % 60:02d} / {duration // 60:02d}:{duration % 60:02d}</span>
+          </div>
+          <div style="height:2px; margin-top:5px; background:rgba(120,144,156,.16); overflow:hidden;">
+            <div id="mie-progress" style="height:100%; width:0%; background:rgba(120,144,156,.55);"></div>
+          </div>
+        </div>
+        <script>
+        (() => {{
+          const total = {duration};
+          const started = Date.now();
+          const label = document.getElementById("mie-label");
+          const progress = document.getElementById("mie-progress");
+          const format = value => {{
+            const minutes = Math.floor(value / 60);
+            const seconds = value % 60;
+            return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+          }};
+          const tick = () => {{
+            const elapsed = Math.min(total, Math.floor((Date.now() - started) / 1000));
+            const remaining = Math.max(0, total - elapsed);
+            label.textContent = "COLLECTING · " + format(remaining) + " / " + format(total);
+            progress.style.width = ((elapsed / total) * 100).toFixed(1) + "%";
+            if (remaining > 0) window.setTimeout(tick, 250);
+          }};
+          tick();
+        }})();
+        </script>
+        """,
+        height=34,
+        scrolling=False,
+    )
+
+
 def main() -> None:
     """Run the Streamlit application."""
     settings = _read_settings()
@@ -416,12 +460,8 @@ def main() -> None:
     # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
     collection_result = st.session_state.pop("collection_result", None)
     if collect:
-        with st.spinner(
-            "Opening one AISStream WebSocket for "
-            f"{len(settings.monitoring_bboxes)} real AIS regions and collecting "
-            f"for {int(settings.collection_seconds)} seconds…"
-        ):
-            received = engine.collect(seconds=settings.collection_seconds)
+        _render_collection_timer(settings.collection_seconds)
+        received = engine.collect(seconds=settings.collection_seconds)
 
         if received:
             collection_result = (
