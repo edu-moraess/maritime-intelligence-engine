@@ -11,6 +11,7 @@ from typing import Any
 
 import streamlit as st
 
+from src.intelligence.environment_vessel import resolve_vessel_environment
 from src.intelligence.profile import (
     VesselIntelligenceProfile,
     build_vessel_intelligence_profile,
@@ -216,6 +217,36 @@ def render_vessel_quick_intelligence(
                 ),
             }
         )
+
+    # Environmental context — regional evidence only; no causal inference.
+    with st.expander("Environmental context", expanded=False):
+        st.markdown(provenance_badge("REAL EXTERNAL CONTEXT"), unsafe_allow_html=True)
+        if engine is None or getattr(engine, "settings", None) is None:
+            notice("Environmental context is unavailable.", "gray")
+        else:
+            environment = resolve_vessel_environment(
+                vessel,
+                getattr(snapshot, "environmental_contexts", {}),
+                tuple(getattr(engine.settings, "monitoring_bboxes", ()) or ()),
+            )
+            if environment.status != "AVAILABLE" or environment.observation is None:
+                notice(
+                    f"ENVIRONMENT = {environment.status} · no regional environmental observation attached.",
+                    "yellow",
+                )
+            else:
+                latest = environment.observation
+                metric_strip(
+                    {
+                        "REGION": environment.region or "—",
+                        "WAVE": f"{latest.wave_height_m:.1f} m" if latest.wave_height_m is not None else "—",
+                        "PERIOD": f"{latest.wave_period_s:.1f} s" if latest.wave_period_s is not None else "—",
+                        "CURRENT": f"{latest.ocean_current_velocity:.2f}" if latest.ocean_current_velocity is not None else "—",
+                    }
+                )
+                if environment.environment_age_seconds is not None:
+                    st.caption(f"Environment age · {environment.environment_age_seconds:.0f} s · Source · {latest.source}")
+                st.caption("Contextual correlation only; this does not infer environmental causality or risk.")
 
     # Historical Profile
     with st.expander(
