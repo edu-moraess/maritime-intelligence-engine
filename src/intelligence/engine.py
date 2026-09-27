@@ -297,7 +297,11 @@ class MaritimeIntelligenceEngine:
             self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
             self._temporal_fingerprint = fingerprint
         self.region_comparison = self._build_region_comparison()
-        self.regional_events = self._build_regional_events(tracks)
+        self.regional_events = self._build_regional_events(
+            tracks,
+            findings=self.findings,
+            environmental_contexts=self.environmental_contexts,
+        )
 
     def _build_region_comparison(self) -> RegionComparison | None:
         if len(self.settings.monitoring_bboxes) != 2:
