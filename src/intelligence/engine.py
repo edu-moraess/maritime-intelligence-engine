@@ -284,7 +284,11 @@ class MaritimeIntelligenceEngine:
         fingerprint = _track_fingerprint(tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             self.region_comparison = self._build_region_comparison()
-            self.regional_events = self._build_regional_events(tracks)
+            self.regional_events = self._build_regional_events(
+                tracks,
+                findings=self.findings,
+                environmental_contexts=self.environmental_contexts,
+            )
             return
         try:
             self.temporal = self.temporal_adapter.fit(model_tracks)
@@ -299,10 +303,21 @@ class MaritimeIntelligenceEngine:
         if len(self.settings.monitoring_bboxes) != 2:
             return None
         return compare_regions(self.current_session_observations, self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
-    def _build_regional_events(self, tracks: dict[str, list[AISObservation]]) -> list[RegionalEvent]:
+    def _build_regional_events(
+        self,
+        tracks: dict[str, list[AISObservation]],
+        *,
+        findings: list[AnomalyFinding] | None = None,
+        environmental_contexts: dict[str, EnvironmentalContext] | None = None,
+    ) -> list[RegionalEvent]:
         if len(self.settings.monitoring_bboxes) != 2:
             return []
-        return detect_regional_events(tracks, self.settings.monitoring_bboxes)
+        return detect_regional_events(
+            tracks,
+            self.settings.monitoring_bboxes,
+            findings=findings or (),
+            environmental_contexts=environmental_contexts,
+        )
 
     def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
         tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
