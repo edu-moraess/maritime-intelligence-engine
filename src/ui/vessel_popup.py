@@ -344,6 +344,54 @@ def render_vessel_quick_intelligence(
     with st.expander("Behavioral intelligence", expanded=False):
         _render_behavioral_intelligence(mmsi, snapshot)
 
+    # Environment × Vessel × Behavior — co-observed deterministic context.
+    with st.expander("Environment × behavior", expanded=False):
+        st.markdown(provenance_badge("DERIVED"), unsafe_allow_html=True)
+        from src.intelligence.environment_behavior import resolve_environment_behavior
+
+        session_observations = [
+            obs
+            for obs in (getattr(snapshot, "current_session_observations", None) or [])
+            if str(getattr(obs, "mmsi", "")) == str(mmsi)
+        ]
+        if engine is None or getattr(engine, "settings", None) is None:
+            notice("Environment × behavior context is unavailable.", "gray")
+        else:
+            combined = resolve_environment_behavior(
+                vessel,
+                session_observations,
+                getattr(snapshot, "environmental_contexts", {}),
+                tuple(getattr(engine.settings, "monitoring_bboxes", ()) or ()),
+            )
+            metric_strip(
+                {
+                    "STATUS": combined.status,
+                    "BEHAVIOR": combined.behavior.classification,
+                    "CONFIDENCE": combined.behavior.confidence,
+                    "REGION": combined.region or "—",
+                }
+            )
+            if combined.available and combined.observation is not None:
+                latest = combined.observation
+                metric_strip(
+                    {
+                        "WAVE": f"{latest.wave_height_m:.1f} m" if latest.wave_height_m is not None else "—",
+                        "PERIOD": f"{latest.wave_period_s:.1f} s" if latest.wave_period_s is not None else "—",
+                        "CURRENT": f"{latest.ocean_current_velocity:.2f}" if latest.ocean_current_velocity is not None else "—",
+                    }
+                )
+                st.caption(
+                    "Behavior observed under the available regional environmental context. "
+                    "This is contextual correlation only; no environmental causality or risk is inferred."
+                )
+            elif combined.status == "INSUFFICIENT_BEHAVIOR":
+                notice("INSUFFICIENT_DATA · at least 2 valid current-session positions are required.", "yellow")
+            else:
+                notice(
+                    f"ENVIRONMENT = {combined.environment.status} · behavior remains independent of unavailable environmental evidence.",
+                    "yellow",
+                )
+
     # Behavioral Signals (ML embedding ranking)
     with st.expander("Behavioral signals", expanded=False):
         st.markdown(provenance_badge("DERIVED"), unsafe_allow_html=True)
