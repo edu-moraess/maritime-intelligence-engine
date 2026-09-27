@@ -12,13 +12,7 @@ NOW = datetime(2026, 9, 27, 1, 0, tzinfo=timezone.utc)
 
 
 def _bbox(name: str, min_lat: float, max_lat: float, min_lon: float, max_lon: float):
-    return RegionBBox(
-        name=name,
-        min_lat=min_lat,
-        max_lat=max_lat,
-        min_lon=min_lon,
-        max_lon=max_lon,
-    )
+    return ((min_lat, min_lon), (max_lat, max_lon))
 
 
 def _vessel(lat=0.5, lon=0.5):
@@ -62,7 +56,7 @@ def _environment(observed_at=NOW):
         wave_period_s=7.0,
         ocean_current_velocity=0.4,
     )
-    return {"region_1": EnvironmentalContext(region="region_1", latest=observation)}
+    return {"region_1": EnvironmentalContext(region="region_1", observations=(observation,))}
 
 
 def test_available_environment_and_behavior_are_correlated():
