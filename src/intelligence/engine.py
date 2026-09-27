@@ -229,11 +229,12 @@ class MaritimeIntelligenceEngine:
         return len(collected)
 
     def _refresh_environmental_contexts(self) -> None:
-        """Fetch real marine context independently of AIS anomaly scoring."""
+        """Fetch real marine context and retain only the latest two observations per region."""
         contexts: dict[str, EnvironmentalContext] = {}
         for index, bbox in enumerate(self.settings.monitoring_bboxes, start=1):
             region = f"region_{index}"
-            context = EnvironmentalContext(region=region)
+            previous = self.environmental_contexts.get(region)
+            context = previous or EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
             try:
@@ -242,7 +243,17 @@ class MaritimeIntelligenceEngine:
                     longitude=longitude,
                     region=region,
                 )
-                context = context.add(observation)
+                if all(item.observed_at != observation.observed_at for item in context.observations):
+                    context = context.add(observation)
+                context = EnvironmentalContext(
+                    region=region,
+                    observations=tuple(
+                        sorted(
+                            context.observations,
+                            key=lambda item: item.observed_at,
+                        )[-2:]
+                    ),
+                )
             except Exception:
                 pass
             contexts[region] = context
