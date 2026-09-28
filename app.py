@@ -414,7 +414,7 @@ def _render_collection_timer(seconds: float) -> None:
             const remaining = Math.max(0, total - elapsed);
             label.textContent = "COLLECTING · " + format(remaining) + " / " + format(total);
             progress.style.width = ((elapsed / total) * 100).toFixed(1) + "%";
-            if (remaining > 0) window.setTimeout(tick, 250);
+            if (remaining > 0) window.setTimeout(tick, 250);\n            else label.textContent = "FINALIZING · PROCESSING RESULTS";
           }};
           tick();
         }})();
