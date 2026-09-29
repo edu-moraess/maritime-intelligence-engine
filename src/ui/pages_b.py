@@ -266,12 +266,8 @@ def render_system(
             "PROVIDER": "AISStream.io",
             "STATE": status.state,
             "WEBSOCKET": status.websocket_status,
-            "MESSAGES": f"{status.messages_received:,}",
-            "LATENCY": (
-                f"{status.latency_seconds:.1f} s"
-                if status.latency_seconds is not None
-                else "—"
-            ),
+            "PROVIDER REPORTS": f"{status.position_reports_accepted:,}",
+            "SESSION REPORTS": f"{len(snapshot.current_session_observations):,}",
         }
     )
 
@@ -284,8 +280,9 @@ def render_system(
 
         st.write(f"**Status:** `{status.state}`")
         st.write(f"**Reason:** {status.reason}")
-        st.write(f"**Messages received:** `{status.messages_received:,}`")
-        st.write(f"**Active vessels:** `{status.active_vessels:,}`")
+        st.write(f"**Position reports received by provider:** `{status.position_reports_accepted:,}`")
+        st.write(f"**Current-session observations:** `{len(snapshot.current_session_observations):,}`")
+        st.write(f"**Active contacts:** `{status.active_vessels:,}`")
         st.write(f"**Last ingestion:** `{_utc(status.last_received_at)}`")
         st.write(
             f"**Monitoring box:** `{settings.bbox[0]} → {settings.bbox[1]}`"
@@ -360,6 +357,7 @@ def render_system(
         if snapshot.historical_result is not None:
             result = snapshot.historical_result
             st.write(f"**Persisted observations:** `{result.persisted_observations}`")
+            st.write(f"**Runtime store observations:** `{len(snapshot.observations):,}`")
 
             if result.duplicate_observations:
                 st.write(
@@ -368,6 +366,12 @@ def render_system(
 
             if result.reason:
                 st.write(f"**Persist detail:** {result.reason}")
+
+        st.caption(
+            "Accounting guardrail: provider reports, current-session observations, "
+            "runtime store observations, and persisted observations are separate "
+            "provenance counters and are not expected to match."
+        )
 
         st.write(
             "Model checkpoint: none. The current representation is fitted "
