@@ -149,8 +149,12 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         st.write(f"**Historical persistence:** `{snapshot.historical_status}`")
         if snapshot.historical_result is not None:
             result = snapshot.historical_result
-            st.write(f"**Persisted observations:** `{result.persisted_observations}`")
+            st.write(f"**Persisted observations:** `{result.persisted_observations:,}`")
+            st.write(f"**Duplicate observations skipped:** `{result.duplicate_observations:,}`")
+            st.write(f"**Invalid observations skipped:** `{result.skipped_invalid:,}`")
             st.write(f"**Runtime store observations:** `{len(snapshot.observations):,}`")
+            accounted = result.persisted_observations + result.duplicate_observations + result.skipped_invalid
+            st.caption(f"Persistence accounting: {accounted:,} / {len(snapshot.current_session_observations):,} current-session observations accounted.")
             if result.duplicate_observations:
                 st.write(f"**Duplicate observations skipped:** `{result.duplicate_observations}`")
             if result.reason:
