@@ -148,6 +148,9 @@ class MaritimeIntelligenceEngine:
         collection duration.
         """
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
+        # Provider diagnostics are scoped to the operator-selected collection window.
+        # Do this before opening the WebSocket so provider counters cannot leak across runs.
+        self.provider.reset_session()
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
         stop_event = threading.Event()
