@@ -80,3 +80,26 @@ def test_similarity_results_are_labeled_as_current_session():
 
     assert similar
     assert all(item.source_label == "REAL AIS CURRENT SESSION" for item in similar)
+
+def test_snapshot_vessels_and_live_summary_exclude_historical_only_targets():
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+
+    historical = _tracks("900000")
+    current = _tracks("800000")
+
+    engine.store.extend(
+        [item for track in historical.values() for item in track]
+        + [item for track in current.values() for item in track]
+    )
+    engine.current_session_observations = [
+        observation
+        for track in current.values()
+        for observation in track
+    ]
+
+    snapshot = engine.snapshot()
+
+    assert {vessel.mmsi for vessel in snapshot.vessels} == set(current)
+    assert snapshot.status.active_vessels == len(current)
+    assert snapshot.summary["messages"] == len(engine.current_session_observations)
+\n
