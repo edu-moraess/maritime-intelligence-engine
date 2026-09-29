@@ -121,15 +121,16 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
     st.subheader("System and pipeline status")
     status = snapshot.status
     metric_strip({"PROVIDER": "AISStream.io", "STATE": status.state, "WEBSOCKET": status.websocket_status,
-                  "MESSAGES": f"{status.messages_received:,}",
-                  "LATENCY": f"{status.latency_seconds:.1f} s" if status.latency_seconds is not None else "—"})
+                  "PROVIDER REPORTS": f"{status.position_reports_accepted:,}",
+                  "SESSION REPORTS": f"{len(snapshot.current_session_observations):,}"})
     st.write("")
     left, right = st.columns(2, gap="medium")
     with left:
         panel_title("Connection", "server-side")
         st.write(f"**Status:** `{status.state}`")
         st.write(f"**Reason:** {status.reason}")
-        st.write(f"**Position reports received:** `{status.messages_received:,}`")
+        st.write(f"**Position reports accepted by provider:** `{status.position_reports_accepted:,}`")
+        st.write(f"**Current-session observations:** `{len(snapshot.current_session_observations):,}`")
         st.write(f"**Active contacts:** `{status.active_vessels:,}`")
         st.write(f"**Last ingestion:** `{_utc(status.last_received_at)}`")
         regions = tuple(settings.monitoring_bboxes)
@@ -149,10 +150,16 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
         if snapshot.historical_result is not None:
             result = snapshot.historical_result
             st.write(f"**Persisted observations:** `{result.persisted_observations}`")
+            st.write(f"**Runtime store observations:** `{len(snapshot.observations):,}`")
             if result.duplicate_observations:
                 st.write(f"**Duplicate observations skipped:** `{result.duplicate_observations}`")
             if result.reason:
                 st.write(f"**Persist detail:** {result.reason}")
+        st.caption(
+            "Provenance counters are intentionally separate: provider reports, "
+            "current-session observations, runtime store observations, and persisted "
+            "observations can differ because they represent different pipeline stages."
+        )
         st.write("Model checkpoint: none. The current representation is fitted only on real observations received in this session.")
     st.write("")
     panel_title("Deep Temporal", "GRU autoencoder · real AIS only")
