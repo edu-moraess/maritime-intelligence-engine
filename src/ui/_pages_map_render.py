@@ -239,9 +239,17 @@ def _render_vessel_map(
     selected_mmsi: str | None = None,
     map_zoom: float | None = None,
 ) -> None:
-    has_live_rows = bool(rows)
+    all_rows = list(rows)
+    live_rows = [row for row in all_rows if not row.get("stale", False)]
+    stale_rows = [row for row in all_rows if row.get("stale", False)]
+    has_live_rows = bool(live_rows)
     if not has_live_rows:
-        empty_state("No real AIS position reports are currently available for the operational map.", "NO CURRENT AIS POSITION DATA")
+        empty_state(
+            "No real AIS position report is within the live freshness window. "
+            "Last-known positions remain available in the vessel/history views.",
+            "NO CURRENT AIS POSITION DATA",
+        )
+    rows = live_rows
 
     if selected_mmsi is None:
         selected_mmsi = st.session_state.get("selected_mmsi")
@@ -404,6 +412,10 @@ def _render_vessel_map(
             ),
             unsafe_allow_html=True,
         )
+        if stale_rows:
+            st.caption(
+                f"{len(stale_rows):,} last-known targets are stale and excluded from the live operational layer."
+            )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, map_provider=map_provider, map_projection=map_projection, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
     if map_provider == "maplibre":
