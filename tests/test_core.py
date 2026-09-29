@@ -106,6 +106,31 @@ def test_store_preserves_multiple_mmsi_histories_beyond_contact_cap():
     assert set(store.tracks()) == {"368207621", "368207622", "368207623"}
 
 
+def test_provider_reset_session_scopes_ingestion_counters():
+    provider = AISStreamProvider(
+        api_key="test-key",
+        bbox=[[[1.0, 103.0], [2.0, 104.0]]],
+    )
+    provider._messages_received = 12
+    provider._frames_received = 15
+    provider._position_reports_received = 14
+    provider._position_reports_accepted = 12
+    provider._parse_errors = 2
+    provider._non_position_frames = 1
+
+    provider.reset_session()
+
+    status = provider.status
+    assert status.messages_received == 0
+    assert status.frames_received == 0
+    assert status.position_reports_received == 0
+    assert status.position_reports_accepted == 0
+    assert status.parse_errors == 0
+    assert status.non_position_frames == 0
+    assert status.websocket_status == "CLOSED"
+    assert status.state == "DISCONNECTED"
+
+
 def test_engine_without_key_starts_in_explicit_disconnected_state():
     engine = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="", bbox=DEFAULT_BBOX))
     status = engine.snapshot().status
