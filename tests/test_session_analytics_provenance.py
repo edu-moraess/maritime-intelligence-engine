@@ -81,6 +81,7 @@ def test_similarity_results_are_labeled_as_current_session():
     assert similar
     assert all(item.source_label == "REAL AIS CURRENT SESSION" for item in similar)
 
+
 def test_snapshot_vessels_and_live_summary_exclude_historical_only_targets():
     engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
 
