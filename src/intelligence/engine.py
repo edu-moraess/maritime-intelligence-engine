@@ -340,7 +340,7 @@ class MaritimeIntelligenceEngine:
         return ReadinessSnapshot(distinct_vessels=len(tracks), tracks_with_history=tracks_with_history, trajectory_ready=tracks_with_history >= 1, embeddings_ready=self.embeddings is not None, embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"), anomaly_count=len(self.findings), temporal_status=temporal_status)
 
     def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
-        """Build the vessel view exclusively from the session observation store."""
+        """Build the operational vessel view from the latest live session only."""
         now = datetime.now(timezone.utc)
         vessels: list[VesselSnapshot] = []
         for mmsi, track in tracks.items():
@@ -367,12 +367,34 @@ class MaritimeIntelligenceEngine:
 
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
-        tracks = self.store.tracks()
-        vessels = self._merged_vessels(tracks)
         analysis_tracks = self._current_session_tracks()
+        vessels = self._merged_vessels(analysis_tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
-        status = replace(self.provider.status, active_vessels=len(tracks))
-        return EngineSnapshot(observations=observations, vessels=vessels, findings=self.findings, quality=quality, status=status, embeddings=self.embeddings, summary=traffic_summary(vessels, observations, self.findings), readiness=self._readiness(analysis_tracks), last_collection_seconds=self.last_collection_seconds, last_collection_breakdown=dict(self.last_collection_breakdown), historical_status=self.historical_writer.status, historical_result=self.historical_result, temporal=self.temporal, region_comparison=self.region_comparison, regional_events=list(self.regional_events), current_session_observations=list(self.current_session_observations), current_session_findings=list(self.current_session_findings), environmental_contexts=dict(self.environmental_contexts))
+        status = replace(self.provider.status, active_vessels=len(analysis_tracks))
+        return EngineSnapshot(
+            observations=observations,
+            vessels=vessels,
+            findings=self.findings,
+            quality=quality,
+            status=status,
+            embeddings=self.embeddings,
+            summary=traffic_summary(
+                vessels,
+                self.current_session_observations,
+                self.findings,
+            ),
+            readiness=self._readiness(analysis_tracks),
+            last_collection_seconds=self.last_collection_seconds,
+            last_collection_breakdown=dict(self.last_collection_breakdown),
+            historical_status=self.historical_writer.status,
+            historical_result=self.historical_result,
+            temporal=self.temporal,
+            region_comparison=self.region_comparison,
+            regional_events=list(self.regional_events),
+            current_session_observations=list(self.current_session_observations),
+            current_session_findings=list(self.current_session_findings),
+            environmental_contexts=dict(self.environmental_contexts),
+        )
 
     def clear_session_data(self) -> None:
         self.store.clear()
