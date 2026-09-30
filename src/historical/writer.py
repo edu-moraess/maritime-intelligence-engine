@@ -186,16 +186,29 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         "AISSTREAM",
                     ),
                 )
-                vessel_values = [
-                    (
-                        observation.mmsi,
+                vessel_by_mmsi: dict[str, tuple[str | None, datetime, datetime]] = {}
+                for observation in valid_observations:
+                    name = (
                         observation.vessel_name.strip()
                         if observation.vessel_name and observation.vessel_name.strip()
-                        else None,
-                        _utc(observation.received_at),
-                        _utc(observation.received_at),
+                        else None
                     )
-                    for observation in valid_observations
+                    received_at = _utc(observation.received_at)
+                    if received_at is None:
+                        continue
+                    previous = vessel_by_mmsi.get(observation.mmsi)
+                    if previous is None:
+                        vessel_by_mmsi[observation.mmsi] = (name, received_at, received_at)
+                        continue
+                    previous_name, first_seen, last_seen = previous
+                    vessel_by_mmsi[observation.mmsi] = (
+                        name or previous_name,
+                        min(first_seen, received_at),
+                        max(last_seen, received_at),
+                    )
+                vessel_values = [
+                    (mmsi, name, first_seen, last_seen)
+                    for mmsi, (name, first_seen, last_seen) in vessel_by_mmsi.items()
                 ]
                 vessel_values_sql = ", ".join(["(%s, %s, %s, %s)"] * len(vessel_values))
                 cursor.execute(
