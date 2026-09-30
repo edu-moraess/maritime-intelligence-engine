@@ -1,4 +1,4 @@
-"""Time-bounded GRU Temporal Autoencoder training on real AIS sequences."""
+"""Time-bounded TCN Temporal Autoencoder training on real AIS sequences."""
 from __future__ import annotations
 
 import time
@@ -36,9 +36,9 @@ class TrainingConfig:
     max_training_seconds: float = DEFAULT_MAX_TRAINING_SECONDS
     seed: int = DEFAULT_SEED
     validation_fraction: float = DEFAULT_VALIDATION_FRACTION
-    # Short AIS windows and a bounded CPU budget favor a compact recurrent
-    # autoencoder. TCN remains accepted for backward-compatible states/tests.
-    architecture: str = "gru"
+    # TCN is the production temporal architecture. GRU remains available only
+    # for explicit legacy/checkpoint compatibility.
+    architecture: str = "tcn"
 
 
 @dataclass
@@ -59,11 +59,11 @@ class TrainingResult:
     seed: int = DEFAULT_SEED
     training_started: bool = False
     training_completed: bool = False
-    architecture: str = "gru"
+    architecture: str = "tcn"
 
 
 class TemporalTrainer:
-    """Fit the temporal autoencoder under a hard wall-clock budget."""
+    """Fit the production TCN temporal autoencoder under a hard wall-clock budget."""
 
     def __init__(self, config: TrainingConfig | None = None) -> None:
         self.config = config or TrainingConfig()

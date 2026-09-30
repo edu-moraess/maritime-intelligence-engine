@@ -489,6 +489,62 @@ def render_vessel_intelligence(
         st.write("")
 
         panel_title(
+            "Behavioral evidence",
+            "session-relative",
+        )
+
+        if findings:
+            score_frame = pd.DataFrame(
+                [
+                    {
+                        "received_at": finding.received_at,
+                        "score": float(finding.score),
+                        "category": finding.category,
+                    }
+                    for finding in findings
+                ]
+            ).sort_values("received_at")
+
+            fig = go.Figure(
+                go.Scatter(
+                    x=score_frame["received_at"],
+                    y=score_frame["score"],
+                    mode="markers",
+                    marker={
+                        "size": 8,
+                        "color": "#e9b857",
+                        "line": {"color": "#f6e4b0", "width": 1},
+                    },
+                    customdata=score_frame[["category"]].to_numpy(),
+                    hovertemplate=(
+                        "%{x|%Y-%m-%d %H:%M:%S} UTC"
+                        "<br><b>Anomaly score</b> %{y:.3f}"
+                        "<br><b>Category</b> %{customdata[0]}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            score_layout = _plot_layout(
+                "Anomaly score over observed events",
+                "UTC timestamp",
+                "Session-relative score",
+            )
+            score_layout.update(
+                {
+                    "height": 285,
+                    "yaxis": {
+                        **score_layout["yaxis"],
+                        "range": [0, 1],
+                    },
+                    "showlegend": False,
+                    "margin": {"l": 52, "r": 24, "t": 46, "b": 46},
+                }
+            )
+            fig.update_layout(**score_layout)
+            st.plotly_chart(fig, width="stretch")
+
+        panel_title(
             "Event timeline",
             "observed",
         )
@@ -532,10 +588,12 @@ def render_vessel_intelligence(
             _render_track_chart(
                 track,
                 title="Current real AIS track",
+                findings=findings,
             )
 
             _render_speed_chart(
-                track
+                track,
+                findings=findings,
             )
 
     render_gemini_vessel_panel(
@@ -607,13 +665,21 @@ def render_trajectory_analysis(
     )
 
     with left:
+        trajectory_findings = [
+            finding
+            for finding in snapshot.findings
+            if finding.mmsi == selected.mmsi
+        ]
+
         _render_track_chart(
             track,
             title="Current real AIS trajectory",
+            findings=trajectory_findings,
         )
 
         _render_speed_chart(
-            track
+            track,
+            findings=trajectory_findings,
         )
 
     with right:
@@ -730,113 +796,109 @@ def render_behavior(
         }
     )
 
-    for cluster in valid_clusters:
+    cluster_palette = (
+        "#35c2c9",
+        "#e9b857",
+        "#7aa7ff",
+        "#b38cff",
+        "#ef6b73",
+        "#8fb6b8",
+    )
+
+    # The projection is a behavioral reference space. Draw the
+    # population first with restrained opacity, then make the
+    # selected target the only high-salience observation.
+    all_x = result.projection[valid_indices, 0]
+    all_y = result.projection[valid_indices, 1]
+
+    fig.add_trace(
+        go.Scatter(
+            x=all_x,
+            y=all_y,
+            mode="markers",
+            name="Observed population",
+            marker={
+                "size": 6,
+                "color": "rgba(154,176,182,0.24)",
+                "line": {"color": "rgba(10,23,29,0.55)", "width": 0.5},
+            },
+            customdata=[
+                [
+                    str(result.mmsis[i]),
+                    int(result.clusters[i]),
+                    behavioral_scores.get(str(result.mmsis[i]), 0.0),
+                ]
+                for i in valid_indices
+            ],
+            hovertemplate=(
+                "<b>MMSI</b>: %{customdata[0]}"
+                "<br><b>Cluster</b>: %{customdata[1]}"
+                "<br><b>Isolation Forest score</b>: %{customdata[2]:.3f}"
+                "<br><b>PC1</b>: %{x:.3f}"
+                "<br><b>PC2</b>: %{y:.3f}"
+                "<extra></extra>"
+            ),
+            showlegend=True,
+        )
+    )
+
+    for cluster_position, cluster in enumerate(valid_clusters):
         cluster_indices = [
             i
             for i in valid_indices
             if int(result.clusters[i]) == cluster
         ]
 
-        labels = [
-            str(result.mmsis[i])
-            if i in highlighted_indices
-            else ""
-            for i in cluster_indices
-        ]
-
-        customdata = [
-            [
-                str(result.mmsis[i]),
-                int(result.clusters[i]),
-                behavioral_scores.get(
-                    str(result.mmsis[i]),
-                    0.0,
-                ),
-            ]
-            for i in cluster_indices
-        ]
-
         fig.add_trace(
             go.Scatter(
-                x=result.projection[
-                    cluster_indices,
-                    0,
-                ],
-                y=result.projection[
-                    cluster_indices,
-                    1,
-                ],
-                mode="markers+text",
-                text=labels,
-                textposition="top center",
-                textfont={
-                    "size": 10,
-                },
+                x=result.projection[cluster_indices, 0],
+                y=result.projection[cluster_indices, 1],
+                mode="markers",
                 name=f"Cluster {cluster}",
                 marker={
-                    "size": 9,
-                    "opacity": 0.82,
+                    "size": 5,
+                    "color": cluster_palette[
+                        cluster_position % len(cluster_palette)
+                    ],
+                    "opacity": 0.28,
                 },
-                customdata=customdata,
-                hovertemplate=(
-                    "<b>MMSI</b>: %{customdata[0]}"
-                    "<br><b>Cluster</b>: %{customdata[1]}"
-                    "<br><b>Isolation Forest score</b>: "
-                    "%{customdata[2]:.3f}"
-                    "<br><b>PC1</b>: %{x:.3f}"
-                    "<br><b>PC2</b>: %{y:.3f}"
-                    "<extra></extra>"
-                ),
+                hoverinfo="skip",
+                showlegend=True,
             )
         )
 
-    if (
-        selected_idx is not None
-        and selected_idx in valid_indices
-    ):
-        current_mmsi = str(
-            result.mmsis[selected_idx]
-        )
-
-        current_score = behavioral_scores.get(
-            current_mmsi,
-            0.0,
-        )
-
-        current_cluster = int(
-            result.clusters[selected_idx]
-        )
-
-        current_pc1 = result.projection[
-            selected_idx,
-            0,
-        ]
-
-        current_pc2 = result.projection[
-            selected_idx,
-            1,
-        ]
+    if selected_idx is not None and selected_idx in valid_indices:
+        current_mmsi = str(result.mmsis[selected_idx])
+        current_score = behavioral_scores.get(current_mmsi, 0.0)
+        current_cluster = int(result.clusters[selected_idx])
+        current_pc1 = result.projection[selected_idx, 0]
+        current_pc2 = result.projection[selected_idx, 1]
 
         fig.add_trace(
             go.Scatter(
                 x=[current_pc1],
                 y=[current_pc2],
-                mode="markers",
-                name="CURRENT",
+                mode="markers+text",
+                name="CURRENT TARGET",
+                text=[current_mmsi],
+                textposition="top center",
+                textfont={
+                    "size": 10,
+                    "color": "#ef6b73",
+                },
                 marker={
-                    "size": 17,
+                    "size": 18,
                     "symbol": "diamond",
                     "color": "#ef6b73",
                     "line": {
+                        "color": "#f6d2d5",
                         "width": 2,
                     },
                 },
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
-                    f"<br><b>Cluster</b>: "
-                    f"{current_cluster}"
-                    f"<br><b>Isolation Forest score</b>: "
-                    f"{current_score:.3f}"
+                    f"<br><b>Cluster</b>: {current_cluster}"
+                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),
@@ -844,8 +906,26 @@ def render_behavior(
             )
         )
 
+        # A subtle ring makes spatial separation from the population
+        # legible without implying a statistical confidence boundary.
+        fig.add_trace(
+            go.Scatter(
+                x=[current_pc1],
+                y=[current_pc2],
+                mode="markers",
+                marker={
+                    "size": 30,
+                    "symbol": "circle-open",
+                    "color": "#ef6b73",
+                    "line": {"color": "#ef6b73", "width": 1},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
     layout = _plot_layout(
-        "PCA projection of real AIS trajectory representations",
+        "Behavioral reference space · PCA",
         "PC1",
         "PC2",
     )
@@ -855,23 +935,22 @@ def render_behavior(
             "height": 500,
             "legend": {
                 "orientation": "h",
-                "y": 1.04,
+                "y": -0.14,
                 "x": 0,
                 "xanchor": "left",
-                "yanchor": "bottom",
+                "yanchor": "top",
+                "font": {"size": 9, "color": "#9ab0b6"},
             },
             "margin": {
                 "l": 55,
                 "r": 30,
-                "t": 85,
-                "b": 55,
+                "t": 62,
+                "b": 72,
             },
         }
     )
 
-    fig.update_layout(
-        **layout
-    )
+    fig.update_layout(**layout)
 
     st.plotly_chart(
         fig,

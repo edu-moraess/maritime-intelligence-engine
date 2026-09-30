@@ -73,23 +73,87 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     left, right = st.columns(2, gap="medium")
     with left:
         volume = hourly_volume(snapshot.observations)
-        fig = go.Figure(go.Bar(x=volume["hour"], y=volume["messages"], marker_color="#35c2c9",
-                               hovertemplate="UTC hour %{x}: %{y} real messages<extra></extra>"))
-        fig.update_layout(**_plot_layout("Observed AIS message volume by UTC hour", "UTC hour", "Real AIS messages"), height=330)
+        fig = go.Figure(
+            go.Bar(
+                x=volume["hour"],
+                y=volume["messages"],
+                marker={
+                    "color": "#35c2c9",
+                    "line": {"color": "#35c2c9", "width": 0},
+                },
+                opacity=0.82,
+                hovertemplate=(
+                    "<b>UTC %{x}</b><br>"
+                    "%{y:,} real AIS messages<extra></extra>"
+                ),
+            )
+        )
+        fig.update_layout(
+            **_plot_layout(
+                "AIS message throughput",
+                "UTC hour",
+                "Real AIS messages",
+            ),
+            height=330,
+            bargap=0.18,
+        )
         st.plotly_chart(fig, width="stretch")
     with right:
         speeds = speed_distribution(snapshot.vessels)
         if speeds.empty:
             empty_state("SOG distribution requires real AIS reports with a valid speed-over-ground field.", "NO REAL SOG DATA")
         else:
-            fig = go.Figure(go.Histogram(x=speeds["sog_knots"], nbinsx=18, marker_color="#51c79b",
-                                         hovertemplate="SOG %{x:.1f} kn<br>Vessels %{y}<extra></extra>"))
-            fig.update_layout(**_plot_layout("Observed speed-over-ground distribution", "SOG (knots)", "Vessels"), height=330)
+            fig = go.Figure(
+                go.Histogram(
+                    x=speeds["sog_knots"],
+                    nbinsx=18,
+                    marker={
+                        "color": "#35c2c9",
+                        "line": {"color": "#0d1c24", "width": 1},
+                    },
+                    opacity=0.78,
+                    hovertemplate=(
+                        "<b>SOG</b> %{x:.1f} kn"
+                        "<br><b>Vessels</b> %{y}<extra></extra>"
+                    ),
+                )
+            )
+            fig.update_layout(
+                **_plot_layout(
+                    "Speed-over-ground distribution",
+                    "SOG (knots)",
+                    "Vessels",
+                ),
+                height=330,
+                bargap=0.08,
+            )
             st.plotly_chart(fig, width="stretch")
     counts = anomaly_counts(snapshot.findings)
     if not counts.empty:
-        fig = go.Figure(go.Bar(x=counts["category"], y=counts["events"], marker_color="#e9b857"))
-        fig.update_layout(**_plot_layout("Behavioral findings by category", "Category", "Events"), height=300)
+        fig = go.Figure(
+            go.Bar(
+                x=counts["category"],
+                y=counts["events"],
+                marker={
+                    "color": "#e9b857",
+                    "line": {"color": "#e9b857", "width": 0},
+                },
+                opacity=0.86,
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    "%{y} findings<extra></extra>"
+                ),
+            )
+        )
+        fig.update_layout(
+            **_plot_layout(
+                "Behavioral findings",
+                "Category",
+                "Events",
+            ),
+            height=300,
+            bargap=0.28,
+        )
         st.plotly_chart(fig, width="stretch")
 
 
