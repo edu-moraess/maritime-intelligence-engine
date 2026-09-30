@@ -509,9 +509,12 @@ def render_vessel_intelligence(
                 go.Scatter(
                     x=score_frame["received_at"],
                     y=score_frame["score"],
-                    mode="lines+markers",
-                    line={"color": "#e9b857", "width": 2},
-                    marker={"size": 6, "color": "#e9b857"},
+                    mode="markers",
+                    marker={
+                        "size": 8,
+                        "color": "#e9b857",
+                        "line": {"color": "#f6e4b0", "width": 1},
+                    },
                     customdata=score_frame[["category"]].to_numpy(),
                     hovertemplate=(
                         "%{x|%Y-%m-%d %H:%M:%S} UTC"
