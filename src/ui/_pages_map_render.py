@@ -97,17 +97,55 @@ def _utc(value) -> str:
 
 
 def _plot_layout(title: str, x_title: str, y_title: str) -> dict:
+    """Shared analytical Plotly language for operational intelligence views."""
+    axis = {
+        "title": {"text": x_title, "font": {"size": 10, "color": "#79939b"}},
+        "gridcolor": "rgba(49, 80, 91, 0.34)",
+        "zerolinecolor": "rgba(49, 80, 91, 0.45)",
+        "showline": True,
+        "linecolor": "#1b3640",
+        "ticks": "outside",
+        "tickcolor": "#31505b",
+        "tickfont": {"size": 9, "color": "#79939b"},
+    }
+    yaxis = {
+        "title": {"text": y_title, "font": {"size": 10, "color": "#79939b"}},
+        "gridcolor": "rgba(49, 80, 91, 0.34)",
+        "zerolinecolor": "rgba(49, 80, 91, 0.45)",
+        "showline": True,
+        "linecolor": "#1b3640",
+        "ticks": "outside",
+        "tickcolor": "#31505b",
+        "tickfont": {"size": 9, "color": "#79939b"},
+        "automargin": True,
+    }
     return {
-        "title": {"text": title, "font": {"size": 13, "color": "#d9e6e9"}, "x": 0},
+        "title": {
+            "text": title,
+            "font": {"size": 12, "color": "#d9e6e9"},
+            "x": 0,
+            "xanchor": "left",
+        },
         "paper_bgcolor": "#0d1c24",
-        "plot_bgcolor": "#0d1c24",
-        "font": {"family": "Inter, sans-serif", "color": "#b2c7cc", "size": 11},
-        "margin": {"l": 48, "r": 22, "t": 50, "b": 42},
-        "xaxis": {"title": x_title, "gridcolor": "#1b3640", "zerolinecolor": "#1b3640"},
-        "yaxis": {"title": y_title, "gridcolor": "#1b3640", "zerolinecolor": "#1b3640", "automargin": True},
+        "plot_bgcolor": "#0a171d",
+        "font": {"family": "Inter, sans-serif", "color": "#b2c7cc", "size": 10},
+        "margin": {"l": 52, "r": 28, "t": 48, "b": 46},
+        "xaxis": axis,
+        "yaxis": yaxis,
         "hovermode": "x unified",
-        "hoverlabel": {"bgcolor": "#10242d", "font": {"color": "#d9e6e9"}},
-        "legend": {"orientation": "h", "y": 1.08, "x": 0},
+        "hoverlabel": {
+            "bgcolor": "#10242d",
+            "bordercolor": "#31505b",
+            "font": {"family": "IBM Plex Mono, monospace", "color": "#d9e6e9", "size": 10},
+        },
+        "legend": {
+            "orientation": "h",
+            "y": -0.18,
+            "x": 0,
+            "font": {"size": 9, "color": "#9ab0b6"},
+        },
+        "showlegend": True,
+        "uirevision": title,
     }
 
 
@@ -145,46 +183,129 @@ def _vessel_compact(vessel: VesselSnapshot) -> None:
 
 
 def _render_track_chart(track: list, title: str) -> None:
+    """Render a restrained trajectory view with explicit start/end semantics."""
     frame = track_to_frame(track)
-    fig = go.Figure(
+    fig = go.Figure()
+
+    fig.add_trace(
         go.Scattergeo(
             lon=frame["longitude"],
             lat=frame["latitude"],
-            mode="lines+markers",
-            line={"color": "#35c2c9", "width": 2},
-            marker={"size": 5, "color": "#d9e6e9"},
+            mode="lines",
+            name="Observed track",
+            line={"color": "#35c2c9", "width": 2.2},
             text=frame["received_at"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
-            hovertemplate="%{text}<br>Latitude %{lat:.5f}<br>Longitude %{lon:.5f}<extra></extra>",
+            hovertemplate=(
+                "%{text}<br>Latitude %{lat:.5f}<br>"
+                "Longitude %{lon:.5f}<extra></extra>"
+            ),
         )
     )
+
+    fig.add_trace(
+        go.Scattergeo(
+            lon=[frame["longitude"].iloc[0], frame["longitude"].iloc[-1]],
+            lat=[frame["latitude"].iloc[0], frame["latitude"].iloc[-1]],
+            mode="markers",
+            name="Track endpoints",
+            marker={
+                "size": [7, 10],
+                "color": ["#79939b", "#e9b857"],
+                "line": {"color": "#0a171d", "width": 1.5},
+            },
+            text=["START", "LATEST"],
+            hovertemplate=(
+                "<b>%{text}</b><br>Latitude %{lat:.5f}<br>"
+                "Longitude %{lon:.5f}<extra></extra>"
+            ),
+        )
+    )
+
     fig.update_geos(
-        showland=True, landcolor="#10242d", showocean=True, oceancolor="#08151b",
-        showcountries=True, countrycolor="#1b3640", coastlinecolor="#31505b",
+        showland=True,
+        landcolor="#10242d",
+        showocean=True,
+        oceancolor="#08151b",
+        showcountries=True,
+        countrycolor="#1b3640",
+        coastlinecolor="#31505b",
         projection_type="equirectangular",
     )
-    fig.update_layout(**_plot_layout(title, "Longitude", "Latitude"), height=390)
+    fig.update_layout(
+        **_plot_layout(title, "Longitude", "Latitude"),
+        height=400,
+        showlegend=True,
+        legend={"orientation": "h", "y": -0.12, "x": 0, "font": {"size": 9}},
+    )
     st.plotly_chart(fig, width="stretch")
 
 
 def _render_speed_chart(track: list) -> None:
+    """Render speed and course as a compact behavioral time series."""
     frame = enrich_track(track_to_frame(track))
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=frame["received_at"], y=frame["sog_knots"], mode="lines+markers", name="SOG",
-        line={"color": "#51c79b"}, connectgaps=False,
-        hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>SOG %{y:.1f} kn<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=frame["received_at"], y=frame["cog_degrees"], mode="lines", name="COG", yaxis="y2",
-        line={"color": "#e9b857", "dash": "dot"}, connectgaps=False,
-        hovertemplate="%{x|%Y-%m-%d %H:%M:%S} UTC<br>COG %{y:.1f}°<extra></extra>",
-    ))
-    layout = _plot_layout("Observed SOG and COG history", "UTC timestamp", "SOG (knots)")
-    layout.update({
-        "height": 300,
-        "yaxis2": {"title": "COG (°)", "overlaying": "y", "side": "right", "range": [0, 360], "gridcolor": "rgba(0,0,0,0)"},
-        "legend": {"orientation": "h", "y": 1.12},
-    })
+
+    fig.add_trace(
+        go.Scatter(
+            x=frame["received_at"],
+            y=frame["sog_knots"],
+            mode="lines+markers",
+            name="SOG",
+            line={"color": "#35c2c9", "width": 2},
+            marker={"size": 4},
+            connectgaps=False,
+            hovertemplate=(
+                "%{x|%Y-%m-%d %H:%M:%S} UTC"
+                "<br><b>SOG</b> %{y:.1f} kn<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=frame["received_at"],
+            y=frame["cog_degrees"],
+            mode="lines",
+            name="COG",
+            yaxis="y2",
+            line={"color": "#e9b857", "width": 1.5, "dash": "dot"},
+            connectgaps=False,
+            hovertemplate=(
+                "%{x|%Y-%m-%d %H:%M:%S} UTC"
+                "<br><b>COG</b> %{y:.1f}°<extra></extra>"
+            ),
+        )
+    )
+
+    layout = _plot_layout(
+        "Navigation behaviour over time",
+        "UTC timestamp",
+        "Speed over ground (kn)",
+    )
+    layout.update(
+        {
+            "height": 320,
+            "yaxis": {
+                **layout["yaxis"],
+                "rangemode": "tozero",
+            },
+            "yaxis2": {
+                "title": {"text": "Course over ground (°)", "font": {"size": 10, "color": "#79939b"}},
+                "overlaying": "y",
+                "side": "right",
+                "range": [0, 360],
+                "gridcolor": "rgba(0,0,0,0)",
+                "tickfont": {"size": 9, "color": "#79939b"},
+                "showline": True,
+                "linecolor": "#1b3640",
+            },
+            "legend": {
+                "orientation": "h",
+                "y": -0.2,
+                "x": 0,
+                "font": {"size": 9, "color": "#9ab0b6"},
+            },
+        }
+    )
     fig.update_layout(**layout)
     st.plotly_chart(fig, width="stretch")
 
