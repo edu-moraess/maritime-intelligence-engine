@@ -26,9 +26,9 @@ TEMPORAL_FEATURE_NAMES: tuple[str, ...] = (
 DEFAULT_INPUT_DIM = len(TEMPORAL_FEATURE_NAMES)
 DEFAULT_HIDDEN_DIM = 32
 DEFAULT_LATENT_DIM = 16
-# One recurrent layer is sufficient for the short AIS windows used here and
-# keeps inference/training inexpensive on CPU.
-DEFAULT_NUM_LAYERS = 1
+# TCN depth is controlled by the explicit production architecture. The legacy
+# GRU remains available for compatibility but is not the default path.
+DEFAULT_NUM_LAYERS = 4
 # A gap this large is treated as a break in temporal continuity. We never
 # interpolate across it, so a model window cannot silently span an outage.
 MAX_TRACK_GAP_SECONDS = 900.0
@@ -81,8 +81,8 @@ class TemporalFitResult:
     n_points_min: int | None = None
     sequence_length: int = DEFAULT_SEQUENCE_LENGTH
     input_dim: int = DEFAULT_INPUT_DIM
-    method: str = "GRU Temporal Autoencoder"
-    architecture: str = "gru"
+    method: str = "TCN Temporal Autoencoder"
+    architecture: str = "tcn"
     scores: list[TemporalScore] = field(default_factory=list)
     sequences: list[TemporalSequence] = field(default_factory=list)
     latent: np.ndarray | None = None
