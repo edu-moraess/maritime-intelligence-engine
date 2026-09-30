@@ -207,7 +207,7 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
             st.write("**Monitoring area:** `—`")
     with right:
         panel_title("Pipeline", "real AIS")
-        st.markdown("`AISStream WebSocket`  →  `Validation`  →  `Trajectory features`  →  `Runtime PCA / IsolationForest`  →  `Deep Temporal (GRU-AE)`  →  `Streamlit`")
+        st.markdown("`AISStream WebSocket`  →  `Validation`  →  `Trajectory features`  →  `Runtime PCA / IsolationForest`  →  `Deep Temporal (TCN-AE)`  →  `Streamlit`")
         st.write("")
         st.write(f"**Historical persistence:** `{snapshot.historical_status}`")
         if snapshot.historical_result is not None:
@@ -219,10 +219,10 @@ def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, 
                 st.write(f"**Persist detail:** {result.reason}")
         st.write("Model checkpoint: none. The current representation is fitted only on real observations received in this session.")
     st.write("")
-    panel_title("Deep Temporal", "GRU autoencoder · real AIS only")
+    panel_title("Deep Temporal", "TCN autoencoder · real AIS only")
     temporal = snapshot.temporal
     if temporal is None:
-        metric_strip({"STATUS": "WAITING", "MODEL": "GRU Temporal AE", "TRACKS": "—", "TRAINING": "—", "LOSS": "—", "INFERENCE": "no"})
+        metric_strip({"STATUS": "WAITING", "MODEL": "TCN Temporal AE", "TRACKS": "—", "TRAINING": "—", "LOSS": "—", "INFERENCE": "no"})
         notice("Deep Temporal has not run yet. Collect real AIS tracks.", "gray")
     else:
         loss = f"{temporal.best_loss:.6f}" if temporal.best_loss is not None else "—"
