@@ -588,7 +588,8 @@ def render_vessel_intelligence(
             )
 
             _render_speed_chart(
-                track
+                track,
+                findings=findings,
             )
 
     render_gemini_vessel_panel(
@@ -665,8 +666,15 @@ def render_trajectory_analysis(
             title="Current real AIS trajectory",
         )
 
+        trajectory_findings = [
+            finding
+            for finding in snapshot.findings
+            if finding.mmsi == selected.mmsi
+        ]
+
         _render_speed_chart(
-            track
+            track,
+            findings=trajectory_findings,
         )
 
     with right:
