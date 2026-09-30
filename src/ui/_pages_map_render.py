@@ -240,8 +240,11 @@ def _render_track_chart(track: list, title: str) -> None:
     st.plotly_chart(fig, width="stretch")
 
 
-def _render_speed_chart(track: list) -> None:
-    """Render speed and course as a compact behavioral time series."""
+def _render_speed_chart(
+    track: list,
+    findings: list[AnomalyFinding] | None = None,
+) -> None:
+    """Render navigation behaviour and link detected findings to the timeline."""
     frame = enrich_track(track_to_frame(track))
     fig = go.Figure()
 
@@ -276,6 +279,72 @@ def _render_speed_chart(track: list) -> None:
         )
     )
 
+    # Findings are anchored to the nearest real AIS observation. This
+    # preserves the detector's event timestamp while avoiding synthetic
+    # interpolation of SOG/COG values.
+    event_rows: list[dict] = []
+    for finding in findings or []:
+        if finding.received_at is None or frame.empty:
+            continue
+        timestamp = pd.Timestamp(finding.received_at)
+        distances = (frame["received_at"] - timestamp).abs()
+        nearest_index = distances.idxmin()
+        nearest = frame.loc[nearest_index]
+        event_rows.append(
+            {
+                "received_at": timestamp,
+                "plot_at": nearest["received_at"],
+                "sog_knots": nearest.get("sog_knots"),
+                "score": float(finding.score),
+                "category": finding.category,
+                "explanation": finding.explanation,
+            }
+        )
+
+    if event_rows:
+        event_frame = pd.DataFrame(event_rows).sort_values("plot_at")
+        event_frame = event_frame.drop_duplicates(
+            subset=["plot_at", "category"],
+            keep="last",
+        )
+
+        valid_events = event_frame.dropna(subset=["sog_knots"])
+        if not valid_events.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=valid_events["plot_at"],
+                    y=valid_events["sog_knots"],
+                    mode="markers",
+                    name="Behavioral finding",
+                    marker={
+                        "size": 10,
+                        "symbol": "diamond",
+                        "color": "#ef6b73",
+                        "line": {"color": "#f6d2d5", "width": 1.5},
+                    },
+                    customdata=valid_events[
+                        ["score", "category", "explanation"]
+                    ].to_numpy(),
+                    hovertemplate=(
+                        "%{x|%Y-%m-%d %H:%M:%S} UTC"
+                        "<br><b>Behavioral finding</b>"
+                        "<br><b>Score</b> %{customdata[0]:.3f}"
+                        "<br><b>Category</b> %{customdata[1]}"
+                        "<br><b>SOG</b> %{y:.1f} kn"
+                        "<br><b>Evidence</b> %{customdata[2]}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+        for event_time in event_frame["plot_at"]:
+            fig.add_vline(
+                x=event_time,
+                line_width=1,
+                line_dash="dot",
+                line_color="rgba(239,107,115,0.48)",
+            )
+
     layout = _plot_layout(
         "Navigation behaviour over time",
         "UTC timestamp",
@@ -283,7 +352,7 @@ def _render_speed_chart(track: list) -> None:
     )
     layout.update(
         {
-            "height": 320,
+            "height": 340 if event_rows else 320,
             "yaxis": {
                 **layout["yaxis"],
                 "rangemode": "tozero",
@@ -308,7 +377,6 @@ def _render_speed_chart(track: list) -> None:
     )
     fig.update_layout(**layout)
     st.plotly_chart(fig, width="stretch")
-
 
 def _render_anomaly_map(findings: list[AnomalyFinding], settings: AppSettings) -> None:
     del settings
