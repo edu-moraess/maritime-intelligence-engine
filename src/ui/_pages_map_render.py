@@ -182,8 +182,12 @@ def _vessel_compact(vessel: VesselSnapshot) -> None:
         )
 
 
-def _render_track_chart(track: list, title: str) -> None:
-    """Render a restrained trajectory view with explicit start/end semantics."""
+def _render_track_chart(
+    track: list,
+    title: str,
+    findings: list[AnomalyFinding] | None = None,
+) -> None:
+    """Render the observed trajectory and anchor findings to real AIS positions."""
     frame = track_to_frame(track)
     fig = go.Figure()
 
@@ -221,6 +225,74 @@ def _render_track_chart(track: list, title: str) -> None:
         )
     )
 
+    # Plot findings at the detector's own AIS coordinates. No spatial
+    # interpolation is introduced: the marker represents the actual
+    # finding location supplied by the anomaly detector.
+    event_rows = [
+        {
+            "latitude": float(finding.latitude),
+            "longitude": float(finding.longitude),
+            "score": float(finding.score),
+            "category": finding.category,
+            "explanation": finding.explanation,
+            "received_at": finding.received_at,
+        }
+        for finding in findings or []
+        if finding.latitude is not None and finding.longitude is not None
+    ]
+
+    if event_rows:
+        event_frame = pd.DataFrame(event_rows).drop_duplicates(
+            subset=["latitude", "longitude", "category"],
+            keep="last",
+        )
+        fig.add_trace(
+            go.Scattergeo(
+                lon=event_frame["longitude"],
+                lat=event_frame["latitude"],
+                mode="markers",
+                name="Behavioral finding",
+                marker={
+                    "size": 13,
+                    "symbol": "diamond",
+                    "color": "#ef6b73",
+                    "line": {"color": "#f6d2d5", "width": 1.5},
+                },
+                customdata=event_frame[
+                    ["score", "category", "explanation", "received_at"]
+                ].to_numpy(),
+                hovertemplate=(
+                    "<b>BEHAVIORAL FINDING</b>"
+                    "<br>%{customdata[3]}"
+                    "<br><b>Score</b> %{customdata[0]:.3f}"
+                    "<br><b>Category</b> %{customdata[1]}"
+                    "<br><b>Evidence</b> %{customdata[2]}"
+                    "<br>Latitude %{lat:.5f}"
+                    "<br>Longitude %{lon:.5f}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+        # A larger low-opacity ring separates event locations from the
+        # observed track without suggesting a confidence boundary.
+        fig.add_trace(
+            go.Scattergeo(
+                lon=event_frame["longitude"],
+                lat=event_frame["latitude"],
+                mode="markers",
+                name="Finding location",
+                marker={
+                    "size": 24,
+                    "symbol": "circle-open",
+                    "color": "#ef6b73",
+                    "line": {"color": "#ef6b73", "width": 1},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
     fig.update_geos(
         showland=True,
         landcolor="#10242d",
@@ -233,12 +305,11 @@ def _render_track_chart(track: list, title: str) -> None:
     )
     fig.update_layout(
         **_plot_layout(title, "Longitude", "Latitude"),
-        height=400,
+        height=420 if event_rows else 400,
         showlegend=True,
         legend={"orientation": "h", "y": -0.12, "x": 0, "font": {"size": 9}},
     )
     st.plotly_chart(fig, width="stretch")
-
 
 def _render_speed_chart(
     track: list,
