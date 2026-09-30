@@ -90,6 +90,9 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
     events: list[str] = []
 
     class _Provider:
+        def reset_session(self):
+            events.append("reset")
+
         def stream(self, _stop_event, *, duration_seconds):
             events.append(f"stream-start:{duration_seconds}")
             yield AISObservation(
@@ -121,6 +124,7 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
     engine.last_collection_seconds = 0.0
     engine.current_session_observations = []
     engine.current_session_findings = []
+    engine.environmental_contexts = {}
     engine._recompute = lambda: None
     engine._detect_current_session_findings = lambda: []
 
@@ -132,4 +136,4 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
     engine._restore_historical_context = restore
 
     assert engine.collect(seconds=0.1) == 1
-    assert events == ["stream-start:0.1", "stream-end", "restore"]
+    assert events == ["reset", "stream-start:0.1", "stream-end", "restore"]
