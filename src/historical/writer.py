@@ -58,6 +58,7 @@ class HistoricalWriter(ABC):
         collection_seconds: float,
         started_at: datetime,
         ended_at: datetime,
+        session_id: UUID | None = None,
     ) -> HistoricalWriteResult:
         raise NotImplementedError
 
@@ -91,6 +92,7 @@ class NullHistoricalWriter(HistoricalWriter):
         collection_seconds: float,
         started_at: datetime,
         ended_at: datetime,
+        session_id: UUID | None = None,
     ) -> HistoricalWriteResult:
         return HistoricalWriteResult(
             status=self.status,
@@ -136,6 +138,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
         collection_seconds: float,
         started_at: datetime,
         ended_at: datetime,
+        session_id: UUID | None = None,
     ) -> HistoricalWriteResult:
         all_observations = list(observations)
         valid_observations = [obs for obs in all_observations if not validate_observation(obs)]
@@ -152,7 +155,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
             self.last_result = result
             return result
 
-        session_id = uuid4()
+        session_id = session_id or uuid4()
         try:
             connection = self._get_connection()
             self._ensure_schema(connection)
@@ -166,6 +169,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         (session_id, region_id, bbox, started_at, ended_at, collection_seconds,
                          messages_received, pipeline_version, source)
                     VALUES (%s, %s, ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO NOTHING
                     """,
                     (
                         session_id,
@@ -182,61 +186,74 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         "AISSTREAM",
                     ),
                 )
-                for observation in valid_observations:
-                    cursor.execute(
-                        """
-                        INSERT INTO vessels (mmsi, last_known_name, first_seen_at, last_seen_at)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (mmsi) DO UPDATE SET
-                            last_known_name = CASE
-                                WHEN EXCLUDED.last_known_name IS NOT NULL
-                                     AND EXCLUDED.last_known_name <> ''
-                                THEN EXCLUDED.last_known_name
-                                ELSE vessels.last_known_name
-                            END,
-                            first_seen_at = LEAST(vessels.first_seen_at, EXCLUDED.first_seen_at),
-                            last_seen_at = GREATEST(vessels.last_seen_at, EXCLUDED.last_seen_at)
-                        """,
-                        (
-                            observation.mmsi,
-                            observation.vessel_name.strip() if observation.vessel_name and observation.vessel_name.strip() else None,
-                            _utc(observation.received_at),
-                            _utc(observation.received_at),
-                        ),
+                vessel_values = [
+                    (
+                        observation.mmsi,
+                        observation.vessel_name.strip()
+                        if observation.vessel_name and observation.vessel_name.strip()
+                        else None,
+                        _utc(observation.received_at),
+                        _utc(observation.received_at),
                     )
-                    payload_hash = observation_payload_hash(observation)
-                    cursor.execute(
-                        """
-                        INSERT INTO ais_observations
-                            (session_id, mmsi, geom, received_at, ais_timestamp_second, observed_at,
-                             sog_knots, cog_degrees, heading_degrees, vessel_name,
-                             navigational_status, valid, payload_hash)
-                        VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s,
-                                %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (session_id, payload_hash) DO NOTHING
-                        RETURNING observation_id
-                        """,
-                        (
-                            session_id,
-                            observation.mmsi,
-                            float(observation.longitude),
-                            float(observation.latitude),
-                            _utc(observation.received_at),
-                            observation.ais_timestamp_second,
-                            _utc(observation.observed_at),
-                            observation.sog_knots,
-                            observation.cog_degrees,
-                            observation.heading_degrees,
-                            observation.vessel_name.strip() if observation.vessel_name and observation.vessel_name.strip() else None,
-                            observation.navigational_status,
-                            bool(observation.valid),
-                            payload_hash,
-                        ),
+                    for observation in valid_observations
+                ]
+                vessel_values_sql = ", ".join(["(%s, %s, %s, %s)"] * len(vessel_values))
+                cursor.execute(
+                    f"""
+                    INSERT INTO vessels (mmsi, last_known_name, first_seen_at, last_seen_at)
+                    VALUES {vessel_values_sql}
+                    ON CONFLICT (mmsi) DO UPDATE SET
+                        last_known_name = CASE
+                            WHEN EXCLUDED.last_known_name IS NOT NULL
+                                 AND EXCLUDED.last_known_name <> ''
+                            THEN EXCLUDED.last_known_name
+                            ELSE vessels.last_known_name
+                        END,
+                        first_seen_at = LEAST(vessels.first_seen_at, EXCLUDED.first_seen_at),
+                        last_seen_at = GREATEST(vessels.last_seen_at, EXCLUDED.last_seen_at)
+                    """,
+                    tuple(value for row in vessel_values for value in row),
+                )
+
+                observation_values = [
+                    (
+                        session_id,
+                        observation.mmsi,
+                        float(observation.longitude),
+                        float(observation.latitude),
+                        _utc(observation.received_at),
+                        observation.ais_timestamp_second,
+                        _utc(observation.observed_at),
+                        observation.sog_knots,
+                        observation.cog_degrees,
+                        observation.heading_degrees,
+                        observation.vessel_name.strip()
+                        if observation.vessel_name and observation.vessel_name.strip()
+                        else None,
+                        observation.navigational_status,
+                        bool(observation.valid),
+                        observation_payload_hash(observation),
                     )
-                    if cursor.fetchone() is None:
-                        duplicates += 1
-                    else:
-                        persisted += 1
+                    for observation in valid_observations
+                ]
+                observation_values_sql = ", ".join(
+                    ["(%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"]
+                    * len(observation_values)
+                )
+                cursor.execute(
+                    f"""
+                    INSERT INTO ais_observations
+                        (session_id, mmsi, geom, received_at, ais_timestamp_second, observed_at,
+                         sog_knots, cog_degrees, heading_degrees, vessel_name,
+                         navigational_status, valid, payload_hash)
+                    VALUES {observation_values_sql}
+                    ON CONFLICT (session_id, payload_hash) DO NOTHING
+                    RETURNING observation_id
+                    """,
+                    tuple(value for row in observation_values for value in row),
+                )
+                persisted = len(cursor.fetchall())
+                duplicates = len(valid_observations) - persisted
             connection.commit()
             self._status = "HISTORICAL DATABASE AVAILABLE"
             result = HistoricalWriteResult(
