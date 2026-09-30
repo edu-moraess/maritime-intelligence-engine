@@ -489,6 +489,59 @@ def render_vessel_intelligence(
         st.write("")
 
         panel_title(
+            "Behavioral evidence",
+            "session-relative",
+        )
+
+        if findings:
+            score_frame = pd.DataFrame(
+                [
+                    {
+                        "received_at": finding.received_at,
+                        "score": float(finding.score),
+                        "category": finding.category,
+                    }
+                    for finding in findings
+                ]
+            ).sort_values("received_at")
+
+            fig = go.Figure(
+                go.Scatter(
+                    x=score_frame["received_at"],
+                    y=score_frame["score"],
+                    mode="lines+markers",
+                    line={"color": "#e9b857", "width": 2},
+                    marker={"size": 6, "color": "#e9b857"},
+                    customdata=score_frame[["category"]].to_numpy(),
+                    hovertemplate=(
+                        "%{x|%Y-%m-%d %H:%M:%S} UTC"
+                        "<br><b>Anomaly score</b> %{y:.3f}"
+                        "<br><b>Category</b> %{customdata[0]}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            score_layout = _plot_layout(
+                "Anomaly score over observed events",
+                "UTC timestamp",
+                "Session-relative score",
+            )
+            score_layout.update(
+                {
+                    "height": 285,
+                    "yaxis": {
+                        **score_layout["yaxis"],
+                        "range": [0, 1],
+                    },
+                    "showlegend": False,
+                    "margin": {"l": 52, "r": 24, "t": 46, "b": 46},
+                }
+            )
+            fig.update_layout(**score_layout)
+            st.plotly_chart(fig, width="stretch")
+
+        panel_title(
             "Event timeline",
             "observed",
         )
