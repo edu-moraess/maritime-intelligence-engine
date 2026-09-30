@@ -2,9 +2,9 @@
 
 ## Real-Time Maritime Behavioral Intelligence
 
-Maritime Intelligence Engine (MIE) is an end-to-end maritime intelligence platform designed to ingest **real AIS telemetry**, reconstruct vessel trajectories, analyze movement patterns, detect behavioral anomalies, and transform maritime telemetry into explainable operational intelligence.
+Maritime Intelligence Engine (MIE) is an end-to-end system for ingesting **real AIS telemetry**, reconstructing vessel trajectories, analyzing navigation behavior, detecting anomalies, and enriching observations with environmental marine context.
 
-> **Real AIS. Real trajectories. No synthetic vessels. No fabricated results.**
+> **Real AIS. Real trajectories. No synthetic vessels. No fabricated observations.**
 
 ---
 
@@ -27,12 +27,16 @@ Behavioral Analytics
    ↓
 Temporal Intelligence
    ↓
+Environmental Context
+   ↓
 Explainable Findings
    ↓
 Operational Intelligence
 ```
 
-The central question is not only **where a vessel is**, but also how it is moving, how its behavior compares with observed traffic, and which patterns deserve further investigation.
+The central question is not only **where a vessel is**, but how it is moving, how its behavior compares with observed traffic, and which events deserve further investigation.
+
+---
 
 ## Core capabilities
 
@@ -45,11 +49,11 @@ The central question is not only **where a vessel is**, but also how it is movin
 - Explicit connection and collection states
 - Session-based collection
 - Multi-region monitoring through a single operational workspace
-- Two-region unified or split tactical visualization
+- Real AIS only: unavailable or insufficient data is surfaced explicitly
 
 ### Multi-region tactical monitoring
 
-MIE supports monitoring two maritime regions simultaneously while keeping their analytical state separated.
+MIE supports two maritime regions simultaneously while keeping their analytical state separated.
 
 ```text
                  AISStream
@@ -65,11 +69,11 @@ MIE supports monitoring two maritime regions simultaneously while keeping their 
            SPLIT          UNIFIED
 ```
 
-**SPLIT** provides independent tactical maps and independent vessel selection for each region.
+**SPLIT** provides independent tactical maps and vessel selection for each region.
 
 **UNIFIED** provides one enclosing tactical viewport across both regions without inventing a geographic midpoint. Regional intelligence remains distinct even when the map is unified.
 
-Selecting a vessel in a regional or unified view persists the selection across Streamlit reruns and opens the corresponding Vessel Intelligence context.
+Vessel selection persists across Streamlit reruns and opens the corresponding Vessel Intelligence context.
 
 ### Vessel and trajectory intelligence
 
@@ -79,7 +83,9 @@ Selecting a vessel in a regional or unified view persists the selection across S
 - Track duration and continuity
 - Movement and trajectory features
 - Vessel-level investigation
-- Interactive geospatial visualization
+- Real AIS track visualization
+- Start/latest track endpoints
+- Behavioral findings anchored to observed AIS events
 
 ### Behavioral analytics
 
@@ -88,53 +94,72 @@ Selecting a vessel in a regional or unified view persists the selection across S
 - Isolation Forest anomaly detection
 - Explainable behavioral rules
 - Session-relative analytical signals
+- Discrete anomaly findings tied to real observations
+
+The behavioral reference space is analytical context, not a statistical confidence boundary. Isolation Forest scores are session-relative signals and are not probabilities.
 
 ### Temporal intelligence
 
-MIE measures the real temporal coverage available before applying deep temporal learning.
+MIE uses temporal sequence modeling only when the available AIS evidence supports it.
 
 ```text
-Real AIS tracks
-      ↓
+Real validated AIS tracks
+          ↓
 Temporal diagnostics
-      ↓
-T=32 ── if enough real observations
-      ↓ otherwise
-T=16 ── if enough real observations
-      ↓ otherwise
-T=8  ── if enough real observations
-      ↓ otherwise
-NOT_READY
+          ↓
+T=32 → T=16 → T=8 → NOT_READY
+          ↓
+TCN Temporal Autoencoder
+          ↓
+Reconstruction / temporal anomaly signal
 ```
 
-The current temporal production path uses a **GRU Temporal Autoencoder** with adaptive sequence length. Short tracks are never stretched, interpolated, or fabricated into longer temporal evidence.
+The current production temporal architecture is a **TCN Autoencoder implemented in PyTorch**. The model uses causal/dilated temporal residual blocks and replaces the previous GRU production path. The legacy GRU implementation remains available for checkpoint/backward compatibility.
 
-### Temporal evidence observed in live AIS
+The adaptive selector chooses the longest supported sequence length from validated real observations. Short tracks are never stretched, interpolated, or fabricated into longer temporal evidence.
 
-A Houston Ship Channel session produced approximately 974 seconds of observed collection, 549 persisted real position reports, and 181 active vessels. The temporal diagnostics found:
+### Environmental marine context
 
-- 69 tracks with ≥4 points;
-- 11 tracks with ≥8 points;
-- 0 tracks with ≥16 points;
-- 0 tracks with ≥32 points;
-- 17 sliding T=8 windows;
-- 11 non-overlapping T=8 windows;
-- median track duration of 7.0 minutes;
-- maximum receive-time gap of 24.7 minutes.
+MIE integrates real marine model data through the **Open-Meteo Marine API**.
 
-Previous Danish Straits sessions produced materially denser temporal coverage, including 263 tracks with ≥4 points. This demonstrates that temporal model availability is **region- and session-dependent**.
+The environmental channel currently retrieves:
 
-The current development therefore treats temporal coverage as an explicit evidence boundary rather than assuming that T=32 is universally available.
+- wave height;
+- wave direction;
+- wave period;
+- wind-wave height;
+- swell height and direction;
+- ocean-current velocity;
+- ocean-current direction;
+- sea-surface temperature.
+
+Environmental observations are normalized by region and timestamp and remain independent from AIS ingestion.
+
+This context allows an operator to compare a change in vessel speed or route with the marine conditions observed during the same period. It provides additional evidence for investigation; it does **not** automatically establish that environmental conditions caused an anomaly.
 
 ### Explainable findings
 
-Anomaly scores and behavioral rules are treated as signals for investigation, not proof of malicious intent, criminal activity, or hostile behavior.
+Anomaly findings are analytical signals for investigation, not proof of malicious intent, criminal activity, or hostile behavior.
+
+The system preserves the distinction between:
+
+```text
+AIS observation
+      ≠
+Analytical finding
+      ≠
+Threat classification
+```
 
 ### Historical persistence
 
-PostgreSQL/PostGIS provides an optional historical persistence layer for real validated AIS observations. Persistence is decoupled from live ingestion and is idempotent.
+PostgreSQL/PostGIS provides an optional historical persistence layer for validated AIS observations.
 
-### Data quality
+- Historical persistence is decoupled from live ingestion.
+- Writes are designed to be idempotent.
+- Historical state is not used to fabricate current vessel positions.
+
+### Data quality and evidence boundaries
 
 The system validates conditions including:
 
@@ -151,46 +176,71 @@ When real AIS data is unavailable, MIE exposes an unavailable/insufficient-data 
 
 ---
 
+## Analytical visualization
+
+The operational interface separates **context, evidence, and state** rather than treating every chart as a generic dashboard.
+
+Current analytical views include:
+
+- real AIS trajectory with explicit start/latest endpoints;
+- SOG and COG time series;
+- behavioral findings anchored to observed events;
+- anomaly score event markers;
+- PCA behavioral reference space;
+- AIS message throughput;
+- speed-over-ground distribution;
+- behavioral findings by category;
+- regional operational state;
+- environmental marine conditions.
+
+The visualization layer does not alter AIS ingestion, anomaly semantics, persistence, or map geometry.
+
+---
+
 ## Architecture
 
 ```text
-AISStream WebSocket
-        ↓
-Real AIS ingestion
-        ↓
-Validation & integrity
-        ↓
-AISObservation
-        ↓
-Session Store
-        ↓
-Trajectory Engine
-        ↓
-Feature Engineering
-        ↓
- ┌───────────────────────────────┐
- │ Behavioral Analytics          │
- │ PCA / KMeans / IsolationForest│
- └───────────────┬───────────────┘
-                 ↓
-       Temporal Diagnostics
-                 ↓
-      GRU Temporal Autoencoder
-                 ↓
-      Intelligence / Findings
-          ↙              ↘
-     Streamlit       PostgreSQL/PostGIS
+                         AISStream WebSocket
+                                  ↓
+                           Real AIS ingestion
+                                  ↓
+                         Validation & integrity
+                                  ↓
+                             AISObservation
+                                  ↓
+                            Session Store
+                                  ↓
+                         Trajectory Engine
+                                  ↓
+                         Feature Engineering
+                                  ↓
+             ┌────────────────────┴────────────────────┐
+             ↓                                         ↓
+     Behavioral Analytics                    Environmental Context
+   PCA / KMeans / IsolationForest             Open-Meteo Marine
+             ↓                                         ↓
+             └────────────────────┬────────────────────┘
+                                  ↓
+                        Temporal Diagnostics
+                                  ↓
+                         TCN Autoencoder
+                                  ↓
+                         Intelligence Engine
+                                  ↓
+                    Explainable Findings / UI
+                         ↙               ↘
+                    Streamlit       PostgreSQL/PostGIS
 ```
 
-The architecture intentionally separates data acquisition, validation, domain representation, session state, trajectory processing, machine learning, intelligence, persistence, and visualization.
+The architecture separates data acquisition, validation, domain representation, session state, trajectory processing, machine learning, environmental context, intelligence, persistence, and visualization.
 
-For the detailed architecture, see `docs/architecture.md`.
+For the detailed system topology, see `docs/architecture.md`.
 
 ---
 
 ## Real Data Principle
 
-MIE is built around real AIS observations.
+MIE is built around observations that were actually received from external data providers.
 
 ```text
 Real AIS
@@ -201,18 +251,20 @@ Real Track
    ↓
 Real Features
    ↓
-Analytical Signal
+Behavioral / Temporal Signal
+   ↓
+Explainable Finding
 ```
 
-If the required data is unavailable, the system does not substitute simulated vessels or fabricated trajectories.
+If required evidence is unavailable, the system does not substitute simulated vessels or fabricated trajectories.
 
-This principle applies to temporal learning as well: a model cannot claim a long temporal sequence when the source observations do not support it.
+The same principle applies to temporal learning: a model cannot claim a sequence length that the source observations do not support.
 
 ---
 
 ## Operational semantics
 
-MIE explicitly distinguishes infrastructure state, data availability, and analytical sufficiency.
+MIE explicitly distinguishes infrastructure state, data availability, analytical sufficiency, and anomaly signals.
 
 ```text
 AIS disconnected
@@ -229,10 +281,14 @@ Threat classification
 
 Session-relative score
       ≠
-Universal behavior probability
+Universal probability
+
+Environmental context
+      ≠
+Causal explanation
 ```
 
-`deep_anomaly_score` is currently a session-relative ranking, not a calibrated probability.
+This distinction is fundamental to the system's analytical integrity.
 
 ---
 
@@ -245,10 +301,9 @@ Universal behavior probability
 | AIS Transport | WebSocket / AISStream |
 | Data Processing | Pandas / NumPy |
 | Machine Learning | Scikit-learn / PyTorch |
-| Dimensionality Reduction | PCA |
-| Clustering | KMeans |
-| Anomaly Detection | Isolation Forest |
-| Temporal Model | GRU Temporal Autoencoder |
+| Behavioral Analysis | PCA / KMeans / Isolation Forest |
+| Temporal Model | TCN Temporal Autoencoder |
+| Marine Context | Open-Meteo Marine |
 | Visualization | Plotly / PyDeck |
 | Database | PostgreSQL |
 | Geospatial Database | PostGIS |
@@ -259,7 +314,7 @@ Universal behavior probability
 
 ## Validation
 
-The repository contains automated tests for ingestion, configuration, trajectory processing, data quality, persistence, temporal semantics, temporal diagnostics, and analytical safeguards.
+The repository contains automated tests covering ingestion, configuration, trajectory processing, data quality, persistence, temporal semantics, temporal diagnostics, and analytical safeguards.
 
 Run:
 
@@ -267,13 +322,14 @@ Run:
 pytest -q
 ```
 
-Temporal diagnostics specifically verify:
+Temporal validation covers:
 
 - minimum-point coverage;
 - receive-time duration and gaps;
 - sliding and non-overlapping windows;
-- adaptive selection of T=8/T=16/T=32;
-- rejection when temporal coverage is insufficient.
+- adaptive T=8/T=16/T=32 selection;
+- rejection when temporal coverage is insufficient;
+- TCN temporal model behavior when PyTorch is available.
 
 Live AIS validation is performed separately against the deployed Streamlit application using real AISStream observations.
 
@@ -298,7 +354,7 @@ See:
 - Independent regional vessel selection
 - Persistent UNIFIED vessel selection across Streamlit reruns
 - Vessel Intelligence from regional and unified selection
-- 30 maritime monitoring region presets
+- Maritime monitoring region presets
 - Bounding Box validation
 - Vessel tracking
 - Session-based collection
@@ -306,15 +362,18 @@ See:
 - Behavioral feature engineering
 - PCA / KMeans / Isolation Forest
 - Explainable behavioral rules
-- Vessel Intelligence
+- Behavioral findings linked to real AIS observations
+- Analytical Plotly chart system
 - Tactical geospatial visualization
 - Data Quality monitoring
 - Temporal integrity controls
 - Temporal track diagnostics
-- GRU Temporal Autoencoder
-- Adaptive temporal scale selection (T=8/T=16/T=32)
+- TCN Temporal Autoencoder
+- Adaptive temporal scale selection
 - PostgreSQL/PostGIS historical persistence
 - Idempotent historical observation persistence
+- Open-Meteo Marine environmental context
+- Regional environmental context state
 
 ### In development / research
 
@@ -322,7 +381,7 @@ See:
 - Long-term vessel profiles
 - Quantitative temporal model validation
 - Context-aware anomaly scoring
-- Weather and ocean context
+- Environmental/behavioral evidence fusion
 - Event intelligence
 - Multimodal maritime intelligence
 
@@ -330,20 +389,26 @@ See:
 
 ## Current research position
 
-The immediate goal is not simply to make the temporal model more complex. The project is establishing an evidence-driven temporal foundation:
+The project follows an evidence-first approach:
 
-1. measure real track coverage;
-2. select the longest supported temporal scale;
-3. preserve source provenance;
-4. validate temporal scores quantitatively;
-5. build historical behavioral baselines;
-6. add environmental context;
-7. combine behavioral, trajectory, temporal, and environmental evidence;
-8. use LLMs as an interpretation layer rather than as the raw anomaly detector.
+1. acquire real observations;
+2. validate source integrity;
+3. measure available temporal coverage;
+4. select a supported temporal scale;
+5. preserve observation provenance;
+6. detect behavioral and temporal deviations;
+7. contextualize findings with marine conditions;
+8. validate analytical signals quantitatively;
+9. build historical behavioral baselines;
+10. combine independent evidence channels without conflating their semantics.
 
-### Current limitation
+The objective is not to manufacture certainty. When the evidence is insufficient, the system should expose that limitation explicitly.
+
+### Current limitations
 
 AIS coverage is not uniform. Short collection windows may provide many active vessels but relatively few repeated observations per vessel. Long temporal sequences therefore cannot be assumed to exist in every region.
+
+Marine environmental data is contextual model output and should be interpreted alongside its temporal and spatial resolution. It is not treated as automatic causal evidence for vessel behavior.
 
 The system should prefer `NOT_READY` or a shorter supported temporal scale over unsupported temporal evidence.
 
@@ -356,13 +421,13 @@ Real-Time AIS
       ↓
 Multi-Region Operational Monitoring
       ↓
-Temporal Coverage Diagnostics
+Behavioral Intelligence
       ↓
-Adaptive Temporal Intelligence
+Temporal Intelligence
+      ↓
+Environmental Marine Context
       ↓
 Historical Behavioral Baselines
-      ↓
-Weather / Ocean Context
       ↓
 Context-Aware Behavioral Intelligence
       ↓
@@ -382,9 +447,9 @@ Future data sources are architectural directions and are not represented as curr
 
 ## Design philosophy
 
-> **Observe → Validate → Analyze → Explain → Investigate**
+> **Observe → Validate → Analyze → Contextualize → Explain → Investigate**
 
-The platform is designed to support human investigation rather than replace human judgment.
+MIE is designed to support human investigation rather than replace human judgment.
 
 ---
 
@@ -405,7 +470,7 @@ source .venv/bin/activate
 Windows:
 
 ```powershell
-.venv\Scripts\activate
+.venv\\Scripts\\activate
 ```
 
 Install dependencies:
@@ -414,7 +479,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Configure the required AISStream credentials through the deployment environment or Streamlit Secrets. Never commit API keys or database credentials.
+Configure AISStream credentials through the deployment environment or Streamlit Secrets. Never commit API keys or database credentials.
 
 Run:
 
@@ -427,7 +492,7 @@ streamlit run app.py
 ## Author
 
 **Carlos Eduardo Moraes**  
-Quantitative Developer · Data Science · Computer Engineering
+Computer Engineering · Data Science · Maritime Intelligence
 
 ---
 
@@ -438,4 +503,4 @@ MIT License. See `LICENSE` for the complete license text.
 ---
 
 **Maritime Intelligence Engine**  
-*Real AIS → Trusted Data → Trajectories → Behavior → Intelligence*
+*Real AIS → Trusted Data → Behavior → Temporal Intelligence → Environmental Context → Explainable Intelligence*
