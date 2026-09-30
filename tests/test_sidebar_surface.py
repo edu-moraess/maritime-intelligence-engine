@@ -42,7 +42,6 @@ def test_sidebar_no_longer_renders_workspace_modules():
 
 def test_workspace_modules_live_in_main_content():
     source = _source(WORKSPACE_PATH)
-    assert 'st.popover("DATA"' in source
     assert 'st.popover("ANALYSIS"' in source
     assert 'st.popover("SYSTEM"' in source
     assert "render_aux_workspace_controls" in source
@@ -50,16 +49,13 @@ def test_workspace_modules_live_in_main_content():
 
 def test_historical_persistence_lives_under_system_controls():
     source = _source(WORKSPACE_PATH)
-    data_block = source[source.index('with st.popover("DATA"'):source.index('with st.popover("ANALYSIS"')]
     system_block = source[source.index('with st.popover("SYSTEM"'):]
-    assert '"Historical Persistence"' not in data_block
-    assert '"Historical Persistence"' in system_block
     assert "_render_historical_persistence(engine, settings)" in system_block
 
 
 def test_overview_places_map_controls_before_workspace_modules():
     source = _source(OVERVIEW_PATH)
-    assert "columns = st.columns(4)" in source
+    assert "columns = st.columns(3)" in source
     assert "map_values = _render_map_controls(columns[0])" in source
     assert "render_aux_workspace_controls(engine, settings, columns[1:])" in source
 

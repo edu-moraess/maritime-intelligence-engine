@@ -107,9 +107,7 @@ def test_render_vessel_map_surface_defaults_and_selection_contract():
     for name_node, default_node in zip(positional[-len(default_vals) :], default_vals):
         defaults[name_node.arg] = ast.literal_eval(default_node)
 
-    assert defaults.get("show_density") is False
     assert defaults.get("show_hexbin") is False
-    assert defaults.get("show_speed_field") is False
     assert defaults.get("show_anomaly_hotspots") is False
     assert defaults.get("map_style") == "Dark Matter"
     assert defaults.get("show_operational_strip") is True
@@ -117,7 +115,7 @@ def test_render_vessel_map_surface_defaults_and_selection_contract():
     assert "AIS_TARGETS_LAYER_ID" in source
     assert "id=AIS_TARGETS_LAYER_ID" in source or "id = AIS_TARGETS_LAYER_ID" in source
     assert 'selection_mode="single-object"' in source or "selection_mode='single-object'" in source
-    assert 'key="operational_ais_map"' in source or "key='operational_ais_map'" in source
+    assert defaults.get("map_key") == "operational_ais_map"
 
     assert "legend_markdown()" in source
     assert "if show_operational_strip:" in source

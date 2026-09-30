@@ -34,7 +34,7 @@ def test_unified_map_zoom_expands_for_distant_real_targets():
         {"latitude": 54.22, "longitude": 9.66},
     ]
 
-    zoom = _unified_map_zoom(rows)
+    zoom = _unified_map_zoom(rows, ())
 
     assert 1.5 <= zoom <= 3.0
 
@@ -45,7 +45,7 @@ def test_unified_map_zoom_keeps_local_regions_reasonably_detailed():
         {"latitude": 37.75, "longitude": -122.34},
     ]
 
-    zoom = _unified_map_zoom(rows)
+    zoom = _unified_map_zoom(rows, ())
 
     assert 5.0 <= zoom <= 6.5
 

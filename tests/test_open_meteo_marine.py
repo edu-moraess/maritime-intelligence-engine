@@ -1,3 +1,4 @@
+import json
 from datetime import timezone
 
 from src.environment.open_meteo_marine import OpenMeteoMarineProvider
@@ -6,6 +7,9 @@ from src.environment.open_meteo_marine import OpenMeteoMarineProvider
 class FakeResponse:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
     def __enter__(self) -> "FakeResponse":
         return self
