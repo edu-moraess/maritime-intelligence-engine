@@ -792,6 +792,43 @@ def render_behavior(
         "#8fb6b8",
     )
 
+    # The projection is a behavioral reference space. Draw the
+    # population first with restrained opacity, then make the
+    # selected target the only high-salience observation.
+    all_x = result.projection[valid_indices, 0]
+    all_y = result.projection[valid_indices, 1]
+
+    fig.add_trace(
+        go.Scatter(
+            x=all_x,
+            y=all_y,
+            mode="markers",
+            name="Observed population",
+            marker={
+                "size": 6,
+                "color": "rgba(154,176,182,0.24)",
+                "line": {"color": "rgba(10,23,29,0.55)", "width": 0.5},
+            },
+            customdata=[
+                [
+                    str(result.mmsis[i]),
+                    int(result.clusters[i]),
+                    behavioral_scores.get(str(result.mmsis[i]), 0.0),
+                ]
+                for i in valid_indices
+            ],
+            hovertemplate=(
+                "<b>MMSI</b>: %{customdata[0]}"
+                "<br><b>Cluster</b>: %{customdata[1]}"
+                "<br><b>Isolation Forest score</b>: %{customdata[2]:.3f}"
+                "<br><b>PC1</b>: %{x:.3f}"
+                "<br><b>PC2</b>: %{y:.3f}"
+                "<extra></extra>"
+            ),
+            showlegend=True,
+        )
+    )
+
     for cluster_position, cluster in enumerate(valid_clusters):
         cluster_indices = [
             i
@@ -799,111 +836,56 @@ def render_behavior(
             if int(result.clusters[i]) == cluster
         ]
 
-        labels = [
-            str(result.mmsis[i])
-            if i in highlighted_indices
-            else ""
-            for i in cluster_indices
-        ]
-
-        customdata = [
-            [
-                str(result.mmsis[i]),
-                int(result.clusters[i]),
-                behavioral_scores.get(
-                    str(result.mmsis[i]),
-                    0.0,
-                ),
-            ]
-            for i in cluster_indices
-        ]
-
         fig.add_trace(
             go.Scatter(
-                x=result.projection[
-                    cluster_indices,
-                    0,
-                ],
-                y=result.projection[
-                    cluster_indices,
-                    1,
-                ],
-                mode="markers+text",
-                text=labels,
-                textposition="top center",
-                textfont={
-                    "size": 10,
-                },
+                x=result.projection[cluster_indices, 0],
+                y=result.projection[cluster_indices, 1],
+                mode="markers",
                 name=f"Cluster {cluster}",
                 marker={
-                    "size": 8,
-                    "color": cluster_palette[cluster_position % len(cluster_palette)],
-                    "opacity": 0.78,
-                    "line": {
-                        "color": "#0a171d",
-                        "width": 1,
-                    },
+                    "size": 5,
+                    "color": cluster_palette[
+                        cluster_position % len(cluster_palette)
+                    ],
+                    "opacity": 0.28,
                 },
-                customdata=customdata,
-                hovertemplate=(
-                    "<b>MMSI</b>: %{customdata[0]}"
-                    "<br><b>Cluster</b>: %{customdata[1]}"
-                    "<br><b>Isolation Forest score</b>: "
-                    "%{customdata[2]:.3f}"
-                    "<br><b>PC1</b>: %{x:.3f}"
-                    "<br><b>PC2</b>: %{y:.3f}"
-                    "<extra></extra>"
-                ),
+                hoverinfo="skip",
+                showlegend=True,
             )
         )
 
-    if (
-        selected_idx is not None
-        and selected_idx in valid_indices
-    ):
-        current_mmsi = str(
-            result.mmsis[selected_idx]
-        )
-
-        current_score = behavioral_scores.get(
-            current_mmsi,
-            0.0,
-        )
-
-        current_cluster = int(
-            result.clusters[selected_idx]
-        )
-
-        current_pc1 = result.projection[
-            selected_idx,
-            0,
-        ]
-
-        current_pc2 = result.projection[
-            selected_idx,
-            1,
-        ]
+    if selected_idx is not None and selected_idx in valid_indices:
+        current_mmsi = str(result.mmsis[selected_idx])
+        current_score = behavioral_scores.get(current_mmsi, 0.0)
+        current_cluster = int(result.clusters[selected_idx])
+        current_pc1 = result.projection[selected_idx, 0]
+        current_pc2 = result.projection[selected_idx, 1]
 
         fig.add_trace(
             go.Scatter(
                 x=[current_pc1],
                 y=[current_pc2],
-                mode="markers",
-                name="CURRENT",
+                mode="markers+text",
+                name="CURRENT TARGET",
+                text=[current_mmsi],
+                textposition="top center",
+                textfont={
+                    "size": 10,
+                    "color": "#ef6b73",
+                },
                 marker={
-                    "size": 17,
+                    "size": 18,
                     "symbol": "diamond",
                     "color": "#ef6b73",
                     "line": {
+                        "color": "#f6d2d5",
                         "width": 2,
                     },
                 },
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
-                    f"<br><b>Cluster</b>: "
-                    f"{current_cluster}"
-                    f"<br><b>Isolation Forest score</b>: "
-                    f"{current_score:.3f}"
+                    f"<br><b>Cluster</b>: {current_cluster}"
+                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),
@@ -911,8 +893,26 @@ def render_behavior(
             )
         )
 
+        # A subtle ring makes spatial separation from the population
+        # legible without implying a statistical confidence boundary.
+        fig.add_trace(
+            go.Scatter(
+                x=[current_pc1],
+                y=[current_pc2],
+                mode="markers",
+                marker={
+                    "size": 30,
+                    "symbol": "circle-open",
+                    "color": "#ef6b73",
+                    "line": {"color": "#ef6b73", "width": 1},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
     layout = _plot_layout(
-        "PCA projection of real AIS trajectory representations",
+        "Behavioral reference space · PCA",
         "PC1",
         "PC2",
     )
@@ -937,9 +937,7 @@ def render_behavior(
         }
     )
 
-    fig.update_layout(
-        **layout
-    )
+    fig.update_layout(**layout)
 
     st.plotly_chart(
         fig,
