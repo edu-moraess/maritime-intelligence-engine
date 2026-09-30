@@ -730,7 +730,16 @@ def render_behavior(
         }
     )
 
-    for cluster in valid_clusters:
+    cluster_palette = (
+        "#35c2c9",
+        "#e9b857",
+        "#7aa7ff",
+        "#b38cff",
+        "#ef6b73",
+        "#8fb6b8",
+    )
+
+    for cluster_position, cluster in enumerate(valid_clusters):
         cluster_indices = [
             i
             for i in valid_indices
@@ -774,8 +783,13 @@ def render_behavior(
                 },
                 name=f"Cluster {cluster}",
                 marker={
-                    "size": 9,
-                    "opacity": 0.82,
+                    "size": 8,
+                    "color": cluster_palette[cluster_position % len(cluster_palette)],
+                    "opacity": 0.78,
+                    "line": {
+                        "color": "#0a171d",
+                        "width": 1,
+                    },
                 },
                 customdata=customdata,
                 hovertemplate=(
@@ -855,16 +869,17 @@ def render_behavior(
             "height": 500,
             "legend": {
                 "orientation": "h",
-                "y": 1.04,
+                "y": -0.14,
                 "x": 0,
                 "xanchor": "left",
-                "yanchor": "bottom",
+                "yanchor": "top",
+                "font": {"size": 9, "color": "#9ab0b6"},
             },
             "margin": {
                 "l": 55,
                 "r": 30,
-                "t": 85,
-                "b": 55,
+                "t": 62,
+                "b": 72,
             },
         }
     )
