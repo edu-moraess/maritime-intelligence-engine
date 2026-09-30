@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from src.analytics.region_comparison import RegionComparison, compare_regions
 from src.analytics.regional_events import RegionalEvent, detect_regional_events
@@ -164,6 +165,7 @@ class MaritimeIntelligenceEngine:
         collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
+        historical_session_id = uuid4()
         breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
 
         # Restore persisted real AIS only after the live window has finished.
@@ -185,6 +187,7 @@ class MaritimeIntelligenceEngine:
                 collection_elapsed,
                 started_at,
                 ended_at,
+                session_id=historical_session_id,
             )
             breakdown["postgres_persist"] = time.monotonic() - phase_started
 
