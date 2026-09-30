@@ -674,12 +674,6 @@ def render_trajectory_analysis(
             findings=trajectory_findings,
         )
 
-        trajectory_findings = [
-            finding
-            for finding in snapshot.findings
-            if finding.mmsi == selected.mmsi
-        ]
-
         _render_speed_chart(
             track,
             findings=trajectory_findings,
