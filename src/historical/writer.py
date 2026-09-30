@@ -35,6 +35,19 @@ class HistoricalWriteResult:
     duplicate_observations: int
     skipped_invalid: int
     reason: str
+    received_observations: int = 0
+
+    @property
+    def accounted_observations(self) -> int:
+        return (
+            self.persisted_observations
+            + self.duplicate_observations
+            + self.skipped_invalid
+        )
+
+    @property
+    def accounting_balanced(self) -> bool:
+        return self.accounted_observations == self.received_observations
 
 
 class HistoricalWriter(ABC):
@@ -101,6 +114,7 @@ class NullHistoricalWriter(HistoricalWriter):
             duplicate_observations=0,
             skipped_invalid=0,
             reason=self._reason,
+            received_observations=0,
         )
 
 
@@ -151,6 +165,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
                 duplicate_observations=0,
                 skipped_invalid=skipped_invalid,
                 reason="No valid real AIS observations were available for historical persistence.",
+                received_observations=len(all_observations),
             )
             self.last_result = result
             return result
@@ -276,6 +291,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
                 duplicate_observations=duplicates,
                 skipped_invalid=skipped_invalid,
                 reason="Validated real AIS observations persisted idempotently.",
+                received_observations=len(all_observations),
             )
             self.last_result = result
             return result
@@ -290,6 +306,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
                 duplicate_observations=0,
                 skipped_invalid=skipped_invalid,
                 reason=f"Historical persistence failed ({type(exc).__name__}): {exc}",
+                received_observations=len(all_observations),
             )
             self.last_result = result
             return result
