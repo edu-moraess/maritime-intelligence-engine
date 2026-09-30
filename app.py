@@ -439,6 +439,15 @@ def main() -> None:
     settings, page, collect, clear, region_changed = _render_sidebar(settings)
     engine = _engine_for(settings)
 
+    # A completed live collection is an operator-facing result, not a live
+    # stream. Keep its snapshot stable across Streamlit reruns/navigation so
+    # the Overview does not silently age the last completed session into an
+    # empty live-only map.
+    current_engine_signature = _engine_signature(settings)
+    if st.session_state.get("last_completed_snapshot_signature") != current_engine_signature:
+        st.session_state.pop("last_completed_snapshot", None)
+        st.session_state.pop("last_completed_snapshot_signature", None)
+
     if region_changed:
         notice(
             "Monitoring regions changed. Run Collect Real AIS · 2 Regions "
@@ -455,6 +464,8 @@ def main() -> None:
         ):
             st.session_state.pop(key, None)
         st.session_state.pop("monitoring_bboxes", None)
+        st.session_state.pop("last_completed_snapshot", None)
+        st.session_state.pop("last_completed_snapshot_signature", None)
         st.rerun()
 
     # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
@@ -464,6 +475,11 @@ def main() -> None:
         received = engine.collect(seconds=settings.collection_seconds)
 
         if received:
+            # Capture the completed real-AIS result before rerunning the app.
+            # This snapshot is intentionally independent from the live stale
+            # filter used by subsequent operational reruns.
+            st.session_state["last_completed_snapshot"] = engine.snapshot()
+            st.session_state["last_completed_snapshot_signature"] = _engine_signature(settings)
             collection_result = (
                 "success",
                 "Collection elapsed "
@@ -488,6 +504,11 @@ def main() -> None:
             st.warning(result_message)
 
     snapshot = engine.snapshot()
+    if page == "Overview":
+        completed_snapshot = st.session_state.get("last_completed_snapshot")
+        if completed_snapshot is not None:
+            snapshot = completed_snapshot
+
     if snapshot.last_collection_breakdown:
         with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
             breakdown = snapshot.last_collection_breakdown
