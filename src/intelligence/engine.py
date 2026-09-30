@@ -110,6 +110,7 @@ class MaritimeIntelligenceEngine:
         self._temporal_fingerprint: str | None = None
         self.last_collection_seconds: float = 0.0
         self.last_collection_breakdown: dict[str, float] = {}
+        self.last_collection_ended_at: datetime | None = None
         self._historical_database_url = settings.database_url
         self._historical_persistence_enabled = settings.historical_persistence_enabled
         self._historical_loaded = False
@@ -161,6 +162,7 @@ class MaritimeIntelligenceEngine:
         collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
+        self.last_collection_ended_at = ended_at
         breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
 
         # Restore persisted real AIS only after the live window has finished.
@@ -341,7 +343,10 @@ class MaritimeIntelligenceEngine:
 
     def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
         """Build the operational vessel view from the latest live session only."""
-        now = datetime.now(timezone.utc)
+        # A completed collection is a stable analytical snapshot. Do not let
+        # Streamlit reruns turn that result stale merely because wall-clock time
+        # has advanced after the collection ended.
+        reference_time = self.last_collection_ended_at or datetime.now(timezone.utc)
         vessels: list[VesselSnapshot] = []
         for mmsi, track in tracks.items():
             if not track:
@@ -358,7 +363,7 @@ class MaritimeIntelligenceEngine:
                     heading_degrees=latest.heading_degrees,
                     vessel_name=latest.vessel_name,
                     message_count=len(track),
-                    stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
+                    stale=(reference_time - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
                     ais_timestamp_second=latest.ais_timestamp_second,
                     observed_at=latest.observed_at,
                 )
@@ -410,6 +415,7 @@ class MaritimeIntelligenceEngine:
         self._temporal_fingerprint = None
         self.last_collection_seconds = 0.0
         self.last_collection_breakdown = {}
+        self.last_collection_ended_at = None
         self.historical_result = None
         self._historical_loaded = True
         if self.settings.config_error or not self.settings.aisstream_api_key:
