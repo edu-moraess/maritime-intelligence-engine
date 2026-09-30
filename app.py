@@ -189,6 +189,19 @@ def _engine_signature(settings: AppSettings) -> tuple:
     )
 
 
+def _select_completed_snapshot(
+    snapshot: EngineSnapshot,
+    page: str,
+    session_state,
+) -> EngineSnapshot:
+    """Use the last completed real-AIS result for Overview reruns."""
+    if page == "Overview":
+        completed_snapshot = session_state.get("last_completed_snapshot")
+        if completed_snapshot is not None:
+            return completed_snapshot
+    return snapshot
+
+
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
     """Return the engine associated with the current live configuration."""
     signature = _engine_signature(settings)
@@ -503,12 +516,7 @@ def main() -> None:
         else:
             st.warning(result_message)
 
-    snapshot = engine.snapshot()
-    if page == "Overview":
-        completed_snapshot = st.session_state.get("last_completed_snapshot")
-        if completed_snapshot is not None:
-            snapshot = completed_snapshot
-
+    snapshot = _select_completed_snapshot(engine.snapshot(), page, st.session_state)
     if snapshot.last_collection_breakdown:
         with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
             breakdown = snapshot.last_collection_breakdown
