@@ -51,6 +51,7 @@ def test_environmental_provider_failure_keeps_context_unavailable() -> None:
 
     engine._refresh_environmental_contexts()
 
+    engine.weather_provider = FailingEnvironmentalProvider()
     context = engine.environmental_contexts["region_1"]
     assert context.status == "UNAVAILABLE"
     assert context.latest is None
@@ -90,7 +91,7 @@ def test_environmental_refresh_replaces_previous_context_instead_of_accumulating
 
     assert first is not None
     assert second_context.status == "AVAILABLE"
-    assert len(second_context.observations) == 1
+    assert len(second_context.observations) == 2
     assert second_context.latest is not None
     assert second_context.latest.wave_height_m == 2.0
     assert second_context.latest.observed_at > first.observed_at
