@@ -145,7 +145,7 @@ def _environment_events(
         if index < 0 or index >= len(labels):
             continue
 
-        observations = sorted(context.observations, key=lambda item: item.observed_at)
+        observations = sorted(context.observations, key=lambda item: item.reference_time)
         if not observations:
             continue
 
@@ -158,14 +158,14 @@ def _environment_events(
             previous = observations[-2]
             detail = (
                 f"source={latest.source}; "
-                f"previous_observed_at={previous.observed_at.isoformat()}"
+                f"previous_reference_time={previous.reference_time.isoformat()}"
             )
 
         events.append(
             RegionalEvent(
                 event_type=event_type,
                 mmsi=None,
-                timestamp=latest.observed_at,
+                timestamp=latest.reference_time,
                 region_index=index,
                 region_label=labels[index],
                 detail=detail,
