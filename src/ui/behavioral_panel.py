@@ -30,7 +30,7 @@ def _render_behavioral_intelligence(mmsi: str, snapshot) -> None:
     st.markdown("### Behavioral Intelligence")
     metric_strip({
         "CLASSIFICATION": profile.classification,
-        "CONFIDENCE": profile.confidence,
+        "COVERAGE QUALITY": profile.confidence,
         "PROVENANCE": profile.provenance,
     })
 
