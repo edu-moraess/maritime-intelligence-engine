@@ -487,6 +487,28 @@ def main() -> None:
         else:
             st.warning(result_message)
 
+    run_every = "5s" if engine.background.running else None
+
+    @st.fragment(run_every=run_every)
+    def _live_background_status():
+        engine.refresh_background()
+        live = engine.snapshot().status
+        quality = build_quality_metrics(engine.snapshot().current_session_observations, live)
+        st.caption(
+            "BACKGROUND AIS · "
+            f"connection={live.connection_status} · data={live.data_status} · "
+            f"WS={live.websocket_status} · messages={live.messages_received:,} · "
+            f"active={live.active_vessels:,} · queue={live.queue_size:,} · "
+            f"latency={quality.latency_seconds:.1f}s"
+            if quality.latency_seconds is not None
+            else
+            "BACKGROUND AIS · "
+            f"connection={live.connection_status} · data={live.data_status} · "
+            f"WS={live.websocket_status} · messages={live.messages_received:,} · "
+            f"active={live.active_vessels:,} · queue={live.queue_size:,} · latency=—"
+        )
+
+    _live_background_status()
     engine.refresh_background()
     snapshot = engine.snapshot()
     if snapshot.last_collection_breakdown:
