@@ -222,6 +222,14 @@ class MaritimeIntelligenceEngine:
                 ended_at,
             )
             breakdown["postgres_persist"] = time.monotonic() - phase_started
+            timing = getattr(self.historical_writer, "last_timing", None)
+            if timing is not None:
+                breakdown["postgres_schema"] = timing.schema_seconds
+                breakdown["postgres_session"] = timing.session_seconds
+                breakdown["postgres_vessels"] = timing.vessel_seconds
+                breakdown["postgres_staging"] = timing.staging_seconds
+                breakdown["postgres_insert"] = timing.insert_seconds
+                breakdown["postgres_commit"] = timing.commit_seconds
 
             if (
                 self.historical_result.session_id is not None
