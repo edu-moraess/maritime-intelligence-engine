@@ -23,6 +23,7 @@ from src.config.settings import (
     RegionBBox,
     _validate_bbox,
 )
+from src.ingestion.metrics import build_quality_metrics
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
 from src.ui.pages import (
     render_anomalies,
