@@ -356,6 +356,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
 
     def _get_connection(self) -> Any:
         if self._connection is None or getattr(self._connection, "closed", False):
+            self._schema_ready = False
             self._connection = self._connect_fn(self.database_url)
         return self._connection
 
