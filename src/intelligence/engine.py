@@ -449,7 +449,7 @@ class MaritimeIntelligenceEngine:
             vessels=vessels,
             findings=self.findings,
             quality=quality,
-            status=self.provider.status,
+            status=replace(self.provider.status, active_vessels=len(vessels)),
             embeddings=self.embeddings,
             summary=traffic_summary(vessels, current_observations, self.findings),
             readiness=self._readiness(tracks),
