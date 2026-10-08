@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 
+ConnectionStatus = Literal["CONNECTING", "LIVE", "STALE", "CLOSED", "ERROR"]
+DataStatus = Literal["LIVE", "STALE", "NO_DATA"]
+
 IngestionState = Literal[
     "DISCONNECTED",
     "CONNECTING",
@@ -188,6 +191,13 @@ class IngestionStatus:
     last_disconnect_at: datetime | None = None
     last_reconnect_at: datetime | None = None
     last_error: str | None = None
+    connection_status: ConnectionStatus = "CLOSED"
+    data_status: DataStatus = "NO_DATA"
+    reconnect_attempts: int = 0
+    queue_size: int = 0
+    uptime_seconds: float | None = None
+    valid_message_rate: float | None = None
+    estimated_packet_loss: float | None = None
 
 
 @dataclass(frozen=True)
