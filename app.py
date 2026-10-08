@@ -347,31 +347,10 @@ def _render_sidebar(
         clear = False
         with mission_placeholder.container():
             with st.expander("MISSION CONTEXT", expanded=False):
-                duration_options = list(COLLECTION_DURATION_OPTIONS)
-                duration_index = min(
-                    range(len(duration_options)),
-                    key=lambda i: abs(
-                        duration_options[i] - settings.collection_seconds
-                    ),
-                )
-                st.selectbox(
-                    "Collection duration",
-                    duration_options,
-                    index=duration_index,
-                    format_func=lambda seconds: f"Collection duration · {seconds} s",
-                    key="collection_duration_seconds",
-                    label_visibility="collapsed",
-                )
-                selected_duration = st.session_state["collection_duration_seconds"]
-                if float(selected_duration) != settings.collection_seconds:
-                    settings = _with_settings(
-                        settings,
-                        collection_seconds=float(selected_duration),
-                    )
-
+                st.caption("Continuous background ingestion · batch refresh 45 s")
                 can_collect = settings.config_error is None
                 collect = st.button(
-                    "Collect Real AIS · 2 Regions",
+                    "Start Live AIS · 2 Regions",
                     width="stretch",
                     type="primary",
                     disabled=not can_collect,
