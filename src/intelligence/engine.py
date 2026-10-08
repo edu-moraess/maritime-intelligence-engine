@@ -318,3 +318,167 @@ class MaritimeIntelligenceEngine:
             contexts[region] = context
         self.environmental_contexts = contexts
 
+
+
+    def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
+        """Switch only the optional historical sink; preserve live state."""
+        if (
+            database_url == self._historical_database_url
+            and persistence_enabled == self._historical_persistence_enabled
+        ):
+            return
+        self.historical_writer.close()
+        self._historical_database_url = database_url
+        self._historical_persistence_enabled = persistence_enabled
+        self._historical_loaded = False
+        self.historical_writer = create_historical_writer(database_url, persistence_enabled)
+        self.historical_result = None
+        self.settings = replace(
+            self.settings,
+            database_url=database_url,
+            historical_persistence_enabled=persistence_enabled,
+        )
+        self._restore_historical_context()
+
+    def _current_tracks(self) -> dict[str, list[AISObservation]]:
+        return {
+            mmsi: track
+            for mmsi, track in self.store.tracks().items()
+            if any(observation in self.current_session_observations for observation in track)
+        }
+
+    def _recompute(self) -> None:
+        current_tracks = self._current_tracks()
+        self.embeddings = self.embedding_adapter.fit(current_tracks)
+        self.findings = detect_anomalies(current_tracks, self.embeddings)
+
+        all_tracks = select_interesting_tracks(self.store.tracks())
+        fingerprint = _track_fingerprint(all_tracks)
+        if self.temporal is None or self._temporal_fingerprint != fingerprint:
+            try:
+                self.temporal = self.temporal_adapter.fit(all_tracks)
+                self._temporal_fingerprint = fingerprint
+            except Exception as exc:  # pragma: no cover - defensive isolation
+                self.temporal = TemporalFitResult(
+                    status="FAILED",
+                    reason=f"Temporal path exception (classical path intact): {exc}",
+                )
+                self._temporal_fingerprint = fingerprint
+
+        current_observations = list(self.current_session_observations)
+        self.region_comparison = compare_regions(
+            current_observations,
+            self.findings,
+            self.settings.monitoring_bboxes,
+            self.temporal,
+        ) if len(self.settings.monitoring_bboxes) == 2 else None
+
+        current_tracks = self._current_tracks()
+        self.regional_events = detect_regional_events(
+            current_tracks,
+            self.settings.monitoring_bboxes,
+            findings=self.findings,
+            environmental_contexts=self.environmental_contexts,
+        ) if len(self.settings.monitoring_bboxes) == 2 else []
+
+    def _detect_current_session_findings(self) -> list[AnomalyFinding]:
+        current_tracks = self._current_tracks()
+        if not current_tracks:
+            return []
+        embeddings = self.embedding_adapter.fit(current_tracks)
+        return detect_anomalies(current_tracks, embeddings)
+
+    def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
+        tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
+        temporal_status = self.temporal.status if self.temporal is not None else "WAITING"
+        return ReadinessSnapshot(
+            distinct_vessels=len(tracks),
+            tracks_with_history=tracks_with_history,
+            trajectory_ready=tracks_with_history >= 1,
+            embeddings_ready=self.embeddings is not None,
+            embedding_status="READY" if self.embeddings is not None else (
+                "PARTIAL" if tracks_with_history else "WAITING"
+            ),
+            anomaly_count=len(self.findings),
+            temporal_status=temporal_status,
+        )
+
+    def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
+        live = {vessel.mmsi: vessel for vessel in self.provider.fetch_vessels()}
+        now = datetime.now(timezone.utc)
+        for mmsi, track in tracks.items():
+            if mmsi in live or not track:
+                continue
+            latest = max(track, key=lambda observation: observation.received_at)
+            live[mmsi] = VesselSnapshot(
+                mmsi=mmsi,
+                latitude=latest.latitude,
+                longitude=latest.longitude,
+                last_received=latest.received_at,
+                sog_knots=latest.sog_knots,
+                cog_degrees=latest.cog_degrees,
+                heading_degrees=latest.heading_degrees,
+                vessel_name=latest.vessel_name,
+                message_count=len(track),
+                stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
+                ais_timestamp_second=latest.ais_timestamp_second,
+                observed_at=latest.observed_at,
+            )
+        return sorted(live.values(), key=lambda vessel: vessel.last_received, reverse=True)
+
+    def snapshot(self) -> EngineSnapshot:
+        observations = self.store.all()
+        current_observations = list(self.current_session_observations)
+        tracks = self._current_tracks()
+        vessels = self._merged_vessels(tracks)
+        quality = build_quality_report(
+            current_observations,
+            self.settings.stale_after_seconds,
+            self.store.duplicate_count,
+        )
+        return EngineSnapshot(
+            observations=observations,
+            vessels=vessels,
+            findings=self.findings,
+            quality=quality,
+            status=self.provider.status,
+            embeddings=self.embeddings,
+            summary=traffic_summary(vessels, current_observations, self.findings),
+            readiness=self._readiness(tracks),
+            last_collection_seconds=self.last_collection_seconds,
+            last_collection_breakdown=dict(self.last_collection_breakdown),
+            historical_status=self.historical_writer.status,
+            historical_result=self.historical_result,
+            temporal=self.temporal,
+            region_comparison=self.region_comparison,
+            regional_events=list(self.regional_events),
+            current_session_observations=current_observations,
+            current_session_findings=list(self.current_session_findings),
+            environmental_contexts=dict(self.environmental_contexts),
+        )
+
+    def clear_session_data(self) -> None:
+        self.background.stop()
+        self.store.clear()
+        self.current_session_observations.clear()
+        self.current_session_findings.clear()
+        self.provider.reset_session()
+        self.embeddings = None
+        self.findings = []
+        self.temporal = None
+        self.region_comparison = None
+        self.regional_events = []
+        self.environmental_contexts = {}
+        self._temporal_fingerprint = None
+        self._background_last_flush = 0.0
+        self.last_collection_seconds = 0.0
+        self.last_collection_breakdown = {}
+        self.historical_result = None
+        self._historical_loaded = True
+        if self.settings.config_error or not self.settings.aisstream_api_key:
+            self.provider.connect()
+
+
+def create_engine(settings: AppSettings) -> MaritimeIntelligenceEngine:
+    """Create an isolated engine for the current Streamlit session and region."""
+    return MaritimeIntelligenceEngine(settings)
