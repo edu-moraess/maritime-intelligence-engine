@@ -182,40 +182,23 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         "AISSTREAM",
                     ),
                 )
+                vessel_rows = []
+                observation_rows = []
                 for observation in valid_observations:
-                    cursor.execute(
-                        """
-                        INSERT INTO vessels (mmsi, last_known_name, first_seen_at, last_seen_at)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (mmsi) DO UPDATE SET
-                            last_known_name = CASE
-                                WHEN EXCLUDED.last_known_name IS NOT NULL
-                                     AND EXCLUDED.last_known_name <> ''
-                                THEN EXCLUDED.last_known_name
-                                ELSE vessels.last_known_name
-                            END,
-                            first_seen_at = LEAST(vessels.first_seen_at, EXCLUDED.first_seen_at),
-                            last_seen_at = GREATEST(vessels.last_seen_at, EXCLUDED.last_seen_at)
-                        """,
+                    name = (
+                        observation.vessel_name.strip()
+                        if observation.vessel_name and observation.vessel_name.strip()
+                        else None
+                    )
+                    vessel_rows.append(
                         (
                             observation.mmsi,
-                            observation.vessel_name.strip() if observation.vessel_name and observation.vessel_name.strip() else None,
+                            name,
                             _utc(observation.received_at),
                             _utc(observation.received_at),
-                        ),
+                        )
                     )
-                    payload_hash = observation_payload_hash(observation)
-                    cursor.execute(
-                        """
-                        INSERT INTO ais_observations
-                            (session_id, mmsi, geom, received_at, ais_timestamp_second, observed_at,
-                             sog_knots, cog_degrees, heading_degrees, vessel_name,
-                             navigational_status, valid, payload_hash)
-                        VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s,
-                                %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (session_id, payload_hash) DO NOTHING
-                        RETURNING observation_id
-                        """,
+                    observation_rows.append(
                         (
                             session_id,
                             observation.mmsi,
@@ -227,16 +210,91 @@ class PostgresHistoricalWriter(HistoricalWriter):
                             observation.sog_knots,
                             observation.cog_degrees,
                             observation.heading_degrees,
-                            observation.vessel_name.strip() if observation.vessel_name and observation.vessel_name.strip() else None,
+                            name,
                             observation.navigational_status,
                             bool(observation.valid),
-                            payload_hash,
-                        ),
+                            observation_payload_hash(observation),
+                        )
                     )
-                    if cursor.fetchone() is None:
-                        duplicates += 1
-                    else:
-                        persisted += 1
+
+                cursor.executemany(
+                    """
+                    INSERT INTO vessels (mmsi, last_known_name, first_seen_at, last_seen_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (mmsi) DO UPDATE SET
+                        last_known_name = CASE
+                            WHEN EXCLUDED.last_known_name IS NOT NULL
+                                 AND EXCLUDED.last_known_name <> ''
+                            THEN EXCLUDED.last_known_name
+                            ELSE vessels.last_known_name
+                        END,
+                        first_seen_at = LEAST(vessels.first_seen_at, EXCLUDED.first_seen_at),
+                        last_seen_at = GREATEST(vessels.last_seen_at, EXCLUDED.last_seen_at)
+                    """,
+                    vessel_rows,
+                )
+
+                cursor.execute(
+                    """
+                    CREATE TEMP TABLE _mie_ais_observations (
+                        session_id UUID NOT NULL,
+                        mmsi TEXT NOT NULL,
+                        longitude DOUBLE PRECISION NOT NULL,
+                        latitude DOUBLE PRECISION NOT NULL,
+                        received_at TIMESTAMPTZ NOT NULL,
+                        ais_timestamp_second SMALLINT NULL,
+                        observed_at TIMESTAMPTZ NULL,
+                        sog_knots DOUBLE PRECISION NULL,
+                        cog_degrees DOUBLE PRECISION NULL,
+                        heading_degrees DOUBLE PRECISION NULL,
+                        vessel_name TEXT NULL,
+                        navigational_status INTEGER NULL,
+                        valid BOOLEAN NOT NULL,
+                        payload_hash TEXT NOT NULL
+                    ) ON COMMIT DROP
+                    """
+                )
+                with cursor.copy(
+                    """
+                    COPY _mie_ais_observations
+                        (session_id, mmsi, longitude, latitude, received_at,
+                         ais_timestamp_second, observed_at, sog_knots, cog_degrees,
+                         heading_degrees, vessel_name, navigational_status, valid,
+                         payload_hash)
+                    FROM STDIN
+                    """
+                ) as copy:
+                    for row in observation_rows:
+                        copy.write_row(row)
+
+                cursor.execute(
+                    """
+                    INSERT INTO ais_observations
+                        (session_id, mmsi, geom, received_at, ais_timestamp_second, observed_at,
+                         sog_knots, cog_degrees, heading_degrees, vessel_name,
+                         navigational_status, valid, payload_hash)
+                    SELECT
+                        session_id,
+                        mmsi,
+                        ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
+                        received_at,
+                        ais_timestamp_second,
+                        observed_at,
+                        sog_knots,
+                        cog_degrees,
+                        heading_degrees,
+                        vessel_name,
+                        navigational_status,
+                        valid,
+                        payload_hash
+                    FROM _mie_ais_observations
+                    ON CONFLICT DO NOTHING
+                    RETURNING observation_id
+                    """
+                )
+                persisted = len(cursor.fetchall())
+                duplicates = max(0, len(observation_rows) - persisted)
+
             connection.commit()
             self._status = "HISTORICAL DATABASE AVAILABLE"
             result = HistoricalWriteResult(
