@@ -25,6 +25,16 @@ MARINE_VARIABLES = (
     "sea_surface_temperature",
 )
 
+_CURRENT_TO_KNOTS = {
+    "kn": 1.0,
+    "knots": 1.0,
+    "km/h": 1.0 / 1.852,
+    "kmh": 1.0 / 1.852,
+    "m/s": 1.9438444924406048,
+    "ms": 1.9438444924406048,
+    "mph": 0.8689762419,
+}
+
 
 class EnvironmentalProvider(ABC):
     """Interface for real environmental data providers."""
@@ -76,7 +86,20 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
         if not isinstance(timestamp, str):
             raise ValueError("Open-Meteo response does not contain a valid current timestamp.")
 
-        observed_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+        current_units = payload.get("current_units")
+        if current_units is not None and not isinstance(current_units, dict):
+            raise ValueError("Open-Meteo response current_units must be an object.")
+
+        current_unit = str((current_units or {}).get("ocean_current_velocity", "kn")).strip().lower()
+        factor = _CURRENT_TO_KNOTS.get(current_unit)
+        if factor is None:
+            raise ValueError(
+                f"Unsupported Open-Meteo ocean_current_velocity unit: {current_unit!r}"
+            )
+
+        observed_at = datetime.fromisoformat(
+            timestamp.replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
 
         return EnvironmentalObservation(
             source="open-meteo-marine",
@@ -90,7 +113,9 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
             wind_wave_height_m=_number(current.get("wind_wave_height")),
             swell_height_m=_number(current.get("swell_wave_height")),
             swell_direction_deg=_number(current.get("swell_wave_direction")),
-            ocean_current_velocity=_number(current.get("ocean_current_velocity")),
+            ocean_current_velocity=_convert_current(
+                current.get("ocean_current_velocity"), factor
+            ),
             product="Open-Meteo Marine",
             data_kind="numerical_model_forecast",
             retrieved_at=datetime.now(timezone.utc),
@@ -104,3 +129,8 @@ def _number(value: object) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _convert_current(value: object, factor: float) -> float | None:
+    number = _number(value)
+    return number * factor if number is not None else None
