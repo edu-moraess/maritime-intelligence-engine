@@ -202,6 +202,7 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
     if st.session_state.get("engine_signature") != signature:
         previous_engine = st.session_state.get("engine")
         if previous_engine is not None:
+            previous_engine.stop_background()
             previous_engine.historical_writer.close()
         st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
@@ -453,6 +454,7 @@ def main() -> None:
         )
 
     if clear:
+        engine.stop_background()
         engine.clear_session_data()
         for key in (
             "selected_mmsi",
@@ -464,26 +466,17 @@ def main() -> None:
         st.session_state.pop("monitoring_bboxes", None)
         st.rerun()
 
-    # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
+    # A ingestão agora é contínua em background; o Streamlit não fica bloqueado
+    # durante 30–900 s de coleta.
     collection_result = st.session_state.pop("collection_result", None)
     if collect:
-        _render_collection_timer(settings.collection_seconds)
-        received = engine.collect(seconds=settings.collection_seconds)
-
-        if received:
-            collection_result = (
-                "success",
-                "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · received {received:,} "
-                f"real AIS position report(s) across {len(settings.monitoring_bboxes)} regions.",
-            )
-        else:
-            collection_result = (
-                "warning",
-                "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · REAL AIS DATA "
-                "UNAVAILABLE — no real observations were received in this collection window.",
-            )
+        started = engine.start_background()
+        collection_result = (
+            "success" if started else "warning",
+            "Background AIS started — real PositionReports are being ingested continuously."
+            if started
+            else "Background AIS is already running.",
+        )
         st.session_state["collection_result"] = collection_result
         st.rerun()
 
