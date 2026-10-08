@@ -13,6 +13,7 @@ from src.analytics.traffic import traffic_summary
 from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
+from src.ingestion.background import AISBackgroundService
 from src.environment.context import EnvironmentalContext
 from src.environment.open_meteo_marine import OpenMeteoMarineProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
@@ -91,6 +92,8 @@ class MaritimeIntelligenceEngine:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
+        self.background = AISBackgroundService(self.provider, queue_maxsize=settings.max_messages)
+        self._background_last_flush = 0.0
         self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
         self.temporal_adapter = TemporalAnomalyAdapter()
@@ -138,6 +141,42 @@ class MaritimeIntelligenceEngine:
             return 0
         self.store.extend(restored)
         return len(restored)
+
+    def start_background(self) -> bool:
+        """Inicia ingestão contínua sem bloquear o thread do Streamlit."""
+        self._restore_historical_context()
+        return self.background.start()
+
+    def stop_background(self) -> None:
+        """Encerra o worker de ingestão e fecha o ciclo de rede."""
+        self.background.stop()
+
+    def refresh_background(self, *, force: bool = False, batch_interval_seconds: float = 45.0) -> int:
+        """Drena um lote do worker e atualiza o estado analítico no thread da UI."""
+        if not self.background.running and not force:
+            return 0
+        now = time.monotonic()
+        if not force and now - self._background_last_flush < max(5.0, float(batch_interval_seconds)):
+            return 0
+        batch = self.background.drain(self.settings.max_messages)
+        self._background_last_flush = now
+        if not batch:
+            return 0
+        self.current_session_observations.extend(batch)
+        self.store.extend(batch)
+        started_at = min(o.received_at for o in batch)
+        ended_at = max(o.received_at for o in batch)
+        self.historical_result = self.historical_writer.persist_collection(
+            batch,
+            self.settings.bbox,
+            max(0.0, (ended_at - started_at).total_seconds()),
+            started_at,
+            ended_at,
+        )
+        self._refresh_environmental_contexts()
+        self._recompute()
+        self.current_session_findings = self._detect_current_session_findings()
+        return len(batch)
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window starting immediately at operator action.
