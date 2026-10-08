@@ -243,14 +243,14 @@ class MaritimeIntelligenceEngine:
                     longitude=longitude,
                     region=region,
                 )
-                if all(item.observed_at != observation.observed_at for item in context.observations):
+                if all(item.reference_time != observation.reference_time for item in context.observations):
                     context = context.add(observation)
                 context = EnvironmentalContext(
                     region=region,
                     observations=tuple(
                         sorted(
                             context.observations,
-                            key=lambda item: item.observed_at,
+                            key=lambda item: item.reference_time,
                         )[-2:]
                     ),
                 )
