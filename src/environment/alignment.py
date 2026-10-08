@@ -11,7 +11,7 @@ from src.environment.context import EnvironmentalContext
 from src.ingestion.models import AISObservation, EnvironmentalObservation
 
 
-AlignmentStatus = Literal["ALIGNED", "STALE", "OUT_OF_BOUNDS", "UNAVAILABLE"]
+AlignmentStatus = Literal["ALIGNED", "STALE", "OUT_OF_BOUNDS", "FUTURE", "UNAVAILABLE"]
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,7 @@ class EnvironmentalStateAlignmentEngine:
         *,
         max_temporal_age_seconds: float = 3600.0,
         max_spatial_distance_km: float = 50.0,
+        allow_forecast: bool = False,
     ) -> None:
         if max_temporal_age_seconds <= 0:
             raise ValueError("max_temporal_age_seconds must be positive")
@@ -65,6 +66,7 @@ class EnvironmentalStateAlignmentEngine:
             raise ValueError("max_spatial_distance_km must be positive")
         self.max_temporal_age_seconds = float(max_temporal_age_seconds)
         self.max_spatial_distance_km = float(max_spatial_distance_km)
+        self.allow_forecast = bool(allow_forecast)
 
     def align(
         self,
@@ -133,6 +135,8 @@ class EnvironmentalStateAlignmentEngine:
 
         if spatial_distance > self.max_spatial_distance_km:
             status: AlignmentStatus = "OUT_OF_BOUNDS"
+        elif temporal_offset > 0 and not (self.allow_forecast and selected.forecast is True):
+            status = "FUTURE"
         elif temporal_age > self.max_temporal_age_seconds:
             status = "STALE"
         else:
