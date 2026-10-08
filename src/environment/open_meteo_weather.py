@@ -20,6 +20,16 @@ WEATHER_VARIABLES = (
     "pressure_msl",
 )
 
+_WIND_TO_KMH = {
+    "km/h": 1.0,
+    "kmh": 1.0,
+    "kn": 1.852,
+    "knots": 1.852,
+    "m/s": 3.6,
+    "ms": 3.6,
+    "mph": 1.609344,
+}
+
 
 class OpenMeteoWeatherProvider:
     """Fetch current atmospheric model state without synthetic fallback."""
@@ -58,6 +68,15 @@ class OpenMeteoWeatherProvider:
         if not isinstance(timestamp, str):
             raise ValueError("Open-Meteo weather response has no valid timestamp.")
 
+        current_units = payload.get("current_units")
+        if current_units is not None and not isinstance(current_units, dict):
+            raise ValueError("Open-Meteo weather response current_units must be an object.")
+
+        wind_unit = str((current_units or {}).get("wind_speed_10m", "km/h")).strip().lower()
+        factor = _WIND_TO_KMH.get(wind_unit)
+        if factor is None:
+            raise ValueError(f"Unsupported Open-Meteo wind speed unit: {wind_unit!r}")
+
         observed_at = datetime.fromisoformat(
             timestamp.replace("Z", "+00:00")
         ).astimezone(timezone.utc)
@@ -68,12 +87,16 @@ class OpenMeteoWeatherProvider:
             latitude=float(payload["latitude"]),
             longitude=float(payload["longitude"]),
             region=region,
-            wind_speed_10m_kmh=_number(current.get("wind_speed_10m")),
+            wind_speed_10m_kmh=_convert_speed(current.get("wind_speed_10m"), factor),
             wind_direction_10m_deg=_number(current.get("wind_direction_10m")),
-            wind_gusts_10m_kmh=_number(current.get("wind_gusts_10m")),
+            wind_gusts_10m_kmh=_convert_speed(current.get("wind_gusts_10m"), factor),
             precipitation_mm=_number(current.get("precipitation")),
             visibility_m=_number(current.get("visibility")),
             pressure_msl_hpa=_number(current.get("pressure_msl")),
+            product="Open-Meteo Weather",
+            data_kind="numerical_model_forecast",
+            retrieved_at=datetime.now(timezone.utc),
+            forecast=True,
         )
 
 
@@ -81,3 +104,8 @@ def _number(value: object) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _convert_speed(value: object, factor: float) -> float | None:
+    number = _number(value)
+    return number * factor if number is not None else None
