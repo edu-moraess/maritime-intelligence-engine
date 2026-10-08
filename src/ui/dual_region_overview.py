@@ -102,6 +102,24 @@ def _capture_region_selection(event, selection_key: str) -> None:
         st.session_state[selection_key] = mmsi
 
 
+def _capture_unified_selection(event) -> None:
+    """Persist unified-map selection; the component rerun is authoritative."""
+    try:
+        selection = event.selection if event is not None else None
+        objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
+    except Exception:
+        return
+    if not isinstance(objects, dict):
+        return
+    layer_objects = objects.get(map_render.AIS_TARGETS_LAYER_ID) or objects.get("ais_targets")
+    first = layer_objects[0] if isinstance(layer_objects, list) and layer_objects else None
+    if not isinstance(first, dict):
+        return
+    mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
+    if mmsi is not None and str(mmsi).strip().isdigit() and len(str(mmsi).strip()) == 9:
+        st.session_state["selected_mmsi_unified"] = str(mmsi).strip()
+
+
 def _selected_region_vessel(snapshot: EngineSnapshot, selection_key: str):
     """Resolve a selected contact only from the selection belonging to this region."""
     selected_mmsi = st.session_state.get(selection_key)
@@ -182,20 +200,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     st.session_state.tactical_map_zoom = _unified_map_zoom(rows, bboxes)
 
     def _capture_unified_selection(event) -> None:
-        try:
-            selection = event.selection if event is not None else None
-            objects = selection.get("objects") if hasattr(selection, "get") else getattr(selection, "objects", None)
-        except Exception:
-            return
-        if not isinstance(objects, dict):
-            return
-        layer_objects = objects.get(map_render.AIS_TARGETS_LAYER_ID) or objects.get("ais_targets")
-        first = layer_objects[0] if isinstance(layer_objects, list) and layer_objects else None
-        if not isinstance(first, dict):
-            return
-        mmsi = first.get("mmsi") or first.get("tooltip_mmsi")
-        if mmsi is not None and str(mmsi).strip().isdigit() and len(str(mmsi).strip()) == 9:
-            st.session_state[unified_selection_key] = str(mmsi).strip()
+        _capture_unified_selection(event)
 
     try:
         st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
