@@ -97,6 +97,7 @@ def _snapshot(
             temporal_status=temporal.status if temporal else "WAITING",
         ),
         last_collection_seconds=60.0,
+        last_collection_breakdown={},
         historical_status="disabled",
         historical_result=None,
         temporal=temporal,
