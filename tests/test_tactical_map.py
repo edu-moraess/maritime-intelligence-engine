@@ -219,7 +219,7 @@ def test_dual_region_selection_does_not_trigger_a_second_rerun(monkeypatch):
 
 
 def test_unified_selection_does_not_trigger_a_second_rerun(monkeypatch):
-    from src.ui import dual_region_overview as overview
+    from src.ui.dual_region_overview import _capture_unified_selection_event
     import streamlit as st
 
     class EventOk:
@@ -231,20 +231,8 @@ def test_unified_selection_does_not_trigger_a_second_rerun(monkeypatch):
 
     monkeypatch.setattr(st, "rerun", fail_rerun)
     st.session_state.pop("selected_mmsi_unified", None)
-    previous = overview.st.session_state.get("selected_mmsi_unified")
-    try:
-        selection = EventOk().selection
-        objects = selection.objects
-        layer_objects = objects.get(AIS_TARGETS_LAYER_ID)
-        first = layer_objects[0]
-        mmsi = str(first["mmsi"]).strip()
-        overview.st.session_state["selected_mmsi_unified"] = mmsi
-        assert overview.st.session_state["selected_mmsi_unified"] == "235102529"
-    finally:
-        if previous is None:
-            overview.st.session_state.pop("selected_mmsi_unified", None)
-        else:
-            overview.st.session_state["selected_mmsi_unified"] = previous
+    _capture_unified_selection_event(EventOk())
+    assert st.session_state.selected_mmsi_unified == "235102529"
 
 
 def test_selection_does_not_trigger_a_second_streamlit_rerun(monkeypatch):
