@@ -134,7 +134,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["tooltip_sog"] = f"{sog_f:.1f} kn" if sog_f is not None else "—"
         row["tooltip_cog"] = f"{course:.1f}°" if course is not None else "—"
         row["tooltip_hdg"] = f"{hdg_f:.0f}°" if hdg_f is not None else "—"
-        row["tooltip_status"] = status
+        row["tooltip_status"] = ("MONITORED · NO POSITIVE FINDING" if status == "NORMAL" else status)
         tip = movement_vector_endpoint(lat, lon, course, sog_f) if course is not None and sog_f is not None else None
         if tip is not None:
             row["vector_end_lat"], row["vector_end_lon"] = tip
@@ -183,7 +183,7 @@ def build_density_layer_spec(points: list[dict]) -> dict | None:
     return {"type": DENSITY_LAYER_TYPE,"data": points,"get_position": ["longitude", "latitude"],"get_fill_color": list(DENSITY_FILL_COLOR),"get_radius": DENSITY_RADIUS,"radius_min_pixels": DENSITY_RADIUS_MIN_PX,"radius_max_pixels": DENSITY_RADIUS_MAX_PX,"pickable": False}
 
 def legend_markdown():
-    return ("<div style='display:flex;flex-wrap:wrap;gap:.85rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.66rem;color:#79939b;letter-spacing:.05em;margin:.3rem 0 .15rem'>" "<span style='color:#d9e6e9'>VESSEL STATUS</span>" "<span><span style='color:#35c2c9'>▲</span> NORMAL</span>" "<span><span style='color:#e9b857'>▲</span> ATTENTION</span>" "<span><span style='color:#ef6b73'>▲</span> ANOMALY</span>" "<span><span style='color:#dc323c'>▲</span> CRITICAL</span>" "<span><span style='color:#ffffff'>◎</span> SELECTED</span>" "<span style='color:#d9e6e9'>━━ TRACK</span>" "<span style='color:#e9b857'>→ VECTOR</span></div>")
+    return ("<div style='display:flex;flex-wrap:wrap;gap:.85rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.66rem;color:#79939b;letter-spacing:.05em;margin:.3rem 0 .15rem'>" "<span style='color:#d9e6e9'>VESSEL STATUS</span>" "<span><span style='color:#35c2c9'>▲</span> MONITORED</span>" "<span><span style='color:#e9b857'>▲</span> ATTENTION</span>" "<span><span style='color:#ef6b73'>▲</span> ANOMALY</span>" "<span><span style='color:#dc323c'>▲</span> CRITICAL</span>" "<span><span style='color:#ffffff'>◎</span> SELECTED</span>" "<span style='color:#d9e6e9'>━━ TRACK</span>" "<span style='color:#e9b857'>→ VECTOR</span></div>")
 
 def operational_strip(*, live_state, targets, tracks, anomalies, region):
     state_color = "#35c2c9" if "LIVE" in live_state.upper() else "#ef6b73"
