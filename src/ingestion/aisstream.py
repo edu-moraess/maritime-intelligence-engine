@@ -18,7 +18,7 @@ from typing import Iterator
 
 from src.config.settings import _validate_bbox
 
-from .models import AISObservation, IngestionStatus
+from .models import AISObservation, IngestionStatus, VesselSnapshot
 
 try:
     import websocket
@@ -34,6 +34,10 @@ class AISProvider(ABC):
 
     @abstractmethod
     def connect(self) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_vessels(self) -> list[VesselSnapshot]:
         raise NotImplementedError
 
     @abstractmethod
@@ -80,6 +84,7 @@ class AISStreamProvider(AISProvider):
         self._last_disconnect_at: datetime | None = None
         self._last_reconnect_at: datetime | None = None
         self._mmsis: set[str] = set()
+        self._latest_by_mmsi: dict[str, AISObservation] = {}
         self._stream_started_monotonic: float | None = None
         self._total_connection_seconds = 0.0
         self._queue_size = 0
@@ -94,7 +99,7 @@ class AISStreamProvider(AISProvider):
             connected_at=self._connected_at,
             last_received_at=self._last_received_at,
             messages_received=self._messages_received,
-            active_vessels=len(self._mmsis),
+            active_vessels=(len(self._mmsis) if self._websocket_status == "OPEN" else 0),
             latency_seconds=None,
             websocket_status=self._websocket_status,
             ais_timestamp_second=self._last_ais_timestamp_second,
@@ -136,6 +141,7 @@ class AISStreamProvider(AISProvider):
         self._last_disconnect_at = None
         self._last_reconnect_at = None
         self._mmsis.clear()
+        self._latest_by_mmsi.clear()
         self._stream_started_monotonic = None
         self._total_connection_seconds = 0.0
         self._queue_size = 0
@@ -322,6 +328,7 @@ class AISStreamProvider(AISProvider):
         self._messages_received += 1
         self._position_reports_accepted += 1
         self._mmsis.add(observation.mmsi)
+        self._latest_by_mmsi[observation.mmsi] = observation
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
         self._state = "LIVE AIS"
@@ -349,6 +356,30 @@ class AISStreamProvider(AISProvider):
             return None
         end = self._last_disconnect_at or datetime.now(timezone.utc)
         return max(0.0, (end - self._connected_at).total_seconds())
+
+    def fetch_vessels(self) -> list[VesselSnapshot]:
+        now = datetime.now(timezone.utc)
+        return sorted(
+            [
+                VesselSnapshot(
+                    mmsi=mmsi,
+                    latitude=observation.latitude,
+                    longitude=observation.longitude,
+                    last_received=observation.received_at,
+                    sog_knots=observation.sog_knots,
+                    cog_degrees=observation.cog_degrees,
+                    heading_degrees=observation.heading_degrees,
+                    vessel_name=observation.vessel_name,
+                    message_count=1,
+                    stale=(now - observation.received_at).total_seconds() > self.stale_after_seconds,
+                    ais_timestamp_second=observation.ais_timestamp_second,
+                    observed_at=observation.observed_at,
+                )
+                for mmsi, observation in self._latest_by_mmsi.items()
+            ],
+            key=lambda vessel: vessel.last_received,
+            reverse=True,
+        )
 
     def set_queue_size(self, size: int) -> None:
         self._queue_size = max(0, int(size))
