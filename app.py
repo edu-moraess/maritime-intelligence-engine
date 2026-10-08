@@ -487,6 +487,7 @@ def main() -> None:
         else:
             st.warning(result_message)
 
+    engine.refresh_background()
     snapshot = engine.snapshot()
     if snapshot.last_collection_breakdown:
         with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
