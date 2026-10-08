@@ -59,6 +59,6 @@ class EnvironmentalContext:
                 if latest is not None
                 else None
             ),
-            "observation_count": len(self.observations),
+            "reference_time": (\n                latest.reference_time.astimezone(timezone.utc).isoformat()\n                if latest is not None\n                else None\n            ),\n            "observation_count": len(self.observations),
             "latest": latest.as_dict() if latest is not None else None,
         }
