@@ -68,3 +68,29 @@ def test_features_do_not_derive_from_stale_data() -> None:
         vessel_sog_knots=ais.sog_knots,
         vessel_cog_degrees=ais.cog_degrees,
     ) is None
+
+
+
+def test_features_expose_forecast_metadata_when_state_is_aligned() -> None:
+    ais = _ais()
+    env = EnvironmentalObservation(
+        source="open-meteo-marine",
+        observed_at=ais.received_at,
+        latitude=25.7,
+        longitude=-80.0,
+        region="region_1",
+        forecast=True,
+        ocean_current_velocity=1.0,
+        ocean_current_direction_deg=90.0,
+    )
+    alignment = EnvironmentalStateAlignmentEngine().align(
+        ais, EnvironmentalContext(region="region_1", observations=(env,))
+    )[0]
+    features = derive_environmental_features(
+        alignment,
+        vessel_sog_knots=ais.sog_knots,
+        vessel_cog_degrees=ais.cog_degrees,
+    )
+    assert features is not None
+    assert features.forecast is True
+    assert features.temporal_offset_seconds == 0.0
