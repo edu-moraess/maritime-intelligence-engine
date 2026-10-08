@@ -23,12 +23,12 @@ class EnvironmentalContext:
     def latest(self) -> EnvironmentalObservation | None:
         if not self.observations:
             return None
-        return max(self.observations, key=lambda observation: observation.observed_at)
+        return max(self.observations, key=lambda observation: observation.reference_time)
 
     @property
-    def observed_at(self) -> datetime | None:
+    def reference_time(self) -> datetime | None:
         latest = self.latest
-        return latest.observed_at if latest is not None else None
+        return latest.reference_time if latest is not None else None
 
     def add(self, observation: EnvironmentalObservation) -> "EnvironmentalContext":
         """Return a new context containing an observation for this region."""
