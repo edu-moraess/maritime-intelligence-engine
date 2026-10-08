@@ -414,6 +414,39 @@ def _render_collection_timer(seconds: float) -> None:
     )
 
 
+def _render_environmental_telemetry(snapshot) -> None:
+    """Render compact environmental alignment telemetry when available."""
+    telemetry = getattr(snapshot, "environmental_telemetry", {}) or {}
+    if not telemetry or telemetry.get("alignments", 0) == 0:
+        return
+
+    aligned = int(telemetry.get("aligned", 0))
+    alignments = int(telemetry.get("alignments", 0))
+    features = int(telemetry.get("features_produced", 0))
+    stale = int(telemetry.get("stale", 0))
+    future = int(telemetry.get("future", 0))
+    unavailable = int(telemetry.get("unavailable", 0))
+    offset_count = int(telemetry.get("temporal_offset_count", 0))
+    mean_offset = telemetry.get("temporal_offset_mean_seconds")
+    max_distance = telemetry.get("spatial_distance_max_km")
+
+    with st.expander("ENVIRONMENTAL STATE", expanded=False):
+        offset_text = "—" if mean_offset is None or offset_count == 0 else f"{float(mean_offset):+.0f}s"
+        distance_text = "—" if max_distance is None else f"{float(max_distance):.1f} km"
+        st.caption(
+            f"aligned {aligned}/{alignments} · features {features} · "
+            f"stale {stale} · future {future} · unavailable {unavailable} · "
+            f"mean offset {offset_text} · max distance {distance_text}"
+        )
+
+        sources = sorted(
+            (key.removeprefix("source_"), int(value))
+            for key, value in telemetry.items()
+            if key.startswith("source_") and int(value) > 0
+        )
+        if sources:
+            st.caption("sources · " + " · ".join(f"{name} {count}" for name, count in sources))
+
 def main() -> None:
     """Run the Streamlit application."""
     settings = _read_settings()
@@ -509,6 +542,7 @@ def main() -> None:
             )
             for label, key in diagnostic_rows:
                 st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
+    _render_environmental_telemetry(snapshot)
     render_header(snapshot.status, page)
 
     if page != "Overview":
