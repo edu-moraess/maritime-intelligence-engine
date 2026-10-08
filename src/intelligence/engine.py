@@ -440,6 +440,7 @@ class MaritimeIntelligenceEngine:
         )
 
     def clear_session_data(self) -> None:
+        self.stop_background()
         self.store.clear()
         self.provider.reset_session()
         self.embeddings = None
