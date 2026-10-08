@@ -16,6 +16,7 @@ from src.ingestion.aisstream import AISStreamProvider
 from src.ingestion.background import AISBackgroundService
 from src.environment.context import EnvironmentalContext
 from src.environment.open_meteo_marine import OpenMeteoMarineProvider
+from src.environment.copernicus_marine import CopernicusMarineProvider
 from src.environment.open_meteo_weather import OpenMeteoWeatherProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
@@ -108,6 +109,7 @@ class MaritimeIntelligenceEngine:
         self.current_session_observations: list[AISObservation] = []
         self.environmental_provider = OpenMeteoMarineProvider()
         self.weather_provider = OpenMeteoWeatherProvider()
+        self.copernicus_provider = CopernicusMarineProvider()
         self.environmental_contexts: dict[str, EnvironmentalContext] = {}
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
@@ -285,7 +287,10 @@ class MaritimeIntelligenceEngine:
             context = previous or EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
-            for provider in (self.environmental_provider, self.weather_provider):
+            providers = [self.environmental_provider, self.weather_provider]
+            if self.copernicus_provider.enabled:
+                providers.append(self.copernicus_provider)
+            for provider in providers:
                 try:
                     observation = provider.current(
                         latitude=latitude,
