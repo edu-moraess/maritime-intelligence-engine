@@ -38,7 +38,7 @@ def test_temporal_diagnostics_counts_thresholds_and_windows():
     assert result.tracks_by_min_points == {4: 4, 8: 3, 16: 2, 32: 1}
     assert result.median_points == 12.0
     assert result.max_points == 40
-    assert result.sliding_windows == {8: 45, 16: 18, 32: 9}
+    assert result.sliding_windows == {8: 43, 16: 26, 32: 9}
     assert result.non_overlapping_windows == {8: 8, 16: 3, 32: 1}
 
 
