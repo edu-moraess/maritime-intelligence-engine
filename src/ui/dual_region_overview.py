@@ -102,7 +102,7 @@ def _capture_region_selection(event, selection_key: str) -> None:
         st.session_state[selection_key] = mmsi
 
 
-def _capture_unified_selection(event) -> None:
+def _capture_unified_selection_event(event) -> None:
     """Persist unified-map selection; the component rerun is authoritative."""
     try:
         selection = event.selection if event is not None else None
@@ -200,7 +200,7 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
     st.session_state.tactical_map_zoom = _unified_map_zoom(rows, bboxes)
 
     def _capture_unified_selection(event) -> None:
-        _capture_unified_selection(event)
+        _capture_unified_selection_event(event)
 
     try:
         st.caption("UNIFIED · A + B · CONSOLIDATED OPERATIONAL PICTURE")
