@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from src.environment.alignment import EnvironmentalAlignmentEngine
+from src.environment.alignment import EnvironmentalStateAlignmentEngine
 from src.environment.context import EnvironmentalContext
 from src.environment.features import derive_environmental_features
 from src.ingestion.models import AISObservation, EnvironmentalObservation
@@ -30,7 +30,7 @@ def test_features_derive_relative_current_and_direction() -> None:
         wave_height_m=1.2,
         wave_period_s=6.0,
     )
-    alignment = EnvironmentalAlignmentEngine().align(
+    alignment = EnvironmentalStateAlignmentEngine().align(
         ais, EnvironmentalContext(region="region_1", observations=(env,))
     )[0]
 
@@ -47,7 +47,7 @@ def test_features_derive_relative_current_and_direction() -> None:
     assert features.wave_height_m == 1.2
 
 
-def test_features_do_not_derive_from_stale_evidence() -> None:
+def test_features_do_not_derive_from_stale_data() -> None:
     ais = _ais()
     env = EnvironmentalObservation(
         source="copernicus-marine",
@@ -58,7 +58,7 @@ def test_features_do_not_derive_from_stale_evidence() -> None:
         ocean_current_velocity=2.0,
         ocean_current_direction_deg=0.0,
     )
-    alignment = EnvironmentalAlignmentEngine(max_temporal_age_seconds=3600).align(
+    alignment = EnvironmentalStateAlignmentEngine(max_temporal_age_seconds=3600).align(
         ais, EnvironmentalContext(region="region_1", observations=(env,))
     )[0]
 
