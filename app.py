@@ -226,7 +226,7 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
 def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
     if not settings.aisstream_api_key:
         return "NOT CONFIGURED"
-    return engine.snapshot().status.state
+    return engine.snapshot().status.connection_status
 
 
 def _bbox_values(bbox: RegionBBox) -> tuple[float, float, float, float]:
