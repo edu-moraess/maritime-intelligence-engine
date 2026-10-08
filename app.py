@@ -432,7 +432,7 @@ def _render_environmental_telemetry(snapshot) -> None:
     mean_offset = telemetry.get("temporal_offset_mean_seconds")
     max_distance = telemetry.get("spatial_distance_max_km")
 
-    with st.expander("ENVIRONMENTAL STATE", expanded=False):
+    with st.expander("ENVIRONMENTAL STATE", expanded=True):
         offset_text = "—" if mean_offset is None or offset_count == 0 else f"{float(mean_offset):+.0f}s"
         distance_text = "—" if max_distance is None else f"{float(max_distance):.1f} km"
         st.caption(
