@@ -83,6 +83,7 @@ def test_environmental_refresh_replaces_previous_context_instead_of_accumulating
     )
     provider = SequencedEnvironmentalProvider()
     engine.environmental_provider = provider
+    engine.weather_provider = FailingEnvironmentalProvider()
 
     engine._refresh_environmental_contexts()
     first = engine.environmental_contexts["region_1"].latest
