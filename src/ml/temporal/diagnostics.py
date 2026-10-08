@@ -11,6 +11,7 @@ from statistics import mean, median
 from typing import Sequence
 
 from src.ingestion.models import AISObservation
+from src.ml.temporal.coverage import resample_track, stitch_track
 from src.ml.temporal.types import MAX_TRACK_GAP_SECONDS
 
 DEFAULT_POINT_THRESHOLDS: tuple[int, ...] = (4, 8, 16, 32)
@@ -151,8 +152,24 @@ def select_adaptive_sequence_length(
         eligible_vessels = 0
         for _mmsi, observations in items:
             track = _clean_track(observations)
-            if max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length:
+            raw_eligible = max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length
+            if raw_eligible:
                 eligible_vessels += 1
+                continue
+            # Após stitching, uma grade fixa de 1 minuto pode sustentar T16/T32
+            # mesmo quando a taxa AIS é irregular, desde que a máscara mantenha
+            # no máximo 20% de ausência.
+            for segment in stitch_track(track):
+                sampled = resample_track(segment)
+                if sampled is None or len(sampled.mask) < length:
+                    continue
+                found = any(
+                    float(1.0 - np.mean(sampled.mask[start : start + length])) <= 0.20
+                    for start in range(0, len(sampled.mask) - length + 1)
+                )
+                if found:
+                    eligible_vessels += 1
+                    break
         if eligible_vessels >= required:
             return length
     return None
