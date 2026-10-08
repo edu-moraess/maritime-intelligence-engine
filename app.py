@@ -479,13 +479,15 @@ def main() -> None:
             f"connection={live.connection_status} · data={live.data_status} · "
             f"WS={live.websocket_status} · messages={live.messages_received:,} · "
             f"active={live.active_vessels:,} · queue={live.queue_size:,} · "
+            f"last={live.last_received_at.strftime('%H:%M:%S UTC') if live.last_received_at else '—'} · "
             f"latency={quality.latency_seconds:.1f}s"
             if quality.latency_seconds is not None
             else
             "BACKGROUND AIS · "
             f"connection={live.connection_status} · data={live.data_status} · "
             f"WS={live.websocket_status} · messages={live.messages_received:,} · "
-            f"active={live.active_vessels:,} · queue={live.queue_size:,} · latency=—"
+            f"active={live.active_vessels:,} · queue={live.queue_size:,} · "
+            f"last={live.last_received_at.strftime('%H:%M:%S UTC') if live.last_received_at else '—'} · latency=—"
         )
 
     _live_background_status()
