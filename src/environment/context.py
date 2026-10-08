@@ -56,7 +56,7 @@ class EnvironmentalContext:
             "status": self.status,
             "observed_at": (
                 latest.observed_at.astimezone(timezone.utc).isoformat()
-                if latest is not None
+                if latest is not None and latest.observed_at is not None
                 else None
             ),
             "reference_time": (
