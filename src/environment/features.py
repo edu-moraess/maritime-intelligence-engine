@@ -21,6 +21,8 @@ class EnvironmentalFeatures:
     visibility_m: float | None = None
     precipitation_mm: float | None = None
     temporal_age_seconds: float | None = None
+    temporal_offset_seconds: float | None = None
+    forecast: bool | None = None
     spatial_distance_km: float | None = None
 
     def as_dict(self) -> dict[str, object]:
@@ -36,6 +38,8 @@ class EnvironmentalFeatures:
             "visibility_m": self.visibility_m,
             "precipitation_mm": self.precipitation_mm,
             "temporal_age_seconds": self.temporal_age_seconds,
+            "temporal_offset_seconds": self.temporal_offset_seconds,
+            "forecast": self.forecast,
             "spatial_distance_km": self.spatial_distance_km,
         }
 
@@ -94,6 +98,8 @@ def derive_environmental_features(
         visibility_m=observation.visibility_m,
         precipitation_mm=observation.precipitation_mm,
         temporal_age_seconds=getattr(alignment, "temporal_age_seconds"),
+        temporal_offset_seconds=getattr(alignment, "temporal_offset_seconds"),
+        forecast=observation.forecast,
         spatial_distance_km=getattr(alignment, "spatial_distance_km"),
     )
 
