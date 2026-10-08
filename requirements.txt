@@ -9,6 +9,8 @@ python-dotenv>=1.0,<2
 psycopg[binary]>=3.2,<4
 # Optional for temporal DL path; adapter reports UNAVAILABLE if missing.
 torch>=2.0,<3
+# Copernicus Marine Toolbox for opt-in ocean-state integration.
+copernicusmarine>=2.5,<3
 pytest>=8,<10
 
 # Modern Gemini SDK (replaces deprecated google-generativeai).
