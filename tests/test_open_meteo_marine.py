@@ -13,6 +13,10 @@ class FakeResponse:
     def __exit__(self, *args: object) -> None:
         return None
 
+    def read(self) -> bytes:
+        import json
+        return json.dumps(self.payload).encode("utf-8")
+
 
 def test_open_meteo_marine_provider_parses_current(monkeypatch) -> None:
     payload = {
