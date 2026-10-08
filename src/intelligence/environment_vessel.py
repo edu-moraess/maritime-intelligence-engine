@@ -69,7 +69,7 @@ def resolve_vessel_environment(
         )
 
     vessel_time = vessel.observed_at or vessel.last_received
-    age = max(0.0, (vessel_time - observation.observed_at).total_seconds())
+    age = max(0.0, (vessel_time - observation.reference_time).total_seconds())
     return VesselEnvironmentalContext(
         mmsi=vessel.mmsi,
         status="AVAILABLE",
