@@ -71,6 +71,7 @@ def _snapshot(
         findings=findings,
         quality=QualityReport(
             messages_processed=10,
+            valid_records=10,
             invalid_records=0,
             duplicate_records=0,
             missing_values=0,
@@ -79,6 +80,8 @@ def _snapshot(
             impossible_speeds=0,
             impossible_jumps=0,
             stale_records=0,
+            distinct_vessels=1,
+            tracks_with_history=1,
             quality_percent=100.0,
         ),
         status=_status(),
