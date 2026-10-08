@@ -201,6 +201,23 @@ def test_selection_ignores_invalid_mmsi():
     assert st.session_state.selected_mmsi == "111111111"
 
 
+def test_selection_does_not_trigger_a_second_streamlit_rerun(monkeypatch):
+    from src.ui.pages_helpers import _apply_map_selection
+    import streamlit as st
+
+    class EventOk:
+        class selection:
+            objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "235102528"}]}
+
+    def fail_rerun():
+        raise AssertionError("selection handler must not call st.rerun()")
+
+    monkeypatch.setattr(st, "rerun", fail_rerun)
+    st.session_state.selected_mmsi = "111111111"
+    _apply_map_selection(EventOk())
+    assert st.session_state.selected_mmsi == "235102528"
+
+
 def test_selection_handles_none_and_missing_event():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
