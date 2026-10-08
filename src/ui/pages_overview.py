@@ -132,7 +132,7 @@ def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: App
 
 
 def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None:
-    """Show environmental evidence separately from AIS intelligence."""
+    """Show marine and atmospheric model state with explicit source provenance."""
     contexts = snapshot.environmental_contexts
     if not contexts:
         return
@@ -143,24 +143,52 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
             index = int(region_key.rsplit("_", 1)[-1]) - 1
             bbox = bboxes[index] if bboxes is not None and index < len(bboxes) else None
             label = (region_name_for_bbox(bbox) if bbox is not None else None) or region_key.replace("_", " ").upper()
-            latest = context.latest
+            marine = context.latest_from("open-meteo-marine")
+            weather = context.latest_from("open-meteo-weather")
             st.caption(label)
-            if latest is None:
+            if marine is None and weather is None:
                 st.metric("Status", "UNAVAILABLE")
                 continue
-            st.metric(
-                "Wave height",
-                f"{latest.wave_height_m:.1f} m" if latest.wave_height_m is not None else "—",
+            if marine is not None:
+                st.markdown("**Marine model**")
+                st.metric(
+                    "Wave height",
+                    f"{marine.wave_height_m:.1f} m" if marine.wave_height_m is not None else "—",
+                )
+                details = []
+                if marine.wave_period_s is not None:
+                    details.append(f"Period {marine.wave_period_s:.1f}s")
+                if marine.wave_direction_deg is not None:
+                    details.append(f"Dir {marine.wave_direction_deg:.0f}°")
+                if marine.ocean_current_velocity is not None:
+                    details.append(f"Current {marine.ocean_current_velocity:.2f}")
+                st.caption(" · ".join(details) if details else "Marine model data available")
+                st.caption(
+                    f"Source: {marine.source} · {marine.observed_at.astimezone().strftime('%H:%M UTC')}"
+                )
+            if weather is not None:
+                st.markdown("**Atmospheric model**")
+                weather_items = []
+                if weather.wind_speed_10m_kmh is not None:
+                    weather_items.append(f"Wind {weather.wind_speed_10m_kmh:.1f} km/h")
+                if weather.wind_direction_10m_deg is not None:
+                    weather_items.append(f"Dir {weather.wind_direction_10m_deg:.0f}°")
+                if weather.wind_gusts_10m_kmh is not None:
+                    weather_items.append(f"Gust {weather.wind_gusts_10m_kmh:.1f} km/h")
+                if weather.visibility_m is not None:
+                    weather_items.append(f"Visibility {weather.visibility_m / 1000:.1f} km")
+                if weather.pressure_msl_hpa is not None:
+                    weather_items.append(f"MSLP {weather.pressure_msl_hpa:.0f} hPa")
+                if weather.precipitation_mm is not None:
+                    weather_items.append(f"Precip {weather.precipitation_mm:.1f} mm")
+                st.caption(" · ".join(weather_items) if weather_items else "Weather model data available")
+                st.caption(
+                    f"Source: {weather.source} · {weather.observed_at.astimezone().strftime('%H:%M UTC')}"
+                )
+            st.caption(
+                "MODEL STATE ONLY · no physical observation, environmental causality, "
+                "or risk inference is asserted."
             )
-            details = []
-            if latest.wave_period_s is not None:
-                details.append(f"Period {latest.wave_period_s:.1f}s")
-            if latest.wave_direction_deg is not None:
-                details.append(f"Dir {latest.wave_direction_deg:.0f}°")
-            if latest.ocean_current_velocity is not None:
-                details.append(f"Current {latest.ocean_current_velocity:.2f}")
-            st.caption(" · ".join(details) if details else "Marine model data available")
-            st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone().strftime('%H:%M UTC')}")
 
 
 def render_overview(
