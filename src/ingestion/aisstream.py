@@ -76,6 +76,14 @@ class AISStreamProvider(AISProvider):
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
+        self._reconnect_attempts = 0
+        self._last_disconnect_at: datetime | None = None
+        self._last_reconnect_at: datetime | None = None
+        self._mmsis: set[str] = set()
+        self._stream_started_monotonic: float | None = None
+        self._total_connection_seconds = 0.0
+        self._queue_size = 0
+        self._estimated_packet_loss: float | None = None
         # Network latency remains unavailable without two comparable absolute timestamps.
 
     @property
@@ -95,6 +103,19 @@ class AISStreamProvider(AISProvider):
             position_reports_accepted=self._position_reports_accepted,
             parse_errors=self._parse_errors,
             non_position_frames=self._non_position_frames,
+            reconnect_attempts=self._reconnect_attempts,
+            last_disconnect_at=self._last_disconnect_at,
+            last_reconnect_at=self._last_reconnect_at,
+            last_error=self._reason if self._state == "DISCONNECTED" else None,
+            connection_status=self._connection_status(),
+            data_status=self._data_status(),
+            queue_size=self._queue_size,
+            uptime_seconds=self._uptime_seconds(),
+            valid_message_rate=(
+                self._position_reports_accepted / self._frames_received
+                if self._frames_received else None
+            ),
+            estimated_packet_loss=self._estimated_packet_loss,
         )
 
     def reset_session(self) -> None:
@@ -111,6 +132,14 @@ class AISStreamProvider(AISProvider):
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
+        self._reconnect_attempts = 0
+        self._last_disconnect_at = None
+        self._last_reconnect_at = None
+        self._mmsis.clear()
+        self._stream_started_monotonic = None
+        self._total_connection_seconds = 0.0
+        self._queue_size = 0
+        self._estimated_packet_loss = None
 
     def _subscription(self) -> dict:
         return {
@@ -167,12 +196,16 @@ class AISStreamProvider(AISProvider):
                     timeout=8,
                     enable_multithread=True,
                     compression="deflate",
+                    ping_interval=20,
+                    ping_timeout=10,
+                    ping_payload="MIE",
                 )
                 opened = True
                 self._connected_at = datetime.now(timezone.utc)
                 self._state = "CONNECTING"
                 self._reason = "Subscription sent; waiting for AIS messages."
                 self._websocket_status = "OPEN"
+                self._last_reconnect_at = datetime.now(timezone.utc)
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
                 messages_at_socket_start = self._messages_received
@@ -197,6 +230,8 @@ class AISStreamProvider(AISProvider):
             except Exception as exc:
                 self._websocket_status = "CLOSED"
                 self._state = "DISCONNECTED"
+                self._last_disconnect_at = datetime.now(timezone.utc)
+                self._reconnect_attempts += 1
                 self._reason = _safe_reason(exc, self.api_key)
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
                 if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
@@ -286,10 +321,37 @@ class AISStreamProvider(AISProvider):
     def _record(self, observation: AISObservation) -> None:
         self._messages_received += 1
         self._position_reports_accepted += 1
+        self._mmsis.add(observation.mmsi)
         self._last_received_at = observation.received_at
         self._last_ais_timestamp_second = observation.ais_timestamp_second
         self._state = "LIVE AIS"
         self._reason = "Receiving real AIS position reports from AISStream."
+
+    def _data_status(self) -> str:
+        if self._last_received_at is None:
+            return "NO_DATA"
+        age = (datetime.now(timezone.utc) - self._last_received_at).total_seconds()
+        return "LIVE" if age < self.stale_after_seconds else "STALE"
+
+    def _connection_status(self) -> str:
+        if self._websocket_status == "OPEN":
+            return "LIVE"
+        if self._websocket_status == "CONNECTING":
+            return "CONNECTING"
+        if self._state == "ERROR":
+            return "ERROR"
+        if self._data_status() == "STALE":
+            return "STALE"
+        return "CLOSED"
+
+    def _uptime_seconds(self) -> float | None:
+        if self._connected_at is None:
+            return None
+        end = self._last_disconnect_at or datetime.now(timezone.utc)
+        return max(0.0, (end - self._connected_at).total_seconds())
+
+    def set_queue_size(self, size: int) -> None:
+        self._queue_size = max(0, int(size))
 
     def _set_failure(self, reason: str) -> None:
         self._state = "DISCONNECTED"
