@@ -30,6 +30,11 @@ class EnvironmentalContext:
         latest = self.latest
         return latest.observed_at if latest is not None else None
 
+    def latest_from(self, source: str) -> EnvironmentalObservation | None:
+        """Return the latest observation from one explicit external source."""
+        candidates = [observation for observation in self.observations if observation.source == source]
+        return max(candidates, key=lambda observation: observation.observed_at) if candidates else None
+
     def add(self, observation: EnvironmentalObservation) -> "EnvironmentalContext":
         """Return a new context containing an observation for this region."""
         if observation.region != self.region:
