@@ -82,7 +82,9 @@ class CopernicusMarineProvider(EnvironmentalProvider):
 
             east = float(point["uo"].values)
             north = float(point["vo"].values)
-            speed = (east * east + north * north) ** 0.5
+            speed_mps = (east * east + north * north) ** 0.5
+            # Copernicus uo/vo are m/s; MIE environmental current speed is knots.
+            speed = speed_mps * 1.9438444924406048
             # uo/vo are eastward/northward velocity components; this is
             # the bearing toward which the vector points.
             direction = math.degrees(math.atan2(east, north)) % 360.0
