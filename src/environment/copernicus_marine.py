@@ -7,6 +7,7 @@ credentials, it raises instead of substituting another source.
 from __future__ import annotations
 
 import os
+import math
 from datetime import datetime, timedelta, timezone
 
 from src.environment.open_meteo_marine import EnvironmentalProvider
@@ -81,9 +82,9 @@ class CopernicusMarineProvider(EnvironmentalProvider):
             east = float(point["uo"].values)
             north = float(point["vo"].values)
             speed = (east * east + north * north) ** 0.5
-            direction = (180.0 + __import__("math").degrees(
-                __import__("math").atan2(east, north)
-            )) % 360.0
+            # uo/vo are eastward/northward velocity components; this is
+            # the bearing toward which the vector points.
+            direction = math.degrees(math.atan2(east, north)) % 360.0
 
             timestamp = point["time"].values
             observed_at = _datetime_from_value(timestamp)
