@@ -69,9 +69,10 @@ class CopernicusMarineProvider(EnvironmentalProvider):
         )
 
         try:
+            lat_name = "latitude" if "latitude" in dataset.coords else "lat"
+            lon_name = "longitude" if "longitude" in dataset.coords else "lon"
             point = dataset.sel(
-                latitude=latitude,
-                longitude=longitude,
+                {lat_name: latitude, lon_name: longitude},
                 method="nearest",
             )
             if "depth" in point.dims:
@@ -92,8 +93,8 @@ class CopernicusMarineProvider(EnvironmentalProvider):
             return EnvironmentalObservation(
                 source="copernicus-marine",
                 observed_at=observed_at,
-                latitude=float(point["latitude"].values),
-                longitude=float(point["longitude"].values),
+                latitude=float(point[lat_name].values),
+                longitude=float(point[lon_name].values),
                 region=region,
                 ocean_current_velocity=speed,
                 ocean_current_direction_deg=direction,
