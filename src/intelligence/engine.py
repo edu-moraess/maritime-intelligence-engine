@@ -287,9 +287,17 @@ class MaritimeIntelligenceEngine:
             context = previous or EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
-            providers = [self.environmental_provider, self.weather_provider]
-            if self.copernicus_provider.enabled:
-                providers.append(self.copernicus_provider)
+            providers = [
+                provider
+                for provider in (
+                    getattr(self, "environmental_provider", None),
+                    getattr(self, "weather_provider", None),
+                )
+                if provider is not None
+            ]
+            copernicus = getattr(self, "copernicus_provider", None)
+            if copernicus is not None and copernicus.enabled:
+                providers.append(copernicus)
             for provider in providers:
                 try:
                     observation = provider.current(
