@@ -61,6 +61,7 @@ class TemporalSequence:
     sequence_length: int
     feature_names: tuple[str, ...]
     n_source_points: int
+    mask: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         arr = np.asarray(self.sequence)
@@ -70,6 +71,12 @@ class TemporalSequence:
             raise ValueError(f"sequence length {arr.shape[0]} != sequence_length {self.sequence_length}")
         if arr.shape[1] != len(self.feature_names):
             raise ValueError(f"feature dim {arr.shape[1]} != len(feature_names {self.feature_names})")
+        if self.mask is not None:
+            mask = np.asarray(self.mask, dtype=np.float32).reshape(-1)
+            if mask.shape[0] != self.sequence_length:
+                raise ValueError("mask length must equal sequence_length")
+            if not np.isfinite(mask).all() or np.any((mask < 0) | (mask > 1)):
+                raise ValueError("mask must contain finite values in [0, 1]")
 
 
 @dataclass
