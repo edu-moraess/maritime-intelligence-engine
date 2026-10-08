@@ -79,6 +79,7 @@ class EngineSnapshot:
     current_session_findings: list[AnomalyFinding] = field(default_factory=list)
     environmental_contexts: dict[str, EnvironmentalContext] = field(default_factory=dict)
     environmental_features: dict[str, tuple[EnvironmentalFeatures, ...]] = field(default_factory=dict)
+    environmental_telemetry: dict[str, float | int] = field(default_factory=dict)
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -116,6 +117,7 @@ class MaritimeIntelligenceEngine:
         self.copernicus_provider = CopernicusMarineProvider()
         self.environmental_contexts: dict[str, EnvironmentalContext] = {}
         self.environmental_features: dict[str, tuple[EnvironmentalFeatures, ...]] = {}
+        self.environmental_telemetry: dict[str, float | int] = {}
         self.environmental_alignment = EnvironmentalStateAlignmentEngine()
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
@@ -339,17 +341,38 @@ class MaritimeIntelligenceEngine:
     def _refresh_environmental_features(self) -> None:
         """Derive deterministic environmental features without changing anomaly scoring."""
         contexts = getattr(self, "environmental_contexts", {})
+        telemetry: dict[str, float | int] = {
+            "ais_considered": 0,
+            "alignments": 0,
+            "aligned": 0,
+            "stale": 0,
+            "future": 0,
+            "out_of_bounds": 0,
+            "unavailable": 0,
+            "features_produced": 0,
+            "temporal_offset_count": 0,
+            "temporal_offset_min_seconds": 0.0,
+            "temporal_offset_max_seconds": 0.0,
+            "temporal_offset_mean_seconds": 0.0,
+            "spatial_distance_count": 0,
+            "spatial_distance_max_km": 0.0,
+        }
+        self.environmental_telemetry = telemetry
         if not self.current_session_observations or not contexts:
             self.environmental_features = {}
             return
 
         features_by_mmsi: dict[str, list[EnvironmentalFeatures]] = {}
+        temporal_offsets: list[float] = []
+        spatial_distances: list[float] = []
+        source_counts: dict[str, int] = {}
         for ais in self.current_session_observations:
             memberships = membership(
                 ais.latitude, ais.longitude, self.settings.monitoring_bboxes
             )
             if len(memberships) != 1:
                 continue
+            telemetry["ais_considered"] += 1
             region = f"region_{memberships[0] + 1}"
             context = contexts.get(region)
             if context is None:
@@ -358,11 +381,30 @@ class MaritimeIntelligenceEngine:
             if alignment_engine is None:
                 continue
             for alignment in alignment_engine.align(ais, context):
+                telemetry["alignments"] += 1
+                source_counts[alignment.source] = source_counts.get(alignment.source, 0) + 1
+                telemetry[alignment.status.lower()] += 1
+                if alignment.temporal_offset_seconds is not None:
+                    temporal_offsets.append(alignment.temporal_offset_seconds)
+                if alignment.spatial_distance_km is not None:
+                    spatial_distances.append(alignment.spatial_distance_km)
                 features = derive_environmental_features(
                     alignment, vessel_sog_knots=ais.sog_knots, vessel_cog_degrees=ais.cog_degrees
                 )
                 if features is not None:
                     features_by_mmsi.setdefault(ais.mmsi, []).append(features)
+                    telemetry["features_produced"] += 1
+
+        if temporal_offsets:
+            telemetry["temporal_offset_count"] = len(temporal_offsets)
+            telemetry["temporal_offset_min_seconds"] = min(temporal_offsets)
+            telemetry["temporal_offset_max_seconds"] = max(temporal_offsets)
+            telemetry["temporal_offset_mean_seconds"] = sum(temporal_offsets) / len(temporal_offsets)
+        if spatial_distances:
+            telemetry["spatial_distance_count"] = len(spatial_distances)
+            telemetry["spatial_distance_max_km"] = max(spatial_distances)
+        for source, count in sorted(source_counts.items()):
+            telemetry[f"source_{source}"] = count
 
         self.environmental_features = {mmsi: tuple(items) for mmsi, items in features_by_mmsi.items()}
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
@@ -501,6 +543,7 @@ class MaritimeIntelligenceEngine:
             current_session_findings=list(self.current_session_findings),
             environmental_contexts=dict(self.environmental_contexts),
             environmental_features=dict(self.environmental_features),
+            environmental_telemetry=dict(getattr(self, "environmental_telemetry", {})),
         )
 
     def clear_session_data(self) -> None:
@@ -516,6 +559,7 @@ class MaritimeIntelligenceEngine:
         self.regional_events = []
         self.environmental_contexts = {}
         self.environmental_features = {}
+        self.environmental_telemetry = {}
         self._temporal_fingerprint = None
         self._background_last_flush = 0.0
         self.last_collection_seconds = 0.0
