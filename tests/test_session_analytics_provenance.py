@@ -32,8 +32,13 @@ def _tracks(prefix: str, offset: float = 0.0) -> dict[str, list[AISObservation]]
             _obs(f"{prefix}{index:03d}", 0, lon=-80.10 + offset + index * 0.01),
             _obs(
                 f"{prefix}{index:03d}",
+                30,
+                lon=-80.10 + offset + index * 0.01 + 0.002 * index,
+            ),
+            _obs(
+                f"{prefix}{index:03d}",
                 60,
-                lon=-80.09 + offset + index * 0.01 + index * 0.002,
+                lon=-80.09 + offset + index * 0.01,
             ),
         ]
         for index in range(1, 4)
