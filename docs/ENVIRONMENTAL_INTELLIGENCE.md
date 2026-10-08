@@ -57,3 +57,19 @@ No causal inference should be emitted merely because AIS and environmental value
 5. Spatial interpolation / nearest-grid selection — planned.
 6. AIS × environment temporal alignment — planned.
 7. Derived environmental-behavior features — planned and must remain explicitly derived.
+
+
+## Spatial/Temporal Alignment
+
+The environmental layer now includes an isolated alignment engine at `src/environment/alignment.py`.
+
+For each AIS observation it can associate the nearest state for each requested environmental source and records:
+
+- temporal age between AIS receipt and environmental valid time;
+- great-circle spatial distance between the vessel and model/observation point;
+- explicit status: `ALIGNED`, `STALE`, `OUT_OF_BOUNDS`, or `UNAVAILABLE`;
+- source, product and original environmental observation provenance.
+
+The alignment layer does **not** synthesize missing values, interpolate environmental fields, or infer causality. An environmental state that is stale or spatially outside the configured tolerance remains visible as evidence but is not considered usable for downstream derived features.
+
+Current defaults are 60 minutes for temporal age and 50 km for spatial distance. These are engineering defaults, not claims about model validity; they should be calibrated per product and operational use case before anomaly scoring consumes them.
