@@ -193,7 +193,6 @@ class IngestionStatus:
     last_error: str | None = None
     connection_status: ConnectionStatus = "CLOSED"
     data_status: DataStatus = "NO_DATA"
-    reconnect_attempts: int = 0
     queue_size: int = 0
     uptime_seconds: float | None = None
     valid_message_rate: float | None = None
