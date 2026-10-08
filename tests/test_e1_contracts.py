@@ -62,6 +62,8 @@ def test_open_meteo_model_state_cannot_expose_physical_observation_time():
     assert state.model_validity_time == validity
     assert state.reference_time == validity
     assert state.as_dict()["nature"] == "ENVIRONMENTAL_MODEL_STATE"
+    assert state.as_dict()["observed_at"] is None
+    assert state.as_dict()["reference_time"] == validity.isoformat()
 
 
 def test_environment_context_uses_reference_time_for_model_state():
