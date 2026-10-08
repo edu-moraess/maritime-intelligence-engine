@@ -14,7 +14,9 @@ from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.ingestion.background import AISBackgroundService
+from src.environment.alignment import EnvironmentalStateAlignmentEngine
 from src.environment.context import EnvironmentalContext
+from src.environment.features import EnvironmentalFeatures, derive_environmental_features
 from src.environment.open_meteo_marine import OpenMeteoMarineProvider
 from src.environment.copernicus_marine import CopernicusMarineProvider
 from src.environment.open_meteo_weather import OpenMeteoWeatherProvider
@@ -22,6 +24,7 @@ from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.historical.session_regions import persist_collection_session_regions
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
+from src.geospatial.region_membership import membership
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
 from src.ml.temporal.types import TemporalFitResult
@@ -75,6 +78,7 @@ class EngineSnapshot:
     current_session_observations: list[AISObservation] = field(default_factory=list)
     current_session_findings: list[AnomalyFinding] = field(default_factory=list)
     environmental_contexts: dict[str, EnvironmentalContext] = field(default_factory=dict)
+    environmental_features: dict[str, tuple[EnvironmentalFeatures, ...]] = field(default_factory=dict)
 
 
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
@@ -111,6 +115,8 @@ class MaritimeIntelligenceEngine:
         self.weather_provider = OpenMeteoWeatherProvider()
         self.copernicus_provider = CopernicusMarineProvider()
         self.environmental_contexts: dict[str, EnvironmentalContext] = {}
+        self.environmental_features: dict[str, tuple[EnvironmentalFeatures, ...]] = {}
+        self.environmental_alignment = EnvironmentalStateAlignmentEngine()
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
         self.regional_events: list[RegionalEvent] = []
@@ -178,6 +184,7 @@ class MaritimeIntelligenceEngine:
             ended_at,
         )
         self._refresh_environmental_contexts()
+        self._refresh_environmental_features()
         self._recompute()
         self.current_session_findings = self._detect_current_session_findings()
         return len(batch)
@@ -264,6 +271,7 @@ class MaritimeIntelligenceEngine:
 
         phase_started = time.monotonic()
         self._refresh_environmental_contexts()
+        self._refresh_environmental_features()
         breakdown["environmental"] = time.monotonic() - phase_started
 
         phase_started = time.monotonic()
@@ -328,6 +336,31 @@ class MaritimeIntelligenceEngine:
 
 
 
+    def _refresh_environmental_features(self) -> None:
+        """Derive deterministic environmental features without changing anomaly scoring."""
+        if not self.current_session_observations or not self.environmental_contexts:
+            self.environmental_features = {}
+            return
+
+        features_by_mmsi: dict[str, list[EnvironmentalFeatures]] = {}
+        for ais in self.current_session_observations:
+            memberships = membership(
+                ais.latitude, ais.longitude, self.settings.monitoring_bboxes
+            )
+            if len(memberships) != 1:
+                continue
+            region = f"region_{memberships[0] + 1}"
+            context = self.environmental_contexts.get(region)
+            if context is None:
+                continue
+            for alignment in self.environmental_alignment.align(ais, context):
+                features = derive_environmental_features(
+                    alignment, vessel_sog_knots=ais.sog_knots, vessel_cog_degrees=ais.cog_degrees
+                )
+                if features is not None:
+                    features_by_mmsi.setdefault(ais.mmsi, []).append(features)
+
+        self.environmental_features = {mmsi: tuple(items) for mmsi, items in features_by_mmsi.items()}
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
         """Switch only the optional historical sink; preserve live state."""
         if (
@@ -463,6 +496,7 @@ class MaritimeIntelligenceEngine:
             current_session_observations=current_observations,
             current_session_findings=list(self.current_session_findings),
             environmental_contexts=dict(self.environmental_contexts),
+            environmental_features=dict(self.environmental_features),
         )
 
     def clear_session_data(self) -> None:
@@ -477,6 +511,7 @@ class MaritimeIntelligenceEngine:
         self.region_comparison = None
         self.regional_events = []
         self.environmental_contexts = {}
+        self.environmental_features = {}
         self._temporal_fingerprint = None
         self._background_last_flush = 0.0
         self.last_collection_seconds = 0.0
