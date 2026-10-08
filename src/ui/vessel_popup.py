@@ -236,17 +236,48 @@ def render_vessel_quick_intelligence(
                 )
             else:
                 latest = environment.observation
+                marine = environment.observation_from("open-meteo-marine")
+                weather = environment.observation_from("open-meteo-weather")
                 metric_strip(
                     {
                         "REGION": environment.region or "—",
-                        "WAVE": f"{latest.wave_height_m:.1f} m" if latest.wave_height_m is not None else "—",
-                        "PERIOD": f"{latest.wave_period_s:.1f} s" if latest.wave_period_s is not None else "—",
-                        "CURRENT": f"{latest.ocean_current_velocity:.2f}" if latest.ocean_current_velocity is not None else "—",
+                        "WAVE": (
+                            f"{marine.wave_height_m:.1f} m"
+                            if marine is not None and marine.wave_height_m is not None
+                            else "—"
+                        ),
+                        "PERIOD": (
+                            f"{marine.wave_period_s:.1f} s"
+                            if marine is not None and marine.wave_period_s is not None
+                            else "—"
+                        ),
+                        "CURRENT": (
+                            f"{marine.ocean_current_velocity:.2f} kn"
+                            if marine is not None and marine.ocean_current_velocity is not None
+                            else "—"
+                        ),
+                        "WIND": (
+                            f"{weather.wind_speed_10m_kmh:.1f} km/h"
+                            if weather is not None and weather.wind_speed_10m_kmh is not None
+                            else "—"
+                        ),
                     }
                 )
                 if environment.environment_age_seconds is not None:
-                    st.caption(f"Environment age · {environment.environment_age_seconds:.0f} s · Source · {latest.source}")
-                st.caption("Contextual correlation only; this does not infer environmental causality or risk.")
+                    offset = environment.temporal_offset_seconds
+                    offset_text = (
+                        f"{offset:+.0f} s" if offset is not None else "—"
+                    )
+                    st.caption(
+                        f"Model state · {environment.status} · age "
+                        f"{environment.environment_age_seconds:.0f} s · offset "
+                        f"{offset_text} · source {latest.source}"
+                    )
+                if environment.spatial_distance_km is not None:
+                    st.caption(
+                        f"Spatial distance · {environment.spatial_distance_km:.1f} km"
+                    )
+                st.caption("Model context only; no environmental causality or risk is inferred.")
 
     # Historical Profile
     with st.expander(
