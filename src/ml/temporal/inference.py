@@ -46,6 +46,7 @@ def score_sequences(
     if any(a.ndim != 2 or a.shape[-1] != input_dim for a in arrays) or any(not np.isfinite(a).all() for a in arrays):
         return InferenceResult(False, "NON_FINITE_INPUT", [], [], [])
     scaled = scaler.transform(arrays)
+    masks = np.stack([np.ones(a.shape[0], dtype=np.float32) if s.mask is None else np.asarray(s.mask, dtype=np.float32) for s, a in zip(sequences, arrays)], axis=0)
     if not np.isfinite(scaled).all():
         return InferenceResult(False, "NON_FINITE_INPUT", [], [], [])
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,10 +66,12 @@ def score_sequences(
     try:
         with torch.no_grad():
             x = torch.from_numpy(scaled).to(torch.device(dev))
+            mask = torch.from_numpy(masks).to(torch.device(dev)).unsqueeze(-1)
             rec, _ = model(x)
             if rec.shape != x.shape or not torch.isfinite(rec).all():
                 return InferenceResult(False, "NON_FINITE_OUTPUT", [], [], [])
-            err = ((rec - x) ** 2).reshape(x.shape[0], -1).mean(dim=1)
+            weights = mask.expand_as(x)
+            err = (((rec - x) ** 2) * weights).sum(dim=(1, 2)) / weights.sum(dim=(1, 2)).clamp_min(1.0)
             errors = [float(v) for v in err.cpu().numpy().tolist()]
     except Exception as exc:
         return InferenceResult(False, f"INFERENCE_EXCEPTION: {exc}", [], [], [])
