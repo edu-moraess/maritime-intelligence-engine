@@ -438,7 +438,6 @@ def render_vessel_quick_intelligence(
             )
             score = float(getattr(top, "score", 0) or 0)
             severity = "HIGH" if score >= 0.78 else "MEDIUM" if score >= 0.5 else "LOW"
-            conf = getattr(top, "confidence", None)
             metric_strip(
                 {
                     "SEVERITY": severity,
