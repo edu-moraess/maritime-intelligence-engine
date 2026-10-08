@@ -56,6 +56,7 @@ class AppSettings:
     config_error: str | None = None
     database_url: str | None = None
     historical_persistence_enabled: bool = False
+    historical_retention_days: int = 30
 
     def __post_init__(self) -> None:
         """Keep legacy single-bbox construction compatible with dual monitoring."""
@@ -116,6 +117,7 @@ class AppSettings:
             config_error=config_error,
             database_url=_secret_or_env("DATABASE_URL", secrets).strip() or None,
             historical_persistence_enabled=_bool_setting("HISTORICAL_PERSISTENCE_ENABLED", False, secrets),
+            historical_retention_days=min(max(int_setting("HISTORICAL_RETENTION_DAYS", 30), 7), 30),
         )
 
     @property
