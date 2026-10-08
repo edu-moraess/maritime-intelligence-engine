@@ -85,6 +85,32 @@ def test_quality_flags_invalid_provider_record():
         AISObservation("bad", 25.0, -80.0, datetime.now(timezone.utc))
 
 
+def test_store_keeps_distinct_historical_observations_with_session_provenance():
+    store = ObservationStore(max_messages=5)
+    now = datetime.now(timezone.utc)
+    first = AISObservation(
+        "368207620",
+        25.7617,
+        -80.1918,
+        now,
+        ais_timestamp_second=42,
+        raw={"session_id": "historical-session"},
+    )
+    second = AISObservation(
+        "368207620",
+        25.7620,
+        -80.1920,
+        now + timedelta(seconds=30),
+        ais_timestamp_second=43,
+        raw={"session_id": "historical-session"},
+    )
+
+    store.extend([first, second])
+
+    assert len(store.all()) == 2
+    assert store.duplicate_count == 0
+
+
 def test_store_counts_exact_duplicates():
     store = ObservationStore(max_messages=5)
     observation = AISObservation("368207620", 25.7617, -80.1918, datetime.now(timezone.utc), ais_timestamp_second=42, raw={"MessageType": "PositionReport", "id": 1})
