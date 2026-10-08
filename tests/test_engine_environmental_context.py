@@ -48,10 +48,10 @@ def test_environmental_provider_failure_keeps_context_unavailable() -> None:
         AppSettings(aisstream_api_key="", bbox=DEFAULT_BBOX)
     )
     engine.environmental_provider = FailingEnvironmentalProvider()
+    engine.weather_provider = FailingEnvironmentalProvider()
 
     engine._refresh_environmental_contexts()
 
-    engine.weather_provider = FailingEnvironmentalProvider()
     context = engine.environmental_contexts["region_1"]
     assert context.status == "UNAVAILABLE"
     assert context.latest is None
