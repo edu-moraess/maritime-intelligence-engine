@@ -79,6 +79,7 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
 
         return EnvironmentalObservation(
             source="open-meteo-marine",
+            observed_at=None,
             nature="ENVIRONMENTAL_MODEL_STATE",
             model_validity_time=model_validity_time,
             latitude=float(payload["latitude"]),
