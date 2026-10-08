@@ -40,7 +40,7 @@ class EnvironmentalProvider(ABC):
 
 
 class OpenMeteoMarineProvider(EnvironmentalProvider):
-    """Fetch current marine model conditions from Open-Meteo."""
+    """Fetch current marine model state from Open-Meteo."""
 
     def __init__(self, timeout_seconds: float = 10.0) -> None:
         self.timeout_seconds = timeout_seconds
@@ -75,11 +75,13 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
         if not isinstance(timestamp, str):
             raise ValueError("Open-Meteo response does not contain a valid current timestamp.")
 
-        observed_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+        model_validity_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc)
 
         return EnvironmentalObservation(
             source="open-meteo-marine",
-            observed_at=observed_at,
+            observed_at=None,
+            nature="ENVIRONMENTAL_MODEL_STATE",
+            model_validity_time=model_validity_time,
             latitude=float(payload["latitude"]),
             longitude=float(payload["longitude"]),
             region=region,

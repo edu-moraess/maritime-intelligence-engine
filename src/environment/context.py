@@ -23,10 +23,16 @@ class EnvironmentalContext:
     def latest(self) -> EnvironmentalObservation | None:
         if not self.observations:
             return None
-        return max(self.observations, key=lambda observation: observation.observed_at)
+        return max(self.observations, key=lambda observation: observation.reference_time)
+
+    @property
+    def reference_time(self) -> datetime | None:
+        latest = self.latest
+        return latest.reference_time if latest is not None else None
 
     @property
     def observed_at(self) -> datetime | None:
+        """Physical observation time only; model-state contexts return None."""
         latest = self.latest
         return latest.observed_at if latest is not None else None
 
@@ -50,6 +56,11 @@ class EnvironmentalContext:
             "status": self.status,
             "observed_at": (
                 latest.observed_at.astimezone(timezone.utc).isoformat()
+                if latest is not None and latest.observed_at is not None
+                else None
+            ),
+            "reference_time": (
+                latest.reference_time.astimezone(timezone.utc).isoformat()
                 if latest is not None
                 else None
             ),
