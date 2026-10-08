@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.ingestion.models import AISObservation
+from src.ml.temporal.coverage import resample_track, stitch_track
 from src.ml.temporal.types import (
     DEFAULT_SEQUENCE_LENGTH,
     MAX_TIME_DELTA_SECONDS,
@@ -231,6 +232,77 @@ def _build_sequence_from_observations(
     )
 
 
+def _build_resampled_sequences(
+    observations: Sequence[AISObservation],
+    *,
+    sequence_length: int,
+    max_windows_per_track: int,
+    mmsi: str,
+) -> list[TemporalSequence]:
+    """Cria janelas em grade de 1 minuto com máscara de ausência limitada."""
+    result: list[TemporalSequence] = []
+    for segment in stitch_track(observations):
+        sampled = resample_track(segment)
+        if sampled is None:
+            continue
+        values = np.column_stack(
+            [
+                sampled.latitude,
+                sampled.longitude,
+                sampled.sog_knots,
+                np.sin(np.deg2rad(sampled.cog_degrees)),
+                np.cos(np.deg2rad(sampled.cog_degrees)),
+                sampled.heading_degrees,
+            ]
+        ).astype(np.float64)
+        if len(values) < sequence_length:
+            continue
+        for start in range(0, len(values) - sequence_length + 1):
+            if len(result) >= max_windows_per_track:
+                break
+            mask = sampled.mask[start : start + sequence_length].astype(np.float32)
+            if mask.shape[0] != sequence_length or float(1.0 - np.mean(mask)) > 0.20:
+                continue
+            window = values[start : start + sequence_length]
+            delta_lat_m = np.zeros(sequence_length, dtype=np.float64)
+            delta_lon_m = np.zeros(sequence_length, dtype=np.float64)
+            mean_lat = float(np.mean(window[:, 0]))
+            meters_lat = 111132.0
+            meters_lon = 111320.0 * max(np.cos(np.deg2rad(mean_lat)), 1e-6)
+            delta_lat_m[1:] = np.diff(window[:, 0]) * meters_lat
+            delta_lon_m[1:] = np.diff(window[:, 1]) * meters_lon
+            computed_speed = np.sqrt(delta_lat_m**2 + delta_lon_m**2) / 60.0 * 1.943844
+            heading_change = np.zeros(sequence_length, dtype=np.float64)
+            heading_change[1:] = (np.diff(window[:, 5]) + 180.0) % 360.0 - 180.0
+            mat = np.column_stack(
+                [
+                    delta_lat_m,
+                    delta_lon_m,
+                    window[:, 2],
+                    window[:, 3],
+                    window[:, 4],
+                    np.clip(computed_speed, 0.0, 80.0),
+                    np.clip(heading_change, -180.0, 180.0),
+                    np.full(sequence_length, np.log1p(60.0)),
+                ]
+            ).astype(np.float32)
+            if not np.isfinite(mat).all():
+                continue
+            result.append(
+                TemporalSequence(
+                    mmsi=str(mmsi),
+                    sequence=mat,
+                    sequence_length=int(sequence_length),
+                    feature_names=FEATURE_NAMES,
+                    n_source_points=int(len(segment)),
+                    mask=mask,
+                )
+            )
+        if len(result) >= max_windows_per_track:
+            break
+    return result
+
+
 def build_temporal_sequence(
     observations: Sequence[AISObservation] | Iterable[AISObservation],
     *,
@@ -274,6 +346,15 @@ def build_temporal_sequences(
     minimum = int(minimum_points)
     cap = max(1, int(max_windows_per_track))
     for mmsi, obs in items:
+        resampled = _build_resampled_sequences(
+            obs,
+            sequence_length=window,
+            max_windows_per_track=cap,
+            mmsi=str(mmsi),
+        )
+        if resampled:
+            result.extend(resampled)
+            continue
         emitted = 0
         for segment in _split_track_on_gaps(obs):
             if len(segment) < max(window, minimum):
