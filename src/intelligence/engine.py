@@ -283,7 +283,7 @@ class MaritimeIntelligenceEngine:
         contexts: dict[str, EnvironmentalContext] = {}
         for index, bbox in enumerate(self.settings.monitoring_bboxes, start=1):
             region = f"region_{index}"
-            previous = self.environmental_contexts.get(region)
+            previous = getattr(self, "environmental_contexts", {}).get(region)
             context = previous or EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
