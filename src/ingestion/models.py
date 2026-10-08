@@ -62,6 +62,10 @@ class AISObservation:
             if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
                 raise ValueError("observed_at must be timezone-aware when provided")
             object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
+        if self.retrieved_at is not None:
+            if self.retrieved_at.tzinfo is None or self.retrieved_at.utcoffset() is None:
+                raise ValueError("retrieved_at must be timezone-aware when provided")
+            object.__setattr__(self, "retrieved_at", self.retrieved_at.astimezone(timezone.utc))
         if self.ais_timestamp_second is not None and (
             isinstance(self.ais_timestamp_second, bool)
             or not isinstance(self.ais_timestamp_second, int)
@@ -111,6 +115,10 @@ class EnvironmentalObservation:
     precipitation_mm: float | None = None
     visibility_m: float | None = None
     pressure_msl_hpa: float | None = None
+    product: str | None = None
+    data_kind: str | None = None
+    retrieved_at: datetime | None = None
+    forecast: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -169,6 +177,10 @@ class EnvironmentalObservation:
             "precipitation_mm": self.precipitation_mm,
             "visibility_m": self.visibility_m,
             "pressure_msl_hpa": self.pressure_msl_hpa,
+            "product": self.product,
+            "data_kind": self.data_kind,
+            "retrieved_at": self.retrieved_at.astimezone(timezone.utc).isoformat() if self.retrieved_at else None,
+            "forecast": self.forecast,
         }
 
 
