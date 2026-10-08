@@ -126,6 +126,48 @@ def test_alignment_exposes_future_valid_time_as_signed_offset() -> None:
     assert result.temporal_offset_seconds == 60.0
 
 
+def test_alignment_blocks_future_state_by_default() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            EnvironmentalObservation(
+                source="open-meteo-marine",
+                observed_at=BASE + timedelta(minutes=1),
+                latitude=25.7005,
+                longitude=-80.0005,
+                region="region_1",
+                forecast=True,
+            ),
+        ),
+    )
+    result = EnvironmentalStateAlignmentEngine().align(
+        _ais(), context, source="open-meteo-marine"
+    )[0]
+    assert result.status == "FUTURE"
+    assert result.usable is False
+
+
+def test_alignment_allows_future_forecast_only_when_explicitly_enabled() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            EnvironmentalObservation(
+                source="open-meteo-marine",
+                observed_at=BASE + timedelta(minutes=1),
+                latitude=25.7005,
+                longitude=-80.0005,
+                region="region_1",
+                forecast=True,
+            ),
+        ),
+    )
+    result = EnvironmentalStateAlignmentEngine(allow_forecast=True).align(
+        _ais(), context, source="open-meteo-marine"
+    )[0]
+    assert result.status == "ALIGNED"
+    assert result.usable is True
+
+
 def test_alignment_reports_unavailable_source_without_synthetic_data() -> None:
     context = EnvironmentalContext(region="region_1", observations=())
 
