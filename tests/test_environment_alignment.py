@@ -19,7 +19,7 @@ def _ais(**kwargs) -> AISObservation:
     return AISObservation(**values)
 
 
-def _env(source: str, *, when=BASE, lat=25.7005, lon=-80.0005) -> EnvironmentalObservation:
+def _env(source: str, *, when=BASE, lat=25.7005, lon=-80.0005, retrieved_at=None) -> EnvironmentalObservation:
     return EnvironmentalObservation(
         source=source,
         observed_at=when,
@@ -28,6 +28,7 @@ def _env(source: str, *, when=BASE, lat=25.7005, lon=-80.0005) -> EnvironmentalO
         region="region_1",
         wave_height_m=0.8,
         ocean_current_velocity=0.4,
+        retrieved_at=retrieved_at,
     )
 
 
@@ -48,8 +49,10 @@ def test_alignment_selects_nearest_temporal_state_per_source() -> None:
 
     assert marine.status == "ALIGNED"
     assert marine.temporal_age_seconds == 120.0
+    assert marine.temporal_offset_seconds == -120.0
     assert weather.status == "ALIGNED"
     assert weather.temporal_age_seconds == 60.0
+    assert weather.temporal_offset_seconds == -60.0
 
 
 def test_alignment_marks_stale_state_without_discarding_provenance() -> None:
@@ -66,6 +69,7 @@ def test_alignment_marks_stale_state_without_discarding_provenance() -> None:
     assert result.observation is not None
     assert result.usable is False
     assert result.temporal_age_seconds == 7200.0
+    assert result.temporal_offset_seconds == -7200.0
 
 
 def test_alignment_marks_spatial_mismatch_as_out_of_bounds() -> None:
@@ -84,6 +88,42 @@ def test_alignment_marks_spatial_mismatch_as_out_of_bounds() -> None:
     assert result.observation is not None
     assert result.spatial_distance_km is not None
     assert result.spatial_distance_km > 10.0
+
+
+def test_alignment_uses_environment_valid_time_not_retrieval_time() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            _env(
+                "open-meteo-marine",
+                when=BASE - timedelta(minutes=1),
+                retrieved_at=BASE + timedelta(hours=3),
+            ),
+        ),
+    )
+
+    result = EnvironmentalStateAlignmentEngine().align(
+        _ais(), context, source="open-meteo-marine"
+    )[0]
+
+    assert result.status == "ALIGNED"
+    assert result.temporal_age_seconds == 60.0
+    assert result.temporal_offset_seconds == -60.0
+
+
+def test_alignment_exposes_future_valid_time_as_signed_offset() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(_env("open-meteo-marine", when=BASE + timedelta(minutes=1)),),
+    )
+
+    result = EnvironmentalStateAlignmentEngine().align(
+        _ais(), context, source="open-meteo-marine"
+    )[0]
+
+    assert result.status == "ALIGNED"
+    assert result.temporal_age_seconds == 60.0
+    assert result.temporal_offset_seconds == 60.0
 
 
 def test_alignment_reports_unavailable_source_without_synthetic_data() -> None:
