@@ -131,13 +131,12 @@ class MaritimeIntelligenceEngine:
         if not self._historical_persistence_enabled or not self._historical_database_url:
             return 0
         if len(self.settings.monitoring_bboxes) > 1:
-            restored = load_recent_observations_for_bboxes(self._historical_database_url, self.settings.monitoring_bboxes, limit=self.settings.max_messages)
+            restored = load_recent_observations_for_bboxes(self._historical_database_url, self.settings.monitoring_bboxes, limit=self.settings.max_messages, retention_days=self.settings.historical_retention_days)
         else:
-            restored = load_recent_observations(self._historical_database_url, self.settings.bbox, limit=self.settings.max_messages)
+            restored = load_recent_observations(self._historical_database_url, self.settings.bbox, limit=self.settings.max_messages, retention_days=self.settings.historical_retention_days)
         if not restored:
             return 0
         self.store.extend(restored)
-        self._recompute()
         return len(restored)
 
     def collect(self, seconds: float | None = None) -> int:
@@ -292,7 +291,12 @@ class MaritimeIntelligenceEngine:
         model_tracks = select_interesting_tracks(tracks)
         self.embeddings = self.embedding_adapter.fit(model_tracks)
         self.findings = detect_anomalies(model_tracks, self.embeddings)
-        fingerprint = _track_fingerprint(tracks)
+
+        # O modelo temporal pode usar histórico real como contexto de treino.
+        # A detecção clássica e a apresentação operacional continuam restritas
+        # à janela live corrente, evitando vazamento de contexto para a UI.
+        temporal_tracks = select_interesting_tracks(self.store.tracks())
+        fingerprint = _track_fingerprint(temporal_tracks)
         if self.temporal is not None and self._temporal_fingerprint == fingerprint:
             self.region_comparison = self._build_region_comparison()
             self.regional_events = self._build_regional_events(
@@ -302,7 +306,7 @@ class MaritimeIntelligenceEngine:
             )
             return
         try:
-            self.temporal = self.temporal_adapter.fit(model_tracks)
+            self.temporal = self.temporal_adapter.fit(temporal_tracks)
             self._temporal_fingerprint = fingerprint
         except Exception as exc:
             self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
