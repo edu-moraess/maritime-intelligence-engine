@@ -30,6 +30,12 @@ class EnvironmentalContext:
         latest = self.latest
         return latest.reference_time if latest is not None else None
 
+    @property
+    def observed_at(self) -> datetime | None:
+        """Physical observation time only; model-state contexts return None."""
+        latest = self.latest
+        return latest.observed_at if latest is not None else None
+
     def add(self, observation: EnvironmentalObservation) -> "EnvironmentalContext":
         """Return a new context containing an observation for this region."""
         if observation.region != self.region:
