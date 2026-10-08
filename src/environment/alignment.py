@@ -1,4 +1,4 @@
-"""Spatial/temporal alignment of real AIS and environmental evidence."""
+"""Spatial/temporal alignment of real AIS and environmental data."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ AlignmentStatus = Literal["ALIGNED", "STALE", "OUT_OF_BOUNDS", "UNAVAILABLE"]
 
 
 @dataclass(frozen=True)
-class EnvironmentalAlignment:
+class EnvironmentalStateAlignment:
     """Traceable relationship between one AIS observation and one environment state."""
 
     status: AlignmentStatus
@@ -48,7 +48,7 @@ class EnvironmentalAlignment:
         }
 
 
-class EnvironmentalAlignmentEngine:
+class EnvironmentalStateAlignmentEngine:
     """Align AIS events to external model/observation states without causal inference."""
 
     def __init__(
@@ -70,7 +70,7 @@ class EnvironmentalAlignmentEngine:
         context: EnvironmentalContext,
         *,
         source: str | None = None,
-    ) -> tuple[EnvironmentalAlignment, ...]:
+    ) -> tuple[EnvironmentalStateAlignment, ...]:
         """Return one nearest-state alignment per requested environmental source.
 
         Selection is deterministic: minimize temporal age first, then spatial
@@ -81,7 +81,7 @@ class EnvironmentalAlignmentEngine:
             if source is not None
             else tuple(sorted({item.source for item in context.observations}))
         )
-        results: list[EnvironmentalAlignment] = []
+        results: list[EnvironmentalStateAlignment] = []
         for source_name in sources:
             candidates = [
                 item for item in context.observations if item.source == source_name
@@ -94,9 +94,9 @@ class EnvironmentalAlignmentEngine:
         ais: AISObservation,
         source: str,
         candidates: list[EnvironmentalObservation],
-    ) -> EnvironmentalAlignment:
+    ) -> EnvironmentalStateAlignment:
         if not candidates:
-            return EnvironmentalAlignment(
+            return EnvironmentalStateAlignment(
                 status="UNAVAILABLE",
                 ais_received_at=ais.received_at,
                 ais_latitude=ais.latitude,
@@ -134,7 +134,7 @@ class EnvironmentalAlignmentEngine:
         else:
             status = "ALIGNED"
 
-        return EnvironmentalAlignment(
+        return EnvironmentalStateAlignment(
             status=status,
             ais_received_at=ais.received_at,
             ais_latitude=ais.latitude,
