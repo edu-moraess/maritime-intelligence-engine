@@ -16,6 +16,7 @@ from src.ingestion.aisstream import AISStreamProvider
 from src.ingestion.background import AISBackgroundService
 from src.environment.context import EnvironmentalContext
 from src.environment.open_meteo_marine import OpenMeteoMarineProvider
+from src.environment.open_meteo_weather import OpenMeteoWeatherProvider
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.historical.session_regions import persist_collection_session_regions
@@ -106,6 +107,7 @@ class MaritimeIntelligenceEngine:
         self.current_session_findings: list[AnomalyFinding] = []
         self.current_session_observations: list[AISObservation] = []
         self.environmental_provider = OpenMeteoMarineProvider()
+        self.weather_provider = OpenMeteoWeatherProvider()
         self.environmental_contexts: dict[str, EnvironmentalContext] = {}
         self.temporal: TemporalFitResult | None = None
         self.region_comparison: RegionComparison | None = None
@@ -283,190 +285,30 @@ class MaritimeIntelligenceEngine:
             context = previous or EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
-            try:
-                observation = self.environmental_provider.current(
-                    latitude=latitude,
-                    longitude=longitude,
-                    region=region,
-                )
-                if all(item.observed_at != observation.observed_at for item in context.observations):
-                    context = context.add(observation)
-                context = EnvironmentalContext(
-                    region=region,
-                    observations=tuple(
-                        sorted(
-                            context.observations,
-                            key=lambda item: item.observed_at,
-                        )[-2:]
-                    ),
-                )
-            except Exception:
-                pass
+            for provider in (self.environmental_provider, self.weather_provider):
+                try:
+                    observation = provider.current(
+                        latitude=latitude,
+                        longitude=longitude,
+                        region=region,
+                    )
+                    if all(
+                        item.source != observation.source
+                        or item.observed_at != observation.observed_at
+                        for item in context.observations
+                    ):
+                        context = context.add(observation)
+                except Exception:
+                    # Environmental APIs are optional context; AIS remains authoritative.
+                    continue
+            context = EnvironmentalContext(
+                region=region,
+                observations=tuple(
+                    sorted(
+                        context.observations,
+                        key=lambda item: (item.observed_at, item.source),
+                    )[-4:]
+                ),
+            )
             contexts[region] = context
-        self.environmental_contexts = contexts
-    def _current_session_tracks(self) -> dict[str, list[AISObservation]]:
-        """Return only observations collected in the latest live window."""
-        tracks: dict[str, list[AISObservation]] = {}
-        for observation in self.current_session_observations:
-            tracks.setdefault(observation.mmsi, []).append(observation)
-        return tracks
 
-    def _detect_current_session_findings(self) -> list[AnomalyFinding]:
-        """Detect findings only from observations collected in the latest window."""
-        tracks = self._current_session_tracks()
-        if not tracks:
-            return []
-        return detect_anomalies(tracks, self.embeddings)
-
-    def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
-        """Switch only the optional historical sink; preserve all live state."""
-        if database_url == self._historical_database_url and persistence_enabled == self._historical_persistence_enabled:
-            return
-        self.historical_writer.close()
-        self._historical_database_url = database_url
-        self._historical_persistence_enabled = persistence_enabled
-        self._historical_loaded = False
-        self.historical_writer = create_historical_writer(database_url, persistence_enabled)
-        self.historical_result = None
-        self.settings = replace(self.settings, database_url=database_url, historical_persistence_enabled=persistence_enabled)
-
-    def _recompute(self) -> None:
-        # Keep every real AIS observation in the store for persistence and
-        # cross-session context, but fit session-relative analytics only on the
-        # latest operator-triggered live window.
-        tracks = self._current_session_tracks()
-        model_tracks = select_interesting_tracks(tracks)
-        self.embeddings = self.embedding_adapter.fit(model_tracks)
-        self.findings = detect_anomalies(model_tracks, self.embeddings)
-
-        # O modelo temporal pode usar histórico real como contexto de treino.
-        # A detecção clássica e a apresentação operacional continuam restritas
-        # à janela live corrente, evitando vazamento de contexto para a UI.
-        temporal_tracks = select_interesting_tracks(self.store.tracks())
-        fingerprint = _track_fingerprint(temporal_tracks)
-        if self.temporal is not None and self._temporal_fingerprint == fingerprint:
-            self.region_comparison = self._build_region_comparison()
-            self.regional_events = self._build_regional_events(
-                tracks,
-                findings=self.findings,
-                environmental_contexts=self.environmental_contexts,
-            )
-            return
-        try:
-            self.temporal = self.temporal_adapter.fit(temporal_tracks)
-            self._temporal_fingerprint = fingerprint
-        except Exception as exc:
-            self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
-            self._temporal_fingerprint = fingerprint
-        self.region_comparison = self._build_region_comparison()
-        self.regional_events = self._build_regional_events(
-            tracks,
-            findings=self.findings,
-            environmental_contexts=self.environmental_contexts,
-        )
-
-    def _build_region_comparison(self) -> RegionComparison | None:
-        if len(self.settings.monitoring_bboxes) != 2:
-            return None
-        return compare_regions(self.current_session_observations, self.findings, self.settings.monitoring_bboxes, temporal=self.temporal)
-    def _build_regional_events(
-        self,
-        tracks: dict[str, list[AISObservation]],
-        *,
-        findings: list[AnomalyFinding] | None = None,
-        environmental_contexts: dict[str, EnvironmentalContext] | None = None,
-    ) -> list[RegionalEvent]:
-        if len(self.settings.monitoring_bboxes) != 2:
-            return []
-        return detect_regional_events(
-            tracks,
-            self.settings.monitoring_bboxes,
-            findings=findings or (),
-            environmental_contexts=environmental_contexts,
-        )
-
-    def _readiness(self, tracks: dict[str, list[AISObservation]]) -> ReadinessSnapshot:
-        tracks_with_history = sum(1 for track in tracks.values() if len(track) >= 2)
-        temporal_status = self.temporal.status if self.temporal is not None else "WAITING"
-        return ReadinessSnapshot(distinct_vessels=len(tracks), tracks_with_history=tracks_with_history, trajectory_ready=tracks_with_history >= 1, embeddings_ready=self.embeddings is not None, embedding_status="READY" if self.embeddings is not None else ("PARTIAL" if tracks_with_history else "WAITING"), anomaly_count=len(self.findings), temporal_status=temporal_status)
-
-    def _merged_vessels(self, tracks: dict[str, list[AISObservation]]) -> list[VesselSnapshot]:
-        """Build the operational vessel view from the latest live session only."""
-        now = datetime.now(timezone.utc)
-        vessels: list[VesselSnapshot] = []
-        for mmsi, track in tracks.items():
-            if not track:
-                continue
-            latest = max(track, key=lambda observation: observation.received_at)
-            vessels.append(
-                VesselSnapshot(
-                    mmsi=mmsi,
-                    latitude=latest.latitude,
-                    longitude=latest.longitude,
-                    last_received=latest.received_at,
-                    sog_knots=latest.sog_knots,
-                    cog_degrees=latest.cog_degrees,
-                    heading_degrees=latest.heading_degrees,
-                    vessel_name=latest.vessel_name,
-                    message_count=len(track),
-                    stale=(now - latest.received_at).total_seconds() > self.settings.stale_after_seconds,
-                    ais_timestamp_second=latest.ais_timestamp_second,
-                    observed_at=latest.observed_at,
-                )
-            )
-        return sorted(vessels, key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
-
-    def snapshot(self) -> EngineSnapshot:
-        observations = self.store.all()
-        analysis_tracks = self._current_session_tracks()
-        vessels = self._merged_vessels(analysis_tracks)
-        quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
-        status = replace(self.provider.status, active_vessels=len(analysis_tracks))
-        return EngineSnapshot(
-            observations=observations,
-            vessels=vessels,
-            findings=self.findings,
-            quality=quality,
-            status=status,
-            embeddings=self.embeddings,
-            summary=traffic_summary(
-                vessels,
-                self.current_session_observations,
-                self.findings,
-            ),
-            readiness=self._readiness(analysis_tracks),
-            last_collection_seconds=self.last_collection_seconds,
-            last_collection_breakdown=dict(self.last_collection_breakdown),
-            historical_status=self.historical_writer.status,
-            historical_result=self.historical_result,
-            temporal=self.temporal,
-            region_comparison=self.region_comparison,
-            regional_events=list(self.regional_events),
-            current_session_observations=list(self.current_session_observations),
-            current_session_findings=list(self.current_session_findings),
-            environmental_contexts=dict(self.environmental_contexts),
-        )
-
-    def clear_session_data(self) -> None:
-        self.stop_background()
-        self.store.clear()
-        self.provider.reset_session()
-        self.embeddings = None
-        self.findings = []
-        self.current_session_findings = []
-        self.current_session_observations = []
-        self.environmental_contexts = {}
-        self.temporal = None
-        self.region_comparison = None
-        self.regional_events = []
-        self._temporal_fingerprint = None
-        self.last_collection_seconds = 0.0
-        self.last_collection_breakdown = {}
-        self.historical_result = None
-        self._historical_loaded = True
-        if self.settings.config_error or not self.settings.aisstream_api_key:
-            self.provider.connect()
-
-
-def create_engine(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    return MaritimeIntelligenceEngine(settings)
