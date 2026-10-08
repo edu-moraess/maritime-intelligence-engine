@@ -322,7 +322,7 @@ def render_regional_events(events) -> None:
     for event in recent:
         timestamp = event.timestamp.strftime("%H:%M:%S UTC")
         duration = f"{event.duration_seconds:.0f}s" if event.duration_seconds is not None else "—"
-        rows.append(f"{timestamp} · {escape(event.mmsi)} · {escape(event.event_type)} · {escape(event.region_label)} · {duration}")
+        rows.append(f"{timestamp} · {escape(str(event.mmsi))} · {escape(str(event.event_type))} · {escape(str(event.region_label))} · {duration}")
     st.code("\n".join(rows), language=None)
 
 def render_intelligence_status(items: list[tuple[str, str]]) -> None:
