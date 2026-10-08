@@ -25,6 +25,7 @@ class EnvironmentalStateAlignment:
     source: str
     observation: EnvironmentalObservation | None
     temporal_age_seconds: float | None
+    temporal_offset_seconds: float | None
     spatial_distance_km: float | None
     max_temporal_age_seconds: float
     max_spatial_distance_km: float
@@ -41,6 +42,7 @@ class EnvironmentalStateAlignment:
             "ais_longitude": self.ais_longitude,
             "source": self.source,
             "temporal_age_seconds": self.temporal_age_seconds,
+            "temporal_offset_seconds": self.temporal_offset_seconds,
             "spatial_distance_km": self.spatial_distance_km,
             "max_temporal_age_seconds": self.max_temporal_age_seconds,
             "max_spatial_distance_km": self.max_spatial_distance_km,
@@ -104,6 +106,7 @@ class EnvironmentalStateAlignmentEngine:
                 source=source,
                 observation=None,
                 temporal_age_seconds=None,
+                temporal_offset_seconds=None,
                 spatial_distance_km=None,
                 max_temporal_age_seconds=self.max_temporal_age_seconds,
                 max_spatial_distance_km=self.max_spatial_distance_km,
@@ -126,6 +129,7 @@ class EnvironmentalStateAlignmentEngine:
             key=lambda value: (value[0], value[1], value[2].observed_at),
         )
         temporal_age, spatial_distance, selected = ranked[0]
+        temporal_offset = (selected.observed_at - ais.received_at).total_seconds()
 
         if spatial_distance > self.max_spatial_distance_km:
             status: AlignmentStatus = "OUT_OF_BOUNDS"
@@ -142,6 +146,7 @@ class EnvironmentalStateAlignmentEngine:
             source=source,
             observation=selected,
             temporal_age_seconds=temporal_age,
+            temporal_offset_seconds=temporal_offset,
             spatial_distance_km=spatial_distance,
             max_temporal_age_seconds=self.max_temporal_age_seconds,
             max_spatial_distance_km=self.max_spatial_distance_km,
