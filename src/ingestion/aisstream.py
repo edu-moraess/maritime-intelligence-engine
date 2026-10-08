@@ -94,7 +94,7 @@ class AISStreamProvider(AISProvider):
             connected_at=self._connected_at,
             last_received_at=self._last_received_at,
             messages_received=self._messages_received,
-            active_vessels=0,
+            active_vessels=len(self._mmsis),
             latency_seconds=None,
             websocket_status=self._websocket_status,
             ais_timestamp_second=self._last_ais_timestamp_second,
