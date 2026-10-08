@@ -24,15 +24,15 @@ The environmental layer must not claim that weather or ocean conditions caused a
 
 ## Copernicus Marine
 
-An optional Copernicus Marine adapter is now wired behind an explicit opt-in flag. The current adapter reads the global hourly surface-current dataset `cmems_mod_glo_phy_anfc_merged-uv_PT1H-i` and derives current speed/bearing from the eastward (`uo`) and northward (`vo`) velocity components. The official product is global at 0.083° horizontal resolution and exposes hourly surface-current fields. citeturn0search0turn0search1
+An optional Copernicus Marine adapter is now wired behind an explicit opt-in flag. The current adapter reads the global hourly surface-current dataset `cmems_mod_glo_phy_anfc_merged-uv_PT1H-i` and derives current speed/bearing from the eastward (`uo`) and northward (`vo`) velocity components. The official product is global at 0.083° horizontal resolution and exposes hourly surface-current fields.
 
-The Copernicus Marine Toolbox is the official programmatic interface and supports Python API access to metadata, subsets and remote datasets. citeturn0search3turn1search1
+The Copernicus Marine Toolbox is the official programmatic interface and supports Python API access to metadata, subsets and remote datasets.
 
 Enable only when Copernicus credentials are configured:
 
 `MIE_COPERNICUS_MARINE_ENABLED=true`
 
-Credentials may be provided through the Toolbox configuration or `COPERNICUSMARINE_SERVICE_USERNAME` / `COPERNICUSMARINE_SERVICE_PASSWORD`. citeturn3search0turn3search1
+Credentials may be provided through the Toolbox configuration or `COPERNICUSMARINE_SERVICE_USERNAME` / `COPERNICUSMARINE_SERVICE_PASSWORD`.
 
 Missing package, disabled flag, unavailable credentials, or remote failure must never fabricate or substitute environmental values. The MIE simply omits that source from the current environmental context.
 
