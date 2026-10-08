@@ -489,6 +489,8 @@ def _render_vessel_map(
     show_trails: bool,
     show_anomalies: bool,
     show_hexbin: bool = False,
+    show_density: bool = False,
+    show_speed_field: bool = False,
     show_anomaly_types: bool = False,
     show_freshness: bool = False,
     show_anomaly_hotspots: bool = False,
