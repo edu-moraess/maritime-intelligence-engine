@@ -62,10 +62,6 @@ class AISObservation:
             if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
                 raise ValueError("observed_at must be timezone-aware when provided")
             object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
-        if self.retrieved_at is not None:
-            if self.retrieved_at.tzinfo is None or self.retrieved_at.utcoffset() is None:
-                raise ValueError("retrieved_at must be timezone-aware when provided")
-            object.__setattr__(self, "retrieved_at", self.retrieved_at.astimezone(timezone.utc))
         if self.ais_timestamp_second is not None and (
             isinstance(self.ais_timestamp_second, bool)
             or not isinstance(self.ais_timestamp_second, int)
@@ -126,6 +122,10 @@ class EnvironmentalObservation:
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
             raise ValueError("observed_at must be timezone-aware")
         object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
+        if self.retrieved_at is not None:
+            if self.retrieved_at.tzinfo is None or self.retrieved_at.utcoffset() is None:
+                raise ValueError("retrieved_at must be timezone-aware when provided")
+            object.__setattr__(self, "retrieved_at", self.retrieved_at.astimezone(timezone.utc))
         if not -90.0 <= self.latitude <= 90.0:
             raise ValueError("latitude must be between -90 and 90 degrees")
         if not -180.0 <= self.longitude <= 180.0:
