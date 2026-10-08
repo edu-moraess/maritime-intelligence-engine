@@ -338,7 +338,8 @@ class MaritimeIntelligenceEngine:
 
     def _refresh_environmental_features(self) -> None:
         """Derive deterministic environmental features without changing anomaly scoring."""
-        if not self.current_session_observations or not self.environmental_contexts:
+        contexts = getattr(self, "environmental_contexts", {})
+        if not self.current_session_observations or not contexts:
             self.environmental_features = {}
             return
 
@@ -350,10 +351,13 @@ class MaritimeIntelligenceEngine:
             if len(memberships) != 1:
                 continue
             region = f"region_{memberships[0] + 1}"
-            context = self.environmental_contexts.get(region)
+            context = contexts.get(region)
             if context is None:
                 continue
-            for alignment in self.environmental_alignment.align(ais, context):
+            alignment_engine = getattr(self, "environmental_alignment", None)
+            if alignment_engine is None:
+                continue
+            for alignment in alignment_engine.align(ais, context):
                 features = derive_environmental_features(
                     alignment, vessel_sog_knots=ais.sog_knots, vessel_cog_degrees=ais.cog_degrees
                 )
