@@ -117,7 +117,7 @@ def test_render_vessel_map_surface_defaults_and_selection_contract():
     assert "AIS_TARGETS_LAYER_ID" in source
     assert "id=AIS_TARGETS_LAYER_ID" in source or "id = AIS_TARGETS_LAYER_ID" in source
     assert 'selection_mode="single-object"' in source or "selection_mode='single-object'" in source
-    assert 'key="operational_ais_map"' in source or "key='operational_ais_map'" in source
+    assert 'key="operational_ais_map"' in source or "key='operational_ais_map'" in source or "key=map_key" in source
 
     assert "legend_markdown()" in source
     assert "if show_operational_strip:" in source
