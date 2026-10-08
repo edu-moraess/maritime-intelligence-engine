@@ -420,11 +420,13 @@ def _render_environmental_telemetry(snapshot) -> None:
     if not telemetry:
         return
 
+    ais_considered = int(telemetry.get("ais_considered", 0))
     aligned = int(telemetry.get("aligned", 0))
     alignments = int(telemetry.get("alignments", 0))
     features = int(telemetry.get("features_produced", 0))
     stale = int(telemetry.get("stale", 0))
     future = int(telemetry.get("future", 0))
+    out_of_bounds = int(telemetry.get("out_of_bounds", 0))
     unavailable = int(telemetry.get("unavailable", 0))
     offset_count = int(telemetry.get("temporal_offset_count", 0))
     mean_offset = telemetry.get("temporal_offset_mean_seconds")
@@ -434,8 +436,13 @@ def _render_environmental_telemetry(snapshot) -> None:
         offset_text = "—" if mean_offset is None or offset_count == 0 else f"{float(mean_offset):+.0f}s"
         distance_text = "—" if max_distance is None else f"{float(max_distance):.1f} km"
         st.caption(
-            f"aligned {aligned}/{alignments} · features {features} · "
-            f"stale {stale} · future {future} · unavailable {unavailable} · "
+            f"AIS considered {ais_considered} · alignments {aligned}/{alignments} · features {features}"
+        )
+        st.caption(
+            f"ALIGNED {aligned} · STALE {stale} · FUTURE {future} · "
+            f"OUT_OF_BOUNDS {out_of_bounds} · UNAVAILABLE {unavailable}"
+        )
+        st.caption(
             f"mean offset {offset_text} · max distance {distance_text}"
         )
 
