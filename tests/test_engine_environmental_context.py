@@ -33,6 +33,7 @@ def test_engine_exposes_environmental_context_per_monitoring_region() -> None:
     )
     engine = MaritimeIntelligenceEngine(settings)
     engine.environmental_provider = FakeEnvironmentalProvider()
+    engine.weather_provider = FailingEnvironmentalProvider()
 
     engine._refresh_environmental_contexts()
     snapshot = engine.snapshot()
