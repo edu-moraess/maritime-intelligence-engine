@@ -50,7 +50,8 @@ def test_workspace_modules_live_in_main_content():
 def test_historical_persistence_lives_under_system_controls():
     source = _source(WORKSPACE_PATH)
     system_block = source[source.index('with st.popover("SYSTEM"'):]
-    assert '"Historical Persistence"' in system_block
+    assert "Historical Persistence" in system_block
+    assert "st.checkbox(" in system_block
     assert "_render_historical_persistence(engine, settings)" in system_block
 
 
