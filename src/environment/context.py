@@ -10,7 +10,7 @@ from src.ingestion.models import EnvironmentalObservation
 
 @dataclass(frozen=True)
 class EnvironmentalContext:
-    """Immutable environmental evidence for one monitoring region."""
+    """Immutable environmental state for one monitoring region."""
 
     region: str
     observations: tuple[EnvironmentalObservation, ...] = ()
