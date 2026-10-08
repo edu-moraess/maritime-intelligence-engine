@@ -201,6 +201,52 @@ def test_selection_ignores_invalid_mmsi():
     assert st.session_state.selected_mmsi == "111111111"
 
 
+def test_dual_region_selection_does_not_trigger_a_second_rerun(monkeypatch):
+    from src.ui.dual_region_overview import _capture_region_selection
+    import streamlit as st
+
+    class EventOk:
+        class selection:
+            objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "235102528"}]}
+
+    def fail_rerun():
+        raise AssertionError("dual-region selection must not call st.rerun()")
+
+    monkeypatch.setattr(st, "rerun", fail_rerun)
+    st.session_state.pop("selected_mmsi_a", None)
+    _capture_region_selection(EventOk(), "selected_mmsi_a")
+    assert st.session_state.selected_mmsi_a == "235102528"
+
+
+def test_unified_selection_does_not_trigger_a_second_rerun(monkeypatch):
+    from src.ui import dual_region_overview as overview
+    import streamlit as st
+
+    class EventOk:
+        class selection:
+            objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "235102529"}]}
+
+    def fail_rerun():
+        raise AssertionError("unified selection must not call st.rerun()")
+
+    monkeypatch.setattr(st, "rerun", fail_rerun)
+    st.session_state.pop("selected_mmsi_unified", None)
+    previous = overview.st.session_state.get("selected_mmsi_unified")
+    try:
+        selection = EventOk().selection
+        objects = selection.objects
+        layer_objects = objects.get(AIS_TARGETS_LAYER_ID)
+        first = layer_objects[0]
+        mmsi = str(first["mmsi"]).strip()
+        overview.st.session_state["selected_mmsi_unified"] = mmsi
+        assert overview.st.session_state["selected_mmsi_unified"] == "235102529"
+    finally:
+        if previous is None:
+            overview.st.session_state.pop("selected_mmsi_unified", None)
+        else:
+            overview.st.session_state["selected_mmsi_unified"] = previous
+
+
 def test_selection_does_not_trigger_a_second_streamlit_rerun(monkeypatch):
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
