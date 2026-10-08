@@ -17,6 +17,7 @@ def load_recent_observations(
     bbox: RegionBBox,
     *,
     limit: int = 3000,
+    retention_days: int = 30,
     connect_fn: Callable[[str], Any] | None = None,
 ) -> list[AISObservation]:
     """Load recent persisted AIS observations for one monitoring bbox.
@@ -52,6 +53,7 @@ def load_recent_observations(
                 FROM ais_observations AS o
                 WHERE o.valid = TRUE
                   AND o.geom && ST_MakeEnvelope(%s, %s, %s, %s, 4326)
+                  AND o.received_at >= NOW() - (%s * INTERVAL '1 day')
                   AND ST_Intersects(
                         o.geom,
                         ST_SetSRID(ST_MakeEnvelope(%s, %s, %s, %s, 4326), 4326)
@@ -68,6 +70,7 @@ def load_recent_observations(
                     float(min_lat),
                     float(max_lon),
                     float(max_lat),
+                    min(max(7, int(retention_days)), 30),
                     int(limit),
                 ),
             )
@@ -93,6 +96,7 @@ def load_recent_observations_for_bboxes(
     bboxes: Sequence[RegionBBox],
     *,
     limit: int = 3000,
+    retention_days: int = 30,
     connect_fn: Callable[[str], Any] | None = None,
 ) -> list[AISObservation]:
     """Load recent persisted AIS history across multiple monitoring bboxes.
@@ -110,6 +114,7 @@ def load_recent_observations_for_bboxes(
             database_url,
             normalized[0],
             limit=limit,
+            retention_days=retention_days,
             connect_fn=connect_fn,
         )
 
@@ -121,6 +126,7 @@ def load_recent_observations_for_bboxes(
                 database_url,
                 bbox,
                 limit=per_region_limit,
+                retention_days=retention_days,
                 connect_fn=connect_fn,
             )
         )
