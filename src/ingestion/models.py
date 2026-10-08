@@ -88,16 +88,12 @@ class AISObservation:
 class EnvironmentalObservation:
     """External environmental data with explicit physical/model-state semantics."""
 
+    # Keep the original positional constructor order for compatibility.
     source: str
-    nature: Literal[
-        "ENVIRONMENTAL_OBSERVATION",
-        "ENVIRONMENTAL_MODEL_STATE",
-    ]
+    observed_at: datetime | None
     latitude: float
     longitude: float
     region: str | None = None
-    observed_at: datetime | None = None
-    model_validity_time: datetime | None = None
     wave_height_m: float | None = None
     wave_direction_deg: float | None = None
     wave_period_s: float | None = None
@@ -107,6 +103,11 @@ class EnvironmentalObservation:
     ocean_current_velocity: float | None = None
     ocean_current_direction_deg: float | None = None
     sea_surface_temperature_c: float | None = None
+    nature: Literal[
+        "ENVIRONMENTAL_OBSERVATION",
+        "ENVIRONMENTAL_MODEL_STATE",
+    ] = "ENVIRONMENTAL_OBSERVATION"
+    model_validity_time: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.source.strip():
