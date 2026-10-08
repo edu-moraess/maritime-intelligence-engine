@@ -181,8 +181,8 @@ def test_environment_update_requires_multiple_real_observations():
 
 def test_behavior_change_requires_two_non_insufficient_states():
     observations = [
-        _obs("111000001", 0, 5, 5, sog=4.0),
-        _obs("111000001", 60, 5.01, 5.01, sog=4.0),
+        _obs("111000001", 0, 5, 5, sog=2.0),
+        _obs("111000001", 60, 5.01, 5.01, sog=2.0),
         _obs("111000001", 120, 5.02, 5.02, sog=12.0),
         _obs("111000001", 180, 5.03, 5.03, sog=12.0),
     ]
