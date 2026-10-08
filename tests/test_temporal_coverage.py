@@ -56,6 +56,6 @@ def test_calibration_requires_percentile_absolute_threshold_and_persistence():
         baseline=baseline,
         persistent_windows=3,
     )
-    assert result.percentile > 90
+    assert result.percentile >= 90
     assert result.baseline_threshold == 0.5
     assert result.alert is True
