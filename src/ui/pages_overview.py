@@ -1,6 +1,8 @@
 """Full-width operational overview renderer — Operations Workstation layout."""
 from __future__ import annotations
 
+from datetime import timezone
+
 import streamlit as st
 
 from src.config.regions import region_name_for_bbox
@@ -160,7 +162,10 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
             if latest.ocean_current_velocity is not None:
                 details.append(f"Current {latest.ocean_current_velocity:.2f}")
             st.caption(" · ".join(details) if details else "Marine model data available")
-            st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone().strftime('%H:%M UTC')}")
+            st.caption(
+                f"Source: {latest.source} · Model validity "
+                f"{latest.reference_time.astimezone(timezone.utc).strftime('%H:%M UTC')}"
+            )
 
 
 def render_overview(
