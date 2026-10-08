@@ -86,7 +86,10 @@ class ObservationStore:
 
 
 def _observation_key(observation: AISObservation) -> str:
-    if observation.raw:
+    # Historical hydration carries session_id only as provenance. It is not
+    # the observation identity: every observation from one historical session
+    # would otherwise collapse to the same deduplication key.
+    if observation.raw and set(observation.raw) != {"session_id"}:
         serialized = json.dumps(observation.raw, sort_keys=True, separators=(",", ":"), default=str)
     else:
         serialized = json.dumps(
@@ -98,8 +101,10 @@ def _observation_key(observation: AISObservation) -> str:
                 "cog": observation.cog_degrees,
                 "heading": observation.heading_degrees,
                 "ais_second": observation.ais_timestamp_second,
+                "received_at": observation.received_at,
             },
             sort_keys=True,
             separators=(",", ":"),
+            default=str,
         )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
