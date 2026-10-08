@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
+import time
 from typing import Any, Callable, Iterable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -25,6 +26,16 @@ from src.processing.quality import validate_observation
 LOGGER = logging.getLogger(__name__)
 DEFAULT_PIPELINE_VERSION = "mie-v2-e2"
 DEFAULT_MIGRATION_DIR = Path(__file__).resolve().parents[2] / "migrations"
+
+
+@dataclass(frozen=True)
+class HistoricalWriteTiming:
+    schema_seconds: float = 0.0
+    session_seconds: float = 0.0
+    vessel_seconds: float = 0.0
+    staging_seconds: float = 0.0
+    insert_seconds: float = 0.0
+    commit_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -120,6 +131,8 @@ class PostgresHistoricalWriter(HistoricalWriter):
         self._connection: Any | None = None
         self._status = "HISTORICAL PERSISTENCE ENABLED"
         self.last_result: HistoricalWriteResult | None = None
+        self.last_timing = HistoricalWriteTiming()
+        self._schema_ready = False
 
     @property
     def status(self) -> str:
@@ -153,13 +166,21 @@ class PostgresHistoricalWriter(HistoricalWriter):
             return result
 
         session_id = uuid4()
+        timing = HistoricalWriteTiming()
         try:
             connection = self._get_connection()
-            self._ensure_schema(connection)
+            if not self._schema_ready:
+                started = time.monotonic()
+                self._ensure_schema(connection)
+                timing = replace(timing, schema_seconds=time.monotonic() - started)
+                self._schema_ready = True
             persisted = 0
             duplicates = 0
             with connection.cursor() as cursor:
+                started = time.monotonic()
                 region_id = self._region_id(cursor, region_name_for_bbox(bbox))
+                timing = replace(timing, session_seconds=time.monotonic() - started)
+                started = time.monotonic()
                 cursor.execute(
                     """
                     INSERT INTO collection_sessions
@@ -182,6 +203,8 @@ class PostgresHistoricalWriter(HistoricalWriter):
                         "AISSTREAM",
                     ),
                 )
+                timing = replace(timing, session_seconds=time.monotonic() - started)
+                started = time.monotonic()
                 vessel_rows = []
                 observation_rows = []
                 for observation in valid_observations:
@@ -234,6 +257,8 @@ class PostgresHistoricalWriter(HistoricalWriter):
                     vessel_rows,
                 )
 
+                timing = replace(timing, vessel_seconds=time.monotonic() - started)
+                started = time.monotonic()
                 cursor.execute(
                     """
                     CREATE TEMP TABLE _mie_ais_observations (
@@ -267,6 +292,8 @@ class PostgresHistoricalWriter(HistoricalWriter):
                     for row in observation_rows:
                         copy.write_row(row)
 
+                timing = replace(timing, staging_seconds=time.monotonic() - started)
+                started = time.monotonic()
                 cursor.execute(
                     """
                     INSERT INTO ais_observations
@@ -294,8 +321,12 @@ class PostgresHistoricalWriter(HistoricalWriter):
                 )
                 persisted = len(cursor.fetchall())
                 duplicates = max(0, len(observation_rows) - persisted)
+                timing = replace(timing, insert_seconds=time.monotonic() - started)
 
+            started = time.monotonic()
             connection.commit()
+            timing = replace(timing, commit_seconds=time.monotonic() - started)
+            self.last_timing = timing
             self._status = "HISTORICAL DATABASE AVAILABLE"
             result = HistoricalWriteResult(
                 status=self.status,
@@ -308,6 +339,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
             self.last_result = result
             return result
         except Exception as exc:
+            self.last_timing = timing
             self._rollback_and_close()
             self._status = "HISTORICAL DATABASE UNAVAILABLE"
             LOGGER.exception("Historical persistence failed")
@@ -368,6 +400,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
         except Exception:
             pass
         self._connection = None
+        self._schema_ready = False
 
     def close(self) -> None:
         if self._connection is not None:
@@ -376,6 +409,7 @@ class PostgresHistoricalWriter(HistoricalWriter):
             except Exception:
                 pass
             self._connection = None
+            self._schema_ready = False
 
 
 @dataclass(frozen=True)
