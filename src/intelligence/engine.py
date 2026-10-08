@@ -316,4 +316,5 @@ class MaritimeIntelligenceEngine:
                 ),
             )
             contexts[region] = context
+        self.environmental_contexts = contexts
 
