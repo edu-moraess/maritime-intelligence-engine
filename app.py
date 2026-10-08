@@ -132,6 +132,7 @@ def _with_settings(
     config_error: str | None = None,
     collection_seconds: float | None = None,
     historical_persistence_enabled: bool | None = None,
+    historical_retention_days: int | None = None,
 ) -> AppSettings:
     """Return settings with only the requested runtime values changed."""
     active = tuple(bboxes if bboxes is not None else settings.monitoring_bboxes)
@@ -160,6 +161,11 @@ def _with_settings(
             if historical_persistence_enabled is None
             else historical_persistence_enabled
         ),
+        historical_retention_days=(
+            settings.historical_retention_days
+            if historical_retention_days is None
+            else historical_retention_days
+        ),
     )
 
 
@@ -186,6 +192,7 @@ def _engine_signature(settings: AppSettings) -> tuple:
         settings.stale_after_seconds,
         settings.provider,
         settings.config_error,
+        settings.historical_retention_days,
     )
 
 
