@@ -58,6 +58,7 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
                 "current": ",".join(MARINE_VARIABLES),
                 "timezone": "GMT",
                 "cell_selection": "sea",
+                "wind_speed_unit": "kn",
             }
         )
         request = Request(
@@ -90,6 +91,10 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
             swell_height_m=_number(current.get("swell_wave_height")),
             swell_direction_deg=_number(current.get("swell_wave_direction")),
             ocean_current_velocity=_number(current.get("ocean_current_velocity")),
+            product="Open-Meteo Marine",
+            data_kind="numerical_model_forecast",
+            retrieved_at=datetime.now(timezone.utc),
+            forecast=True,
             ocean_current_direction_deg=_number(current.get("ocean_current_direction")),
             sea_surface_temperature_c=_number(current.get("sea_surface_temperature")),
         )
