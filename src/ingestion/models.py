@@ -105,6 +105,12 @@ class EnvironmentalObservation:
     ocean_current_velocity: float | None = None
     ocean_current_direction_deg: float | None = None
     sea_surface_temperature_c: float | None = None
+    wind_speed_10m_kmh: float | None = None
+    wind_direction_10m_deg: float | None = None
+    wind_gusts_10m_kmh: float | None = None
+    precipitation_mm: float | None = None
+    visibility_m: float | None = None
+    pressure_msl_hpa: float | None = None
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -122,6 +128,11 @@ class EnvironmentalObservation:
             "wind_wave_height_m",
             "swell_height_m",
             "ocean_current_velocity",
+            "wind_speed_10m_kmh",
+            "wind_gusts_10m_kmh",
+            "precipitation_mm",
+            "visibility_m",
+            "pressure_msl_hpa",
         ):
             value = getattr(self, name)
             if value is not None and value < 0:
@@ -130,6 +141,7 @@ class EnvironmentalObservation:
             "wave_direction_deg",
             "swell_direction_deg",
             "ocean_current_direction_deg",
+            "wind_direction_10m_deg",
         ):
             value = getattr(self, name)
             if value is not None and not 0.0 <= value <= 360.0:
@@ -151,6 +163,12 @@ class EnvironmentalObservation:
             "ocean_current_velocity": self.ocean_current_velocity,
             "ocean_current_direction_deg": self.ocean_current_direction_deg,
             "sea_surface_temperature_c": self.sea_surface_temperature_c,
+            "wind_speed_10m_kmh": self.wind_speed_10m_kmh,
+            "wind_direction_10m_deg": self.wind_direction_10m_deg,
+            "wind_gusts_10m_kmh": self.wind_gusts_10m_kmh,
+            "precipitation_mm": self.precipitation_mm,
+            "visibility_m": self.visibility_m,
+            "pressure_msl_hpa": self.pressure_msl_hpa,
         }
 
 
