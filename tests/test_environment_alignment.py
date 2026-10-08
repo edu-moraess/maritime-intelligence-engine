@@ -121,9 +121,10 @@ def test_alignment_exposes_future_valid_time_as_signed_offset() -> None:
         _ais(), context, source="open-meteo-marine"
     )[0]
 
-    assert result.status == "ALIGNED"
+    assert result.status == "FUTURE"
     assert result.temporal_age_seconds == 60.0
     assert result.temporal_offset_seconds == 60.0
+    assert result.usable is False
 
 
 def test_alignment_blocks_future_state_by_default() -> None:
