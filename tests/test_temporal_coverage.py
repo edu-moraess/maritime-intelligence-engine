@@ -5,6 +5,7 @@ import numpy as np
 from src.ingestion.models import AISObservation
 from src.ml.temporal.calibration import HistoricalScoreBaseline, calibrate_anomaly
 from src.ml.temporal.coverage import build_masked_windows, resample_track, stitch_track
+from src.ml.temporal.preprocess import build_temporal_sequences
 
 
 def _obs(mmsi: str, seconds: int, lat: float = 25.7) -> AISObservation:
@@ -59,3 +60,11 @@ def test_calibration_requires_percentile_absolute_threshold_and_persistence():
     assert result.percentile >= 90
     assert result.baseline_threshold == 0.5
     assert result.alert is True
+
+
+def test_temporal_preprocess_can_build_t16_from_fixed_minute_grid():
+    observations = [_obs("123456789", i * 60) for i in range(20)]
+    sequences = build_temporal_sequences({"123456789": observations}, sequence_length=16)
+    assert sequences
+    assert sequences[0].sequence.shape == (16, 8)
+    assert sequences[0].mask is not None
