@@ -50,9 +50,11 @@ def test_workspace_modules_live_in_main_content():
 def test_historical_persistence_lives_under_system_controls():
     source = _source(WORKSPACE_PATH)
     system_block = source[source.index('with st.popover("SYSTEM"'):]
-    assert "Historical Persistence" in system_block
-    assert "st.checkbox(" in system_block
     assert "_render_historical_persistence(engine, settings)" in system_block
+    helper_start = source.index("def _render_historical_persistence(")
+    helper_block = source[helper_start:source.index("\ndef ", helper_start + 1)]
+    assert "Historical Persistence" in helper_block
+    assert "st.checkbox(" in helper_block
 
 
 def test_overview_places_map_controls_before_workspace_modules():
