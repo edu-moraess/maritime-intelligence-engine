@@ -1,4 +1,4 @@
-"""Deterministic environmental features derived from aligned evidence."""
+"""Deterministic environmental features derived from aligned data."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def derive_environmental_features(
     vessel_sog_knots: float | None,
     vessel_cog_degrees: float | None,
 ) -> EnvironmentalFeatures | None:
-    """Derive contextual features only from a usable EnvironmentalAlignment.
+    """Derive contextual features only from a usable EnvironmentalStateAlignment.
 
     No value is created when the alignment is stale, unavailable, or spatially
     invalid. Current-relative speed is the magnitude of the vector difference
