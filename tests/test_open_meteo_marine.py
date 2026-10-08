@@ -48,7 +48,9 @@ def test_open_meteo_marine_provider_parses_current(monkeypatch) -> None:
 
     assert observation.source == "open-meteo-marine"
     assert observation.region == "B"
-    assert observation.observed_at.tzinfo == timezone.utc
+    assert observation.nature == "ENVIRONMENTAL_MODEL_STATE"
+    assert observation.observed_at is None
+    assert observation.model_validity_time.tzinfo == timezone.utc
     assert observation.latitude == 51.02
     assert observation.wave_height_m == 1.3
     assert observation.ocean_current_velocity == 0.18
