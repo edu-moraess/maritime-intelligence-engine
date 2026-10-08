@@ -59,7 +59,7 @@ def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
 
 def _unified_map_zoom(
     rows: list[dict],
-    bboxes: tuple[RegionBBox, ...],
+    bboxes: tuple[RegionBBox, ...] = (),
     *,
     min_zoom: float = 1.5,
     max_zoom: float = 9.0,
