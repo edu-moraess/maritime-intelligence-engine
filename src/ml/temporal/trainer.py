@@ -79,6 +79,7 @@ class TemporalTrainer:
             return TrainingResult(ok=False, reason="No sequences provided for training.", seed=cfg.seed, architecture=architecture)
 
         arrays = [np.asarray(s.sequence, dtype=np.float32) for s in sequences]
+        masks = [np.ones(a.shape[0], dtype=np.float32) if s.mask is None else np.asarray(s.mask, dtype=np.float32) for s, a in zip(sequences, arrays)]
         if any(a.ndim != 2 or a.shape[1] != cfg.input_dim for a in arrays):
             return TrainingResult(ok=False, reason="Invalid sequence shapes.", seed=cfg.seed, architecture=architecture)
         if any(not np.isfinite(a).all() for a in arrays):
@@ -104,6 +105,8 @@ class TemporalTrainer:
             val_idx = np.array([], dtype=int)
         train_arrays = [arrays[i] for i in train_idx]
         val_arrays = [arrays[i] for i in val_idx] if len(val_idx) else []
+        train_masks = [masks[i] for i in train_idx]
+        val_masks = [masks[i] for i in val_idx] if len(val_idx) else []
 
         try:
             scaler = TemporalSequenceScaler()
@@ -124,9 +127,13 @@ class TemporalTrainer:
         model_cls = GRUTemporalAutoencoder if architecture == "gru" else TCNAutoencoder
         model = model_cls(cfg.input_dim, cfg.hidden_dim, cfg.latent_dim, cfg.num_layers).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
-        criterion = nn.MSELoss()
+        def masked_mse(pred, target, mask):
+            weights = mask.expand_as(target)
+            return (((pred - target) ** 2) * weights).sum() / weights.sum().clamp_min(1.0)
         x_train_t = torch.from_numpy(x_train).to(device)
+        mask_train_t = torch.from_numpy(np.stack(train_masks)).to(device).unsqueeze(-1)
         x_val_t = torch.from_numpy(x_val).to(device) if x_val is not None else None
+        mask_val_t = torch.from_numpy(np.stack(val_masks)).to(device).unsqueeze(-1) if val_masks else None
 
         started = time.monotonic()
         best_loss = float("inf")
@@ -143,7 +150,7 @@ class TemporalTrainer:
                 model.train()
                 optimizer.zero_grad()
                 rec, _ = model(x_train_t)
-                loss = criterion(rec, x_train_t)
+                loss = masked_mse(rec, x_train_t, mask_train_t)
                 if not torch.isfinite(loss):
                     return TrainingResult(False, "Non-finite training loss.", n_train=len(train_idx), n_validation=len(val_idx), epochs_completed=epochs_done, training_seconds=time.monotonic()-started, device=device_str, training_mode=mode, seed=cfg.seed, training_started=True, architecture=architecture)
                 loss.backward()
@@ -152,7 +159,7 @@ class TemporalTrainer:
                 epochs_done = epoch
                 model.eval()
                 with torch.no_grad():
-                    monitor = float(criterion(model(x_val_t)[0], x_val_t).item()) if x_val_t is not None else float(loss.item())
+                    monitor = float(masked_mse(model(x_val_t)[0], x_val_t, mask_val_t).item()) if x_val_t is not None else float(loss.item())
                 if monitor < best_loss and np.isfinite(monitor):
                     best_loss, best_epoch = monitor, epoch
                     best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
