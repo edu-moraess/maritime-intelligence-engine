@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from src.environment.alignment import EnvironmentalAlignmentEngine
+from src.environment.alignment import EnvironmentalStateAlignmentEngine
 from src.environment.context import EnvironmentalContext
 from src.ingestion.models import AISObservation, EnvironmentalObservation
 
@@ -41,7 +41,7 @@ def test_alignment_selects_nearest_temporal_state_per_source() -> None:
         ),
     )
 
-    result = EnvironmentalAlignmentEngine().align(_ais(), context)
+    result = EnvironmentalStateAlignmentEngine().align(_ais(), context)
 
     marine = next(item for item in result if item.source == "open-meteo-marine")
     weather = next(item for item in result if item.source == "open-meteo-weather")
@@ -58,7 +58,7 @@ def test_alignment_marks_stale_state_without_discarding_provenance() -> None:
         observations=(_env("copernicus-marine", when=BASE - timedelta(hours=2)),),
     )
 
-    result = EnvironmentalAlignmentEngine(max_temporal_age_seconds=3600).align(
+    result = EnvironmentalStateAlignmentEngine(max_temporal_age_seconds=3600).align(
         _ais(), context, source="copernicus-marine"
     )[0]
 
@@ -76,7 +76,7 @@ def test_alignment_marks_spatial_mismatch_as_out_of_bounds() -> None:
         ),
     )
 
-    result = EnvironmentalAlignmentEngine(max_spatial_distance_km=10).align(
+    result = EnvironmentalStateAlignmentEngine(max_spatial_distance_km=10).align(
         _ais(), context, source="open-meteo-marine"
     )[0]
 
@@ -89,7 +89,7 @@ def test_alignment_marks_spatial_mismatch_as_out_of_bounds() -> None:
 def test_alignment_reports_unavailable_source_without_synthetic_data() -> None:
     context = EnvironmentalContext(region="region_1", observations=())
 
-    result = EnvironmentalAlignmentEngine().align(
+    result = EnvironmentalStateAlignmentEngine().align(
         _ais(), context, source="copernicus-marine"
     )[0]
 
