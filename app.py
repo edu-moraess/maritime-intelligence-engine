@@ -417,7 +417,7 @@ def _render_collection_timer(seconds: float) -> None:
 def _render_environmental_telemetry(snapshot) -> None:
     """Render compact environmental alignment telemetry when available."""
     telemetry = getattr(snapshot, "environmental_telemetry", {}) or {}
-    if not telemetry or telemetry.get("alignments", 0) == 0:
+    if not telemetry:
         return
 
     aligned = int(telemetry.get("aligned", 0))
