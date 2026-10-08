@@ -40,6 +40,7 @@ def test_open_meteo_marine_provider_parses_current(monkeypatch) -> None:
         assert "marine-api.open-meteo.com" in request.full_url
         assert "current=" in request.full_url
         assert "cell_selection=sea" in request.full_url
+        assert "wind_speed_unit=kn" in request.full_url
         assert timeout == 10.0
         return FakeResponse(payload)
 
