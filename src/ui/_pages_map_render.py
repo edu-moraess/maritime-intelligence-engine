@@ -54,7 +54,12 @@ def _apply_map_selection(event) -> None:
         return
     mmsi = str(mmsi).strip()
     if mmsi.isdigit() and len(mmsi) == 9:
-        # on_select="rerun" already schedules the Streamlit rerun. A second\n    # st.rerun() here can invalidate the transient pydeck selection payload.\n    # Persist the MMSI only; the component-triggered rerun renders the card.\n    if st.session_state.get("selected_mmsi") != mmsi:\n        st.session_state.selected_mmsi = mmsi\n
+        # on_select="rerun" already schedules the Streamlit rerun. A second
+        # st.rerun() here can invalidate the transient pydeck selection payload.
+        # Persist the MMSI only; the component-triggered rerun renders the card.
+        if st.session_state.get("selected_mmsi") != mmsi:
+            st.session_state.selected_mmsi = mmsi
+
 
 def _select_vessel(snapshot: EngineSnapshot, label: str) -> VesselSnapshot | None:
     if not snapshot.vessels:
