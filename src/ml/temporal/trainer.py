@@ -110,7 +110,7 @@ class TemporalTrainer:
 
         try:
             scaler = TemporalSequenceScaler()
-            scaler.fit(train_arrays)
+            scaler.fit(train_arrays, masks=train_masks)
             x_train = scaler.transform(train_arrays)
             x_val = scaler.transform(val_arrays) if val_arrays else None
         except Exception as exc:
