@@ -86,10 +86,10 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
             key="overview_min_speed",
         )
         include_stale = st.checkbox(
-            "Include stale session targets",
-            value=False,
+            "Keep session targets visible",
+            value=True,
             key="overview_include_stale",
-            help="Off keeps the operational map live-only. Session observations and temporal tracks are never deleted.",
+            help="Keeps each vessel at its last AIS-reported position for review. Stale targets remain visibly marked until updated or the session is cleared.",
         )
         map_style = st.selectbox(
             "Basemap",
