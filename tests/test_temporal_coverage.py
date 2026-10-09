@@ -8,13 +8,13 @@ from src.ml.temporal.coverage import build_masked_windows, resample_track, stitc
 from src.ml.temporal.preprocess import build_temporal_sequences
 
 
-def _obs(mmsi: str, seconds: int, lat: float = 25.7) -> AISObservation:
+def _obs(mmsi: str, seconds: int, lat: float = 25.7, sog: float = 10.0) -> AISObservation:
     return AISObservation(
         mmsi=mmsi,
         latitude=lat + seconds * 0.00001,
         longitude=-80.1 + seconds * 0.00001,
         received_at=datetime(2026, 10, 8, tzinfo=timezone.utc) + timedelta(seconds=seconds),
-        sog_knots=10.0,
+        sog_knots=sog,
         cog_degrees=90.0,
         heading_degrees=90.0,
         ais_timestamp_second=seconds % 60,
