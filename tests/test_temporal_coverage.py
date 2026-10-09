@@ -68,3 +68,18 @@ def test_temporal_preprocess_can_build_t16_from_fixed_minute_grid():
     assert sequences
     assert sequences[0].sequence.shape == (16, 8)
     assert sequences[0].mask is not None
+
+
+def test_resampled_windows_are_non_overlapping_and_keep_newest_cap():
+    observations = [_obs("123456789", i * 60, sog=float(i)) for i in range(80)]
+    sequences = build_temporal_sequences(
+        {"123456789": observations}, sequence_length=10, max_windows_per_track=3
+    )
+
+    assert len(sequences) == 3
+    starts = [float(sequence.sequence[0, 2]) for sequence in sequences]
+    np.testing.assert_allclose(starts, [50.0, 60.0, 70.0], atol=1e-5)
+    for sequence, start in zip(sequences, [50.0, 60.0, 70.0]):
+        np.testing.assert_allclose(
+            sequence.sequence[:, 2], np.arange(start, start + 10.0), atol=1e-5
+        )
