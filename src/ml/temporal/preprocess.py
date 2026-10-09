@@ -31,18 +31,67 @@ class TemporalSequenceScaler:
         self.scale_: np.ndarray | None = None
         self.n_features_: int | None = None
 
-    def fit(self, sequences: Sequence[np.ndarray]) -> "TemporalSequenceScaler":
+    def fit(
+        self,
+        sequences: Sequence[np.ndarray],
+        masks: Sequence[np.ndarray] | None = None,
+    ) -> "TemporalSequenceScaler":
+        """Fit feature statistics using valid timesteps only.
+
+        Masks contain one weight per timestep (0 = excluded, 1 = fully
+        included). Fractional weights are supported. Omitting masks preserves
+        legacy behavior by treating every timestep as valid.
+        """
         if not sequences:
             raise ValueError("Cannot fit scaler on empty sequence list.")
-        stacked = np.concatenate([np.asarray(s, dtype=np.float64).reshape(-1, s.shape[-1]) for s in sequences], axis=0)
-        if stacked.ndim != 2 or stacked.shape[0] == 0:
+        if masks is not None and len(masks) != len(sequences):
+            raise ValueError("Masks count must match sequences count.")
+
+        feature_count: int | None = None
+        weighted_sum: np.ndarray | None = None
+        weighted_square_sum: np.ndarray | None = None
+        total_weight = 0.0
+
+        for index, sequence in enumerate(sequences):
+            arr = np.asarray(sequence, dtype=np.float64)
+            if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
+                raise ValueError(f"Invalid sequence shape at index {index}: {arr.shape}")
+            if not np.isfinite(arr).all():
+                raise ValueError("Non-finite values in training sequences.")
+            if feature_count is None:
+                feature_count = int(arr.shape[1])
+                weighted_sum = np.zeros(feature_count, dtype=np.float64)
+                weighted_square_sum = np.zeros(feature_count, dtype=np.float64)
+            elif arr.shape[1] != feature_count:
+                raise ValueError("Inconsistent feature dimensions in training sequences.")
+
+            if masks is None:
+                weights = np.ones(arr.shape[0], dtype=np.float64)
+            else:
+                weights = np.asarray(masks[index], dtype=np.float64).reshape(-1)
+                if weights.shape[0] != arr.shape[0]:
+                    raise ValueError(f"Mask length mismatch at sequence index {index}.")
+                if not np.isfinite(weights).all() or np.any((weights < 0) | (weights > 1)):
+                    raise ValueError(f"Invalid mask weights at sequence index {index}.")
+
+            weight_sum = float(weights.sum())
+            if weight_sum == 0:
+                continue
+            assert weighted_sum is not None and weighted_square_sum is not None
+            weighted_sum += (arr * weights[:, None]).sum(axis=0)
+            weighted_square_sum += ((arr * arr) * weights[:, None]).sum(axis=0)
+            total_weight += weight_sum
+
+        if feature_count is None or weighted_sum is None or weighted_square_sum is None:
             raise ValueError("Invalid sequences for scaler fit.")
-        if not np.isfinite(stacked).all():
-            raise ValueError("Non-finite values in training sequences.")
-        self.mean_ = stacked.mean(axis=0)
-        std = stacked.std(axis=0)
+        if total_weight <= 0:
+            raise ValueError("Cannot fit scaler: no valid timesteps in training masks.")
+
+        self.mean_ = weighted_sum / total_weight
+        variance = np.maximum(weighted_square_sum / total_weight - self.mean_ ** 2, 0.0)
+        std = np.sqrt(variance)
         self.scale_ = np.where(std < _EPS, 1.0, std)
-        self.n_features_ = int(stacked.shape[1])
+        self.n_features_ = feature_count
         return self
 
     def transform(self, sequences: Sequence[np.ndarray]) -> np.ndarray:
@@ -57,8 +106,12 @@ class TemporalSequenceScaler:
             out.append(scaled.astype(np.float32))
         return np.stack(out, axis=0)
 
-    def fit_transform(self, sequences: Sequence[np.ndarray]) -> np.ndarray:
-        self.fit(sequences)
+    def fit_transform(
+        self,
+        sequences: Sequence[np.ndarray],
+        masks: Sequence[np.ndarray] | None = None,
+    ) -> np.ndarray:
+        self.fit(sequences, masks=masks)
         return self.transform(sequences)
 
     @classmethod
@@ -240,7 +293,8 @@ def _build_resampled_sequences(
     mmsi: str,
 ) -> list[TemporalSequence]:
     """Cria janelas em grade de 1 minuto com máscara de ausência limitada."""
-    result: list[TemporalSequence] = []
+    candidates: list[TemporalSequence] = []
+    cap = max(1, int(max_windows_per_track))
     for segment in stitch_track(observations):
         sampled = resample_track(segment)
         if sampled is None:
@@ -257,9 +311,10 @@ def _build_resampled_sequences(
         ).astype(np.float64)
         if len(values) < sequence_length:
             continue
-        for start in range(0, len(values) - sequence_length + 1):
-            if len(result) >= max_windows_per_track:
-                break
+        # Step by the full window length: adjacent windows never overlap.
+        # Gather candidates across segments first so the per-track cap can
+        # consistently retain the newest eligible windows.
+        for start in range(0, len(values) - sequence_length + 1, sequence_length):
             mask = sampled.mask[start : start + sequence_length].astype(np.float32)
             if mask.shape[0] != sequence_length or float(1.0 - np.mean(mask)) > 0.20:
                 continue
@@ -288,7 +343,7 @@ def _build_resampled_sequences(
             ).astype(np.float32)
             if not np.isfinite(mat).all():
                 continue
-            result.append(
+            candidates.append(
                 TemporalSequence(
                     mmsi=str(mmsi),
                     sequence=mat,
@@ -298,9 +353,7 @@ def _build_resampled_sequences(
                     mask=mask,
                 )
             )
-        if len(result) >= max_windows_per_track:
-            break
-    return result
+    return candidates[-cap:]
 
 
 def build_temporal_sequence(
