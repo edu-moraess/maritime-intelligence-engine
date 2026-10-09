@@ -43,3 +43,48 @@ def test_motion_deltas_are_converted_from_degrees_to_metres() -> None:
     assert result is not None
     assert np.isclose(result[1, 0], 111.132, atol=0.5)
     assert np.isclose(result[1, 1], 0.0, atol=1e-6)
+
+
+
+def test_scaler_excludes_masked_timesteps_from_statistics() -> None:
+    from src.ml.temporal.preprocess import TemporalSequenceScaler
+
+    sequences = [np.array([[1.0, 10.0], [3.0, 30.0], [1000.0, 5000.0]])]
+    masks = [np.array([1.0, 1.0, 0.0])]
+
+    scaler = TemporalSequenceScaler().fit(sequences, masks=masks)
+
+    np.testing.assert_allclose(scaler.mean_, [2.0, 20.0])
+    np.testing.assert_allclose(scaler.scale_, [1.0, 10.0])
+
+
+def test_scaler_supports_fractional_mask_weights() -> None:
+    from src.ml.temporal.preprocess import TemporalSequenceScaler
+
+    sequences = [np.array([[0.0], [10.0]])]
+    masks = [np.array([1.0, 0.5])]
+
+    scaler = TemporalSequenceScaler().fit(sequences, masks=masks)
+
+    np.testing.assert_allclose(scaler.mean_, [10.0 / 3.0])
+    np.testing.assert_allclose(scaler.scale_, [np.sqrt(200.0 / 9.0)])
+
+
+def test_scaler_rejects_invalid_or_empty_masks() -> None:
+    import pytest
+    from src.ml.temporal.preprocess import TemporalSequenceScaler
+
+    sequence = np.array([[1.0], [2.0]])
+    with pytest.raises(ValueError, match="Mask length mismatch"):
+        TemporalSequenceScaler().fit([sequence], masks=[np.array([1.0])])
+    with pytest.raises(ValueError, match="no valid timesteps"):
+        TemporalSequenceScaler().fit([sequence], masks=[np.array([0.0, 0.0])])
+
+
+def test_scaler_without_masks_preserves_all_timestep_behavior() -> None:
+    from src.ml.temporal.preprocess import TemporalSequenceScaler
+
+    scaler = TemporalSequenceScaler().fit([np.array([[1.0], [3.0]])])
+
+    np.testing.assert_allclose(scaler.mean_, [2.0])
+    np.testing.assert_allclose(scaler.scale_, [1.0])
