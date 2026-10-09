@@ -1,6 +1,7 @@
 """Temporal deep-learning path for real AIS trajectories."""
 from src.ml.temporal.adapter import TemporalAnomalyAdapter
 from src.ml.temporal.benchmark import BenchmarkResult, compare_if_vs_deep, compare_snapshot, if_scores_from_embeddings
+from src.ml.temporal.checkpoint import LoadedTemporalCheckpoint, feature_schema_sha256, load_temporal_checkpoint, save_temporal_checkpoint
 from src.ml.temporal.diagnostics import ADAPTIVE_SEQUENCE_LENGTHS, TemporalTrackDiagnostics, analyze_temporal_tracks, select_adaptive_sequence_length
 from src.ml.temporal.inference import InferenceResult, score_sequences
 from src.ml.temporal.model import GRUTemporalAutoencoder, TCNAutoencoder, TemporalResidualBlock, torch_available
@@ -17,6 +18,7 @@ __all__ = [
     "MINIMUM_TRACKS_FOR_DEEP_MODEL", "MINIMUM_POINTS_PER_TRACK", "DEFAULT_SEQUENCE_LENGTH", "VALID_TEMPORAL_STATUSES",
     "ResampledTrack", "build_masked_windows", "resample_track", "stitch_track",
     "CalibratedAnomaly", "HistoricalScoreBaseline", "calibrate_anomaly",
+    "LoadedTemporalCheckpoint", "feature_schema_sha256", "save_temporal_checkpoint", "load_temporal_checkpoint",
 ]
 
 from src.ml.temporal.coverage import ResampledTrack, build_masked_windows, resample_track, stitch_track
