@@ -1,6 +1,7 @@
 """Temporal anomaly adapter — parallel path to PCA/IF."""
 from __future__ import annotations
 
+from src.ml.temporal.checkpoint import load_temporal_checkpoint, save_temporal_checkpoint
 from src.ml.temporal.diagnostics import select_adaptive_sequence_length
 from src.ml.temporal.inference import score_sequences
 from src.ml.temporal.model import torch_available
@@ -34,7 +35,7 @@ class TemporalAnomalyAdapter:
             return self.sequence_length
         return select_adaptive_sequence_length(tracks, minimum_tracks=self.minimum_tracks)
 
-    def fit(self, tracks):
+    def fit(self, tracks, *, checkpoint_path=None):
         if not torch_available():
             self.result = TemporalFitResult(status="UNAVAILABLE", reason="PyTorch is not installed or cannot be imported.")
             return self.result
@@ -69,6 +70,38 @@ class TemporalAnomalyAdapter:
         if not tr.ok:
             self.result = TemporalFitResult(status="FAILED", reason=tr.reason, scores=[], **base)
             return self.result
+        if checkpoint_path is not None:
+            try:
+                save_temporal_checkpoint(
+                    checkpoint_path,
+                    model_state=tr.model_state,
+                    scaler_mean=tr.scaler_mean,
+                    scaler_scale=tr.scaler_scale,
+                    architecture=tr.architecture,
+                    sequence_length=selected_length,
+                    input_dim=cfg.input_dim,
+                    hidden_dim=cfg.hidden_dim,
+                    latent_dim=cfg.latent_dim,
+                    num_layers=cfg.num_layers,
+                    training_metadata={
+                        "seed": int(tr.seed),
+                        "training_mode": str(tr.training_mode),
+                        "epochs_completed": int(tr.epochs_completed),
+                        "best_epoch": int(tr.best_epoch) if tr.best_epoch is not None else None,
+                        "best_loss": float(tr.best_loss) if tr.best_loss is not None else None,
+                    },
+                )
+            except Exception as e:
+                self.result = TemporalFitResult(
+                    status="FAILED",
+                    reason=f"Checkpoint save failed: {e}",
+                    scores=[],
+                    model_state=tr.model_state,
+                    scaler_mean=tr.scaler_mean,
+                    scaler_scale=tr.scaler_scale,
+                    **base,
+                )
+                return self.result
         inf = score_sequences(sequences, model_state=tr.model_state, scaler_mean=tr.scaler_mean, scaler_scale=tr.scaler_scale, input_dim=self.input_dim, hidden_dim=cfg.hidden_dim, latent_dim=cfg.latent_dim, num_layers=cfg.num_layers, device=tr.device, architecture=tr.architecture)
         if not inf.ok:
             self.result = TemporalFitResult(status="FAILED", reason=f"Inference failed after training: {inf.reason}", scores=[], model_state=tr.model_state, scaler_mean=tr.scaler_mean, scaler_scale=tr.scaler_scale, **base)
@@ -90,6 +123,97 @@ class TemporalAnomalyAdapter:
         if not inf.ok:
             return TemporalFitResult(status="FAILED", reason=inf.reason, sequence_length=selected_length, architecture=self.result.architecture, method=self.result.method)
         return TemporalFitResult(status="READY", reason="Inference with prior model.", n_tracks_usable=len(self._unique_mmsis(sequences)), sequence_length=selected_length, scores=list(inf.scores), sequences=list(sequences), model_state=self.result.model_state, scaler_mean=self.result.scaler_mean, scaler_scale=self.result.scaler_scale, inference_available=True, architecture=self.result.architecture, method=self.result.method)
+
+    def predict_from_checkpoint(self, tracks, checkpoint_path):
+        """Run inference from a validated checkpoint without starting training."""
+        if not torch_available():
+            return TemporalFitResult(status="UNAVAILABLE", reason="PyTorch is not installed or cannot be imported.")
+        try:
+            checkpoint = load_temporal_checkpoint(checkpoint_path)
+        except Exception as e:
+            return TemporalFitResult(status="FAILED", reason=f"Checkpoint load failed: {e}")
+
+        selected_length = checkpoint.sequence_length
+        try:
+            sequences = build_temporal_sequences(
+                tracks,
+                sequence_length=selected_length,
+                minimum_points=selected_length,
+            )
+        except Exception as e:
+            return TemporalFitResult(
+                status="FAILED",
+                reason=f"Preprocessing failed: {e}",
+                sequence_length=selected_length,
+                architecture=checkpoint.architecture,
+            )
+        if not sequences:
+            return TemporalFitResult(
+                status="NOT_READY",
+                reason="No eligible sequences for the checkpoint sequence length.",
+                sequence_length=selected_length,
+                architecture=checkpoint.architecture,
+                input_dim=len(checkpoint.feature_names),
+            )
+        if any(tuple(s.feature_names) != checkpoint.feature_names for s in sequences):
+            return TemporalFitResult(
+                status="FAILED",
+                reason="Checkpoint feature schema does not match preprocessed sequences.",
+                sequence_length=selected_length,
+                architecture=checkpoint.architecture,
+                input_dim=len(checkpoint.feature_names),
+            )
+
+        model = checkpoint.model
+        try:
+            inf = score_sequences(
+                sequences,
+                model_state=model.state_dict(),
+                scaler_mean=checkpoint.scaler_mean,
+                scaler_scale=checkpoint.scaler_scale,
+                input_dim=int(model.input_dim),
+                hidden_dim=int(model.hidden_dim),
+                latent_dim=int(model.latent_dim),
+                num_layers=int(model.num_layers),
+                device="cpu",
+                architecture=checkpoint.architecture,
+            )
+        except Exception as e:
+            return TemporalFitResult(
+                status="FAILED",
+                reason=f"Checkpoint inference failed: {e}",
+                sequence_length=selected_length,
+                architecture=checkpoint.architecture,
+                input_dim=len(checkpoint.feature_names),
+            )
+        if not inf.ok:
+            return TemporalFitResult(
+                status="FAILED",
+                reason=f"Checkpoint inference failed: {inf.reason}",
+                sequence_length=selected_length,
+                architecture=checkpoint.architecture,
+                input_dim=len(checkpoint.feature_names),
+            )
+        return TemporalFitResult(
+            status="READY",
+            reason="Inference completed from a validated checkpoint; no training was run.",
+            n_tracks_seen=len(tracks),
+            n_tracks_usable=len(self._unique_mmsis(sequences)),
+            sequence_length=selected_length,
+            input_dim=len(checkpoint.feature_names),
+            method=f"{checkpoint.architecture.upper()} Temporal Autoencoder",
+            architecture=checkpoint.architecture,
+            scores=list(inf.scores),
+            sequences=list(sequences),
+            model_state=model.state_dict(),
+            scaler_mean=checkpoint.scaler_mean.copy(),
+            scaler_scale=checkpoint.scaler_scale.copy(),
+            inference_available=True,
+            training_mode=str(checkpoint.training_metadata.get("training_mode", "checkpoint")),
+            seed=int(checkpoint.training_metadata.get("seed", self.seed)),
+            training_completed=False,
+            training_started=False,
+        )
 
     @property
     def status(self):
