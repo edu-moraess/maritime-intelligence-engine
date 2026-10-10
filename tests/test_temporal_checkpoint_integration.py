@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pytest
 
 from src.ingestion.models import AISObservation
 from src.ml.temporal.adapter import TemporalAnomalyAdapter
-from src.ml.temporal.model import torch_available
+from src.ml.temporal.checkpoint import save_temporal_checkpoint
+from src.ml.temporal.model import TCNAutoencoder, torch_available
 from src.ml.temporal.trainer import TemporalTrainer
 
 
@@ -76,3 +78,47 @@ def test_adapter_checkpoint_inference_rejects_missing_checkpoint(tmp_path):
     result = adapter.predict_from_checkpoint({}, tmp_path / "missing.pt")
     assert result.status == "FAILED"
     assert result.reason.startswith("Checkpoint load failed:")
+
+
+
+@pytest.mark.skipif(not torch_available(), reason="PyTorch unavailable")
+def test_adapter_loads_custom_capacity_tcn_checkpoint_without_training(tmp_path, monkeypatch):
+    tracks = {
+        f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02)
+        for i in range(8)
+    }
+    checkpoint_path = tmp_path / "custom-capacity.pt"
+    model = TCNAutoencoder(
+        input_dim=8,
+        hidden_dim=32,
+        latent_dim=16,
+        num_layers=4,
+        max_sequence_length=64,
+    ).eval()
+    save_temporal_checkpoint(
+        checkpoint_path,
+        model_state=model.state_dict(),
+        scaler_mean=np.zeros(8, dtype=np.float64),
+        scaler_scale=np.ones(8, dtype=np.float64),
+        architecture="tcn",
+        sequence_length=8,
+        input_dim=8,
+        hidden_dim=32,
+        latent_dim=16,
+        num_layers=4,
+        max_sequence_length=64,
+    )
+
+    def fail_if_training_is_called(*args, **kwargs):
+        raise AssertionError("checkpoint inference must not start training")
+
+    monkeypatch.setattr(TemporalTrainer, "train", fail_if_training_is_called)
+    restored = TemporalAnomalyAdapter(sequence_length=32).predict_from_checkpoint(
+        tracks, checkpoint_path
+    )
+
+    assert restored.status == "READY", restored.reason
+    assert restored.sequence_length == 8
+    assert not restored.training_started
+    assert not restored.training_completed
+    assert len(restored.scores) == 8
