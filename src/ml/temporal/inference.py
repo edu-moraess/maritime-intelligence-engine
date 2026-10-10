@@ -31,7 +31,7 @@ class InferenceResult:
 def score_sequences(
     sequences: Sequence[TemporalSequence], *, model_state, scaler_mean, scaler_scale,
     input_dim=DEFAULT_INPUT_DIM, hidden_dim=DEFAULT_HIDDEN_DIM, latent_dim=DEFAULT_LATENT_DIM,
-    num_layers=DEFAULT_NUM_LAYERS, device=None, architecture="gru",
+    num_layers=DEFAULT_NUM_LAYERS, device=None, architecture="gru", max_sequence_length=128,
 ):
     if not torch_available() or torch is None:
         return InferenceResult(False, "PyTorch is not available.", [], [], [])
@@ -78,7 +78,10 @@ def score_sequences(
         if architecture == "gru":
             model = GRUTemporalAutoencoder(input_dim, hidden_dim, latent_dim, num_layers)
         elif architecture == "tcn":
-            model = TCNAutoencoder(input_dim, hidden_dim, latent_dim, num_layers)
+            model = TCNAutoencoder(
+                input_dim, hidden_dim, latent_dim, num_layers,
+                max_sequence_length=int(max_sequence_length),
+            )
         else:
             return InferenceResult(False, f"Unsupported temporal architecture: {architecture}.", [], [], [])
         model.load_state_dict(model_state)
