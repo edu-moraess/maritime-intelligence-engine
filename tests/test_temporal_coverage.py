@@ -83,3 +83,27 @@ def test_resampled_windows_are_non_overlapping_and_keep_newest_cap():
         np.testing.assert_allclose(
             sequence.sequence[:, 2], np.arange(start, start + 10.0), atol=1e-5
         )
+
+
+def test_temporal_windows_reject_and_split_at_invalid_interpolation_gaps():
+    # A 180-second outage is below the old 300-second stitching limit but
+    # above the 120-second interpolation-validity limit.
+    observations = [
+        _obs("123456789", i * 60, sog=float(i))
+        if i < 3
+        else _obs("123456789", (i + 2) * 60, sog=float(i))
+        for i in range(80)
+    ]
+
+    sequences = build_temporal_sequences(
+        {"123456789": observations},
+        sequence_length=32,
+        max_windows_per_track=10,
+    )
+
+    assert sequences, "The continuous post-gap segment should still yield windows."
+    assert all(sequence.mask is not None for sequence in sequences)
+    assert all(np.all(np.asarray(sequence.mask) == 1.0) for sequence in sequences)
+    # The first three observations are too short to form a 32-step window;
+    # every returned window must come from the continuous segment after the gap.
+    assert all(float(sequence.sequence[0, 2]) >= 3.0 for sequence in sequences)
