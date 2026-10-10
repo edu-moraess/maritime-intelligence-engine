@@ -7,7 +7,11 @@ import numpy as np
 import pandas as pd
 
 from src.ingestion.models import AISObservation
-from src.ml.temporal.coverage import resample_track, stitch_track
+from src.ml.temporal.coverage import (
+    MAX_INTERPOLATION_GAP_SECONDS,
+    resample_track,
+    stitch_track,
+)
 from src.ml.temporal.types import (
     DEFAULT_SEQUENCE_LENGTH,
     MAX_TIME_DELTA_SECONDS,
@@ -292,10 +296,14 @@ def _build_resampled_sequences(
     max_windows_per_track: int,
     mmsi: str,
 ) -> list[TemporalSequence]:
-    """Cria janelas em grade de 1 minuto com máscara de ausência limitada."""
+    """Cria janelas de um minuto somente com posições temporalmente válidas."""
     candidates: list[TemporalSequence] = []
     cap = max(1, int(max_windows_per_track))
-    for segment in stitch_track(observations):
+    # A janela não pode atravessar uma lacuna maior que o limite de interpolação.
+    # Isso evita aceitar valores numericamente preenchidos, mas sem evidência válida.
+    for segment in stitch_track(
+        observations, max_gap_seconds=MAX_INTERPOLATION_GAP_SECONDS
+    ):
         sampled = resample_track(segment)
         if sampled is None:
             continue
@@ -316,7 +324,7 @@ def _build_resampled_sequences(
         # consistently retain the newest eligible windows.
         for start in range(0, len(values) - sequence_length + 1, sequence_length):
             mask = sampled.mask[start : start + sequence_length].astype(np.float32)
-            if mask.shape[0] != sequence_length or float(1.0 - np.mean(mask)) > 0.20:
+            if mask.shape[0] != sequence_length or not np.all(mask == 1.0):
                 continue
             window = values[start : start + sequence_length]
             delta_lat_m = np.zeros(sequence_length, dtype=np.float64)
@@ -386,9 +394,11 @@ def build_temporal_sequences(
 ) -> list[TemporalSequence]:
     """Build multiple non-overlapping windows from contiguous real-AIS segments.
 
-    Windows never cross a large receive-time gap and never overlap. Non-overlap
-    avoids overweighting long tracks and keeps future train/validation grouping
-    by MMSI meaningful. Only complete windows of real observations are emitted.
+    Windows never cross gaps larger than the interpolation-validity threshold
+    and never overlap. Non-overlap avoids overweighting long tracks and keeps
+    train/validation grouping by MMSI meaningful. Resampled windows with any
+    invalid timestep are rejected; fallback windows are built within the same
+    conservative gap boundary.
     """
     if isinstance(tracks, dict):
         items = list(tracks.items())
@@ -409,7 +419,9 @@ def build_temporal_sequences(
             result.extend(resampled)
             continue
         emitted = 0
-        for segment in _split_track_on_gaps(obs):
+        for segment in _split_track_on_gaps(
+            obs, gap_threshold_seconds=MAX_INTERPOLATION_GAP_SECONDS
+        ):
             if len(segment) < max(window, minimum):
                 continue
             # Keep the newest complete windows when a long segment exceeds the
