@@ -177,6 +177,7 @@ class TemporalAnomalyAdapter:
                 num_layers=int(model.num_layers),
                 device="cpu",
                 architecture=checkpoint.architecture,
+                max_sequence_length=int(getattr(model, "max_sequence_length", 128)),
             )
         except Exception as e:
             return TemporalFitResult(
