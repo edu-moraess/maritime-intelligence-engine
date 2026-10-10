@@ -45,8 +45,31 @@ def score_sequences(
     mmsis = [s.mmsi for s in sequences]
     if any(a.ndim != 2 or a.shape[-1] != input_dim for a in arrays) or any(not np.isfinite(a).all() for a in arrays):
         return InferenceResult(False, "NON_FINITE_INPUT", [], [], [])
+    masks = np.stack(
+        [
+            np.ones(a.shape[0], dtype=np.float32)
+            if s.mask is None
+            else np.asarray(s.mask, dtype=np.float32).reshape(-1)
+            for s, a in zip(sequences, arrays)
+        ],
+        axis=0,
+    )
+    if masks.shape != (len(arrays), arrays[0].shape[0]) or not np.isfinite(masks).all():
+        return InferenceResult(False, "INVALID_MASK_SHAPE_OR_VALUES", [], [], [])
+    if np.any((masks < 0.0) | (masks > 1.0)):
+        return InferenceResult(False, "INVALID_MASK_SHAPE_OR_VALUES", [], [], [])
+    # The temporal autoencoders do not consume masks as model inputs. Masking
+    # only the final reconstruction loss is insufficient because invalid values
+    # can still influence hidden states and valid-timestep reconstructions.
+    if not np.all(masks == 1.0):
+        return InferenceResult(
+            False,
+            "INVALID_MASK: inference requires fully valid temporal windows.",
+            [],
+            [],
+            [],
+        )
     scaled = scaler.transform(arrays)
-    masks = np.stack([np.ones(a.shape[0], dtype=np.float32) if s.mask is None else np.asarray(s.mask, dtype=np.float32) for s, a in zip(sequences, arrays)], axis=0)
     if not np.isfinite(scaled).all():
         return InferenceResult(False, "NON_FINITE_INPUT", [], [], [])
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
