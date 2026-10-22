@@ -29,6 +29,56 @@ CHECKPOINT_FORMAT = "mie.temporal.checkpoint"
 CHECKPOINT_VERSION = 1
 DEFAULT_MAX_SEQUENCE_LENGTH = 128
 
+# Defensive resource limits applied before constructing a model from metadata.
+MAX_INPUT_DIM = 128
+MAX_HIDDEN_DIM = 256
+MAX_LATENT_DIM = 128
+MAX_NUM_LAYERS = 8
+MAX_SEQUENCE_LENGTH = 1024
+
+
+def _validate_model_dimensions(
+    *,
+    input_dim: int,
+    hidden_dim: int,
+    latent_dim: int,
+    num_layers: int,
+    sequence_length: int,
+    max_sequence_length: int,
+) -> None:
+    """Reject invalid or resource-excessive dimensions before model allocation."""
+    dimensions = {
+        "input_dim": input_dim,
+        "hidden_dim": hidden_dim,
+        "latent_dim": latent_dim,
+        "num_layers": num_layers,
+        "sequence_length": sequence_length,
+        "max_sequence_length": max_sequence_length,
+    }
+    if any(value < 1 for value in dimensions.values()):
+        raise ValueError("Model dimensions and sequence lengths must be positive.")
+
+    limits = {
+        "input_dim": MAX_INPUT_DIM,
+        "hidden_dim": MAX_HIDDEN_DIM,
+        "latent_dim": MAX_LATENT_DIM,
+        "num_layers": MAX_NUM_LAYERS,
+        "sequence_length": MAX_SEQUENCE_LENGTH,
+        "max_sequence_length": MAX_SEQUENCE_LENGTH,
+    }
+    exceeded = [
+        f"{name}={value} (max {limits[name]})"
+        for name, value in dimensions.items()
+        if value > limits[name]
+    ]
+    if exceeded:
+        raise ValueError(
+            "Checkpoint/model dimensions exceed supported limits: "
+            + ", ".join(exceeded)
+        )
+    if sequence_length > max_sequence_length:
+        raise ValueError("sequence_length exceeds max_sequence_length.")
+
 
 @dataclass(frozen=True)
 class LoadedTemporalCheckpoint:
@@ -114,8 +164,17 @@ def save_temporal_checkpoint(
 
     architecture = str(architecture).lower()
     dims = (int(input_dim), int(hidden_dim), int(latent_dim), int(num_layers))
-    if min(dims) < 1 or int(sequence_length) < 1 or int(max_sequence_length) < int(sequence_length):
-        raise ValueError("Model dimensions and sequence length must be positive and consistent.")
+    input_dim, hidden_dim, latent_dim, num_layers = dims
+    sequence_length = int(sequence_length)
+    max_sequence_length = int(max_sequence_length)
+    _validate_model_dimensions(
+        input_dim=input_dim,
+        hidden_dim=hidden_dim,
+        latent_dim=latent_dim,
+        num_layers=num_layers,
+        sequence_length=sequence_length,
+        max_sequence_length=max_sequence_length,
+    )
     names = tuple(str(name) for name in feature_names)
     if len(names) != int(input_dim) or len(set(names)) != len(names):
         raise ValueError("Feature names must be unique and match input_dim.")
@@ -213,21 +272,34 @@ def load_temporal_checkpoint(
     dims = bundle.get("dimensions")
     if not isinstance(dims, dict):
         raise ValueError("Checkpoint dimensions are missing.")
-    input_dim = int(dims.get("input_dim", 0))
+    try:
+        input_dim = int(dims.get("input_dim", 0))
+        hidden_dim = int(dims.get("hidden_dim", 0))
+        latent_dim = int(dims.get("latent_dim", 0))
+        num_layers = int(dims.get("num_layers", 0))
+        max_sequence_length = int(dims.get("max_sequence_length", 0))
+        sequence_length = int(bundle.get("sequence_length", 0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("Checkpoint dimensions and sequence length must be integers.") from exc
     if input_dim != len(names):
         raise ValueError("Checkpoint input_dim does not match feature schema.")
-    sequence_length = int(bundle.get("sequence_length", 0))
-    if sequence_length < 1 or sequence_length > int(dims.get("max_sequence_length", 0)):
-        raise ValueError("Checkpoint sequence length is outside model capacity.")
+    _validate_model_dimensions(
+        input_dim=input_dim,
+        hidden_dim=hidden_dim,
+        latent_dim=latent_dim,
+        num_layers=num_layers,
+        sequence_length=sequence_length,
+        max_sequence_length=max_sequence_length,
+    )
     mean, scale = _validate_scaler(bundle.get("scaler_mean"), bundle.get("scaler_scale"), input_dim)
 
     model = _make_model(
         str(bundle.get("architecture", "")),
         input_dim=input_dim,
-        hidden_dim=int(dims.get("hidden_dim", 0)),
-        latent_dim=int(dims.get("latent_dim", 0)),
-        num_layers=int(dims.get("num_layers", 0)),
-        max_sequence_length=int(dims.get("max_sequence_length", 0)),
+        hidden_dim=hidden_dim,
+        latent_dim=latent_dim,
+        num_layers=num_layers,
+        max_sequence_length=max_sequence_length,
     )
     state = bundle.get("model_state")
     if not isinstance(state, dict):
