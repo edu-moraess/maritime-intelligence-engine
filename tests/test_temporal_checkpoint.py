@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from src.ml.temporal.checkpoint import (
+    MAX_HIDDEN_DIM,
     feature_schema_sha256,
     load_temporal_checkpoint,
     save_temporal_checkpoint,
@@ -113,3 +114,46 @@ def test_checkpoint_rejects_invalid_scaler_and_incompatible_weights(tmp_path):
             num_layers=2,
             max_sequence_length=64,
         )
+
+
+
+@pytest.mark.skipif(not torch_available(), reason="PyTorch unavailable")
+def test_checkpoint_rejects_excessive_dimensions_before_model_creation(tmp_path):
+    import torch
+
+    model = TCNAutoencoder(
+        input_dim=8, hidden_dim=8, latent_dim=4, num_layers=2, max_sequence_length=64
+    )
+    with pytest.raises(ValueError, match="exceed supported limits"):
+        save_temporal_checkpoint(
+            tmp_path / "too-large.pt",
+            model_state=model.state_dict(),
+            scaler_mean=np.zeros(8),
+            scaler_scale=np.ones(8),
+            sequence_length=8,
+            input_dim=8,
+            hidden_dim=MAX_HIDDEN_DIM + 1,
+            latent_dim=4,
+            num_layers=2,
+            max_sequence_length=64,
+        )
+
+    path = tmp_path / "tampered.pt"
+    save_temporal_checkpoint(
+        path,
+        model_state=model.state_dict(),
+        scaler_mean=np.zeros(8),
+        scaler_scale=np.ones(8),
+        sequence_length=8,
+        input_dim=8,
+        hidden_dim=8,
+        latent_dim=4,
+        num_layers=2,
+        max_sequence_length=64,
+    )
+    bundle = torch.load(path, map_location="cpu", weights_only=True)
+    bundle["dimensions"]["hidden_dim"] = MAX_HIDDEN_DIM + 1
+    torch.save(bundle, path)
+
+    with pytest.raises(ValueError, match="exceed supported limits"):
+        load_temporal_checkpoint(path)
