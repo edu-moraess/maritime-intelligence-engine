@@ -91,3 +91,68 @@ def test_collect_extends_store_without_resetting_prior_observations():
     tracks = engine.store.tracks()
     assert len(tracks) == 2
     assert len(engine.store.all()) == 2
+
+
+def _session_obs(mmsi: str, minute: int, session_id: str) -> AISObservation:
+    from datetime import timedelta
+
+    return AISObservation(
+        mmsi=mmsi,
+        latitude=25.76 + minute * 0.001,
+        longitude=-80.19 + minute * 0.001,
+        received_at=datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=minute),
+        sog_knots=8.0,
+        cog_degrees=90.0,
+        heading_degrees=90.0,
+        vessel_name="TEST",
+        ais_timestamp_second=minute,
+        observed_at=None,
+        raw={"session_id": session_id},
+    )
+
+
+def test_current_tracks_excludes_historical_points_for_shared_mmsi():
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+    historical = _session_obs("367000001", 0, "historical-session")
+    current = _session_obs("367000001", 1, "current-session")
+    engine.store.extend([historical, current])
+    engine.current_session_observations = [current]
+
+    assert engine._current_tracks() == {"367000001": [current]}
+
+
+def test_deep_temporal_recompute_receives_current_session_tracks_only(monkeypatch):
+    import src.intelligence.engine as engine_module
+
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+    historical = _session_obs("367000001", 0, "historical-session")
+    current = [
+        _session_obs("367000001", minute, "current-session")
+        for minute in range(1, 5)
+    ]
+    engine.store.extend([historical, *current])
+    engine.current_session_observations = current
+
+    received_by_temporal = {}
+    monkeypatch.setattr(
+        engine_module,
+        "select_interesting_tracks",
+        lambda tracks: tracks,
+    )
+    monkeypatch.setattr(
+        engine_module,
+        "detect_anomalies",
+        lambda tracks, embeddings: [],
+    )
+    monkeypatch.setattr(engine.embedding_adapter, "fit", lambda tracks: None)
+    monkeypatch.setattr(
+        engine.temporal_adapter,
+        "fit",
+        lambda tracks: received_by_temporal.update(
+            {mmsi: list(track) for mmsi, track in tracks.items()}
+        ),
+    )
+
+    engine._recompute()
+
+    assert received_by_temporal == {"367000001": current}
