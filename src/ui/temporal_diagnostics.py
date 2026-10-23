@@ -13,7 +13,7 @@ def render_temporal_diagnostics(engine: MaritimeIntelligenceEngine) -> None:
     """Render temporal coverage diagnostics without changing model behavior."""
     panel_title("Temporal Diagnostics", "real AIS track coverage")
 
-    diagnostics = analyze_temporal_tracks(engine.store.tracks())
+    diagnostics = analyze_temporal_tracks(engine.current_tracks())
     eligible_tracks = diagnostics.tracks_by_min_points.get(4, 0)
 
     if eligible_tracks == 0:
