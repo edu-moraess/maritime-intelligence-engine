@@ -180,3 +180,118 @@ def test_alignment_reports_unavailable_source_without_synthetic_data() -> None:
     assert result.observation is None
     assert result.temporal_age_seconds is None
     assert result.spatial_distance_km is None
+
+
+
+def test_alignment_accepts_exact_temporal_age_limit() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            _env("open-meteo-marine", when=BASE - timedelta(seconds=3600)),
+        ),
+    )
+
+    result = EnvironmentalStateAlignmentEngine(
+        max_temporal_age_seconds=3600
+    ).align(_ais(), context, source="open-meteo-marine")[0]
+
+    assert result.status == "ALIGNED"
+    assert result.temporal_age_seconds == 3600.0
+
+
+def test_alignment_accepts_exact_spatial_limit_with_numeric_tolerance() -> None:
+    from math import degrees
+
+    # Equator: 1 degree of longitude corresponds to this arc distance.
+    radius_km = 6371.0088
+    longitude_delta = degrees(50.0 / radius_km)
+    ais = _ais(latitude=0.0, longitude=0.0)
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            _env(
+                "open-meteo-marine",
+                when=BASE,
+                lat=0.0,
+                lon=longitude_delta,
+            ),
+        ),
+    )
+
+    result = EnvironmentalStateAlignmentEngine(
+        max_spatial_distance_km=50.0
+    ).align(ais, context, source="open-meteo-marine")[0]
+
+    assert result.spatial_distance_km is not None
+    assert abs(result.spatial_distance_km - 50.0) < 1e-8
+    assert result.status == "ALIGNED"
+
+
+def test_alignment_selects_nearest_time_even_when_spatially_invalid() -> None:
+    nearest_but_far = _env(
+        "open-meteo-marine",
+        when=BASE - timedelta(minutes=2),
+        lat=26.5,
+        lon=-80.0,
+    )
+    older_but_near = _env(
+        "open-meteo-marine",
+        when=BASE - timedelta(minutes=20),
+    )
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(older_but_near, nearest_but_far),
+    )
+
+    result = EnvironmentalStateAlignmentEngine(
+        max_spatial_distance_km=50.0
+    ).align(_ais(), context, source="open-meteo-marine")[0]
+
+    assert result.observation is nearest_but_far
+    assert result.status == "OUT_OF_BOUNDS"
+
+
+def test_alignment_does_not_fallback_to_older_spatially_valid_candidate() -> None:
+    nearest_but_far = _env(
+        "open-meteo-marine",
+        when=BASE - timedelta(minutes=2),
+        lat=26.5,
+        lon=-80.0,
+    )
+    older_but_near = _env(
+        "open-meteo-marine",
+        when=BASE - timedelta(minutes=20),
+    )
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(nearest_but_far, older_but_near),
+    )
+
+    result = EnvironmentalStateAlignmentEngine(
+        max_spatial_distance_km=50.0
+    ).align(_ais(), context, source="open-meteo-marine")[0]
+
+    assert result.observation is nearest_but_far
+    assert result.usable is False
+
+
+def test_spatial_limit_takes_precedence_when_both_limits_are_exceeded() -> None:
+    context = EnvironmentalContext(
+        region="region_1",
+        observations=(
+            _env(
+                "open-meteo-marine",
+                when=BASE - timedelta(hours=2),
+                lat=26.5,
+                lon=-80.0,
+            ),
+        ),
+    )
+
+    result = EnvironmentalStateAlignmentEngine(
+        max_temporal_age_seconds=3600,
+        max_spatial_distance_km=50.0,
+    ).align(_ais(), context, source="open-meteo-marine")[0]
+
+    assert result.status == "OUT_OF_BOUNDS"
+    assert result.usable is False
