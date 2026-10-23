@@ -166,3 +166,16 @@ def test_current_tracks_is_empty_when_session_has_no_observations():
     ])
 
     assert engine.current_tracks() == {}
+
+
+def test_current_track_keeps_live_point_deduplicated_against_history():
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+    historical = _session_obs("367000001", 0, "historical-session")
+    current = _session_obs("367000001", 0, "current-session")
+    engine.store.extend([historical, current])
+    engine.current_session_observations = [current]
+
+    # The shared store deduplicates these equivalent payloads, but the live
+    # session's own analytical view must still retain the current observation.
+    assert engine.store.all() == [historical]
+    assert engine.current_tracks() == {"367000001": [current]}
