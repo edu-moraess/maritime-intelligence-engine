@@ -427,19 +427,33 @@ class MaritimeIntelligenceEngine:
         )
         self._restore_historical_context()
 
-    def _current_tracks(self) -> dict[str, list[AISObservation]]:
+    def current_tracks(self) -> dict[str, list[AISObservation]]:
+        """Return only observations received in this engine's current live session.
+
+        Historical hydration shares the bounded store for context and persistence,
+        so filtering by MMSI alone is insufficient: a track can contain points
+        from multiple sessions. Object identity preserves the provenance of the
+        observations actually collected by this engine.
+        """
+        current_ids = {id(observation) for observation in self.current_session_observations}
+        if not current_ids:
+            return {}
         return {
-            mmsi: track
+            mmsi: current_points
             for mmsi, track in self.store.tracks().items()
-            if any(observation in self.current_session_observations for observation in track)
+            if (current_points := [
+                observation for observation in track if id(observation) in current_ids
+            ])
         }
 
     def _recompute(self) -> None:
-        current_tracks = self._current_tracks()
+        current_tracks = self.current_tracks()
         self.embeddings = self.embedding_adapter.fit(current_tracks)
         self.findings = detect_anomalies(current_tracks, self.embeddings)
 
-        all_tracks = select_interesting_tracks(self.store.tracks())
+        # Deep Temporal is session-scoped too; historical context must not
+        # silently extend a live trajectory or alter its temporal windows.
+        all_tracks = select_interesting_tracks(current_tracks)
         fingerprint = _track_fingerprint(all_tracks)
         if self.temporal is None or self._temporal_fingerprint != fingerprint:
             try:
@@ -460,7 +474,7 @@ class MaritimeIntelligenceEngine:
             self.temporal,
         ) if len(self.settings.monitoring_bboxes) == 2 else None
 
-        current_tracks = self._current_tracks()
+        current_tracks = self.current_tracks()
         self.regional_events = detect_regional_events(
             current_tracks,
             self.settings.monitoring_bboxes,
@@ -469,7 +483,7 @@ class MaritimeIntelligenceEngine:
         ) if len(self.settings.monitoring_bboxes) == 2 else []
 
     def _detect_current_session_findings(self) -> list[AnomalyFinding]:
-        current_tracks = self._current_tracks()
+        current_tracks = self.current_tracks()
         if not current_tracks:
             return []
         embeddings = self.embedding_adapter.fit(current_tracks)
@@ -516,7 +530,7 @@ class MaritimeIntelligenceEngine:
     def snapshot(self) -> EngineSnapshot:
         observations = self.store.all()
         current_observations = list(self.current_session_observations)
-        tracks = self._current_tracks()
+        tracks = self.current_tracks()
         vessels = self._merged_vessels(tracks)
         quality = build_quality_report(
             current_observations,
