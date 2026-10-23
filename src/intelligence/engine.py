@@ -428,23 +428,18 @@ class MaritimeIntelligenceEngine:
         self._restore_historical_context()
 
     def current_tracks(self) -> dict[str, list[AISObservation]]:
-        """Return only observations received in this engine's current live session.
+        """Return bounded trajectories built only from current-session observations.
 
-        Historical hydration shares the bounded store for context and persistence,
-        so filtering by MMSI alone is insufficient: a track can contain points
-        from multiple sessions. Object identity preserves the provenance of the
-        observations actually collected by this engine.
+        Historical hydration and live collection share a deduplicating store.
+        Building these tracks from that store could either mix sessions or lose a
+        current point that deduplicates against history, so session provenance is
+        taken from the current-session list and bounded to the store's message cap.
         """
-        current_ids = {id(observation) for observation in self.current_session_observations}
-        if not current_ids:
-            return {}
-        return {
-            mmsi: current_points
-            for mmsi, track in self.store.tracks().items()
-            if (current_points := [
-                observation for observation in track if id(observation) in current_ids
-            ])
-        }
+        current_observations = self.current_session_observations[-self.store.max_messages:]
+        tracks: dict[str, list[AISObservation]] = {}
+        for observation in current_observations:
+            tracks.setdefault(observation.mmsi, []).append(observation)
+        return tracks
 
     def _recompute(self) -> None:
         current_tracks = self.current_tracks()
