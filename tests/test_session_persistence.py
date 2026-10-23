@@ -118,7 +118,7 @@ def test_current_tracks_excludes_historical_points_for_shared_mmsi():
     engine.store.extend([historical, current])
     engine.current_session_observations = [current]
 
-    assert engine._current_tracks() == {"367000001": [current]}
+    assert engine.current_tracks() == {"367000001": [current]}
 
 
 def test_deep_temporal_recompute_receives_current_session_tracks_only(monkeypatch):
@@ -156,3 +156,13 @@ def test_deep_temporal_recompute_receives_current_session_tracks_only(monkeypatc
     engine._recompute()
 
     assert received_by_temporal == {"367000001": current}
+
+
+
+def test_current_tracks_is_empty_when_session_has_no_observations():
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+    engine.store.extend([
+        _session_obs("367000001", 0, "historical-session"),
+    ])
+
+    assert engine.current_tracks() == {}
