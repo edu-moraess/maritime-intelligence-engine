@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -104,10 +105,10 @@ def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
         ordered = sorted(tracks[mmsi], key=lambda observation: observation.received_at)
         if not ordered:
             continue
-        digest.update(f"T|{mmsi}|{len(ordered)}\\n".encode("utf-8"))
+        digest.update(f"T|{mmsi}|{len(ordered)}\n".encode("utf-8"))
         for observation in ordered:
             digest.update(_observation_signature(observation).encode("utf-8"))
-            digest.update(b"\\n")
+            digest.update(b"\n")
     return digest.hexdigest()
 
 
