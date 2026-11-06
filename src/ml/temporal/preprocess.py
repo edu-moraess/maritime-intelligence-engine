@@ -274,16 +274,17 @@ def build_temporal_sequences(
     minimum = int(minimum_points)
     cap = max(1, int(max_windows_per_track))
     for mmsi, obs in items:
-        emitted = 0
-        for segment in _split_track_on_gaps(obs):
+        # Visit newest segments and newest complete windows first. This makes
+        # the per-track cap preserve the most recent real operational context.
+        collected: list[TemporalSequence] = []
+        for segment in reversed(_split_track_on_gaps(obs)):
             if len(segment) < max(window, minimum):
                 continue
-            # Keep the newest complete windows when a long segment exceeds the
-            # cap. This preserves the most recent real operational context.
-            starts = list(range(0, len(segment) - window + 1, window))
-            if len(starts) > cap:
-                starts = starts[-cap:]
-            for start in starts:
+            # Anchor windows at the segment end; only the oldest remainder can
+            # be excluded when the segment length is not divisible by window.
+            for start in range(len(segment) - window, -1, -window):
+                if len(collected) >= cap:
+                    break
                 seq = _build_sequence_from_observations(
                     segment[start : start + window],
                     sequence_length=window,
@@ -291,12 +292,10 @@ def build_temporal_sequences(
                     mmsi=str(mmsi),
                 )
                 if seq is not None:
-                    result.append(seq)
-                    emitted += 1
-                    if emitted >= cap:
-                        break
-            if emitted >= cap:
+                    collected.append(seq)
+            if len(collected) >= cap:
                 break
+        result.extend(reversed(collected))
     return result
 
 
