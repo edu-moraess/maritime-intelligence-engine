@@ -74,16 +74,41 @@ class EngineSnapshot:
     environmental_contexts: dict[str, EnvironmentalContext] = field(default_factory=dict)
 
 
+# Temporal outcomes that are deterministic functions of model inputs may be cached.
+# FAILED (possibly transient) and UNAVAILABLE (environment dependent) are retried.
+_CACHEABLE_TEMPORAL_STATUSES = frozenset({"READY", "NOT_READY", "WAITING"})
+
+
+def _observation_signature(observation: AISObservation) -> str:
+    """Canonical text of every observation field relevant to temporal processing."""
+    observed_at = observation.observed_at.isoformat() if observation.observed_at is not None else "-"
+    return "|".join((
+        observation.received_at.isoformat(),
+        repr(observation.latitude),
+        repr(observation.longitude),
+        repr(observation.sog_knots),
+        repr(observation.cog_degrees),
+        repr(observation.heading_degrees),
+        repr(observation.ais_timestamp_second),
+        repr(observation.navigational_status),
+        "1" if observation.valid else "0",
+        observed_at,
+    ))
+
+
 def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
-    """Stable fingerprint of track identities and lengths for cache invalidation."""
-    parts: list[str] = []
-    for mmsi in sorted(tracks.keys()):
-        obs = tracks[mmsi]
-        if not obs:
+    """SHA-256 of the exact ordered content of the supplied model tracks."""
+    digest = hashlib.sha256()
+    for mmsi in sorted(tracks):
+        # Stable sorting preserves the temporal pipeline's input order for ties.
+        ordered = sorted(tracks[mmsi], key=lambda observation: observation.received_at)
+        if not ordered:
             continue
-        last = max(o.received_at for o in obs)
-        parts.append(f"{mmsi}:{len(obs)}:{last.isoformat()}")
-    return "|".join(parts)
+        digest.update(f"T|{mmsi}|{len(ordered)}\\n".encode("utf-8"))
+        for observation in ordered:
+            digest.update(_observation_signature(observation).encode("utf-8"))
+            digest.update(b"\\n")
+    return digest.hexdigest()
 
 
 class MaritimeIntelligenceEngine:
@@ -108,6 +133,7 @@ class MaritimeIntelligenceEngine:
         self.region_comparison: RegionComparison | None = None
         self.regional_events: list[RegionalEvent] = []
         self._temporal_fingerprint: str | None = None
+        self._session_generation: int = 0
         self.last_collection_seconds: float = 0.0
         self.last_collection_breakdown: dict[str, float] = {}
         self._historical_database_url = settings.database_url
@@ -171,6 +197,7 @@ class MaritimeIntelligenceEngine:
         breakdown["historical_restore"] = time.monotonic() - phase_started
 
         self.current_session_observations = list(collected)
+        self._session_generation += 1
         self.current_session_findings = []
         if collected:
             self.store.extend(collected)
@@ -284,6 +311,29 @@ class MaritimeIntelligenceEngine:
         self.historical_result = None
         self.settings = replace(self.settings, database_url=database_url, historical_persistence_enabled=persistence_enabled)
 
+    def _temporal_config_signature(self) -> str:
+        """Configuration of the temporal adapter that influences its result."""
+        adapter = self.temporal_adapter
+        names = (
+            "minimum_tracks", "minimum_points_per_track", "sequence_length",
+            "input_dim", "max_training_seconds", "seed", "training_config",
+        )
+        return "|".join(f"{name}={getattr(adapter, name, None)!r}" for name in names)
+
+    def _temporal_cache_key(self, model_tracks: dict[str, list[AISObservation]]) -> str:
+        """Identity of model input, session, monitoring regions, and adapter config."""
+        digest = hashlib.sha256()
+        for part in (
+            f"tracks={_track_fingerprint(model_tracks)}",
+            f"session={self._session_generation}",
+            f"bbox={self.settings.bbox!r}",
+            f"regions={self.settings.monitoring_bboxes!r}",
+            f"config={self._temporal_config_signature()}",
+        ):
+            digest.update(part.encode("utf-8"))
+            digest.update(b"\\n")
+        return digest.hexdigest()
+
     def _recompute(self) -> None:
         # Keep every real AIS observation in the store for persistence and
         # cross-session context, but fit session-relative analytics only on the
@@ -292,8 +342,12 @@ class MaritimeIntelligenceEngine:
         model_tracks = select_interesting_tracks(tracks)
         self.embeddings = self.embedding_adapter.fit(model_tracks)
         self.findings = detect_anomalies(model_tracks, self.embeddings)
-        fingerprint = _track_fingerprint(tracks)
-        if self.temporal is not None and self._temporal_fingerprint == fingerprint:
+        cache_key = self._temporal_cache_key(model_tracks)
+        if (
+            self.temporal is not None
+            and self.temporal.status in _CACHEABLE_TEMPORAL_STATUSES
+            and self._temporal_fingerprint == cache_key
+        ):
             self.region_comparison = self._build_region_comparison()
             self.regional_events = self._build_regional_events(
                 tracks,
@@ -303,10 +357,11 @@ class MaritimeIntelligenceEngine:
             return
         try:
             self.temporal = self.temporal_adapter.fit(model_tracks)
-            self._temporal_fingerprint = fingerprint
         except Exception as exc:
             self.temporal = TemporalFitResult(status="FAILED", reason=f"Temporal path exception (classical path intact): {exc}")
-            self._temporal_fingerprint = fingerprint
+        self._temporal_fingerprint = (
+            cache_key if self.temporal.status in _CACHEABLE_TEMPORAL_STATUSES else None
+        )
         self.region_comparison = self._build_region_comparison()
         self.regional_events = self._build_regional_events(
             tracks,
@@ -408,6 +463,7 @@ class MaritimeIntelligenceEngine:
         self.region_comparison = None
         self.regional_events = []
         self._temporal_fingerprint = None
+        self._session_generation += 1
         self.last_collection_seconds = 0.0
         self.last_collection_breakdown = {}
         self.historical_result = None
