@@ -332,7 +332,7 @@ class MaritimeIntelligenceEngine:
             f"config={self._temporal_config_signature()}",
         ):
             digest.update(part.encode("utf-8"))
-            digest.update(b"\\n")
+            digest.update(b"\n")
         return digest.hexdigest()
 
     def _recompute(self) -> None:
