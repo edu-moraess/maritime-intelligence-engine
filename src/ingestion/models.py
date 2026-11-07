@@ -86,10 +86,11 @@ class AISObservation:
 
 @dataclass(frozen=True)
 class EnvironmentalObservation:
-    """A real external environmental observation for maritime context."""
+    """External environmental data with explicit physical/model-state semantics."""
 
+    # Keep the original positional constructor order for compatibility.
     source: str
-    observed_at: datetime
+    observed_at: datetime | None
     latitude: float
     longitude: float
     region: str | None = None
@@ -102,17 +103,43 @@ class EnvironmentalObservation:
     ocean_current_velocity: float | None = None
     ocean_current_direction_deg: float | None = None
     sea_surface_temperature_c: float | None = None
+    nature: Literal[
+        "ENVIRONMENTAL_OBSERVATION",
+        "ENVIRONMENTAL_MODEL_STATE",
+    ] = "ENVIRONMENTAL_OBSERVATION"
+    model_validity_time: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.source.strip():
             raise ValueError("source must not be empty")
-        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
-            raise ValueError("observed_at must be timezone-aware")
-        object.__setattr__(self, "observed_at", self.observed_at.astimezone(timezone.utc))
+        if self.nature not in {
+            "ENVIRONMENTAL_OBSERVATION",
+            "ENVIRONMENTAL_MODEL_STATE",
+        }:
+            raise ValueError(f"Unsupported environmental nature: {self.nature!r}")
         if not -90.0 <= self.latitude <= 90.0:
             raise ValueError("latitude must be between -90 and 90 degrees")
         if not -180.0 <= self.longitude <= 180.0:
             raise ValueError("longitude must be between -180 and 180 degrees")
+
+        if self.nature == "ENVIRONMENTAL_OBSERVATION":
+            if self.observed_at is None:
+                raise ValueError("ENVIRONMENTAL_OBSERVATION requires observed_at")
+            if self.model_validity_time is not None:
+                raise ValueError("physical observations cannot define model_validity_time")
+        else:
+            if self.model_validity_time is None:
+                raise ValueError("ENVIRONMENTAL_MODEL_STATE requires model_validity_time")
+            if self.observed_at is not None:
+                raise ValueError("ENVIRONMENTAL_MODEL_STATE must not expose observed_at")
+
+        for field_name in ("observed_at", "model_validity_time"):
+            value = getattr(self, field_name)
+            if value is not None:
+                if value.tzinfo is None or value.utcoffset() is None:
+                    raise ValueError(f"{field_name} must be timezone-aware")
+                object.__setattr__(self, field_name, value.astimezone(timezone.utc))
+
         for name in (
             "wave_height_m",
             "wave_period_s",
@@ -132,10 +159,32 @@ class EnvironmentalObservation:
             if value is not None and not 0.0 <= value <= 360.0:
                 raise ValueError(f"{name} must be between 0 and 360 degrees")
 
+    @property
+    def reference_time(self) -> datetime:
+        """Return the source-specific temporal reference without false observation semantics."""
+        value = (
+            self.observed_at
+            if self.nature == "ENVIRONMENTAL_OBSERVATION"
+            else self.model_validity_time
+        )
+        assert value is not None
+        return value
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "source": self.source,
-            "observed_at": self.observed_at.astimezone(timezone.utc).isoformat(),
+            "nature": self.nature,
+            "observed_at": (
+                self.observed_at.astimezone(timezone.utc).isoformat()
+                if self.observed_at
+                else None
+            ),
+            "model_validity_time": (
+                self.model_validity_time.astimezone(timezone.utc).isoformat()
+                if self.model_validity_time
+                else None
+            ),
+            "reference_time": self.reference_time.astimezone(timezone.utc).isoformat(),
             "latitude": self.latitude,
             "longitude": self.longitude,
             "region": self.region,

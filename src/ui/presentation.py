@@ -244,7 +244,7 @@ def render_ops_bar(
   <div class="ops-metrics">
     <div class="ops-metric"><div class="lbl">Vessels</div><div class="val">{escape(str(vessels))}</div></div>
     <div class="ops-metric"><div class="lbl">Messages</div><div class="val">{escape(str(messages))}</div></div>
-    <div class="ops-metric"><div class="lbl">Anomalies</div><div class="val">{escape(str(anomalies))}</div></div>
+    <div class="ops-metric"><div class="lbl">Positive findings</div><div class="val">{escape(str(anomalies))}</div></div>
     {extra}
   </div>
   <div class="ops-meta">{escape(str(collection))}<br/>{escape(str(provenance))}</div>

@@ -220,7 +220,7 @@ def render_vessel_quick_intelligence(
 
     # Environmental context — regional evidence only; no causal inference.
     with st.expander("Environmental context", expanded=False):
-        st.markdown(provenance_badge("REAL EXTERNAL CONTEXT"), unsafe_allow_html=True)
+        st.markdown(provenance_badge("ENVIRONMENTAL MODEL STATE"), unsafe_allow_html=True)
         if engine is None or getattr(engine, "settings", None) is None:
             notice("Environmental context is unavailable.", "gray")
         else:
@@ -231,7 +231,7 @@ def render_vessel_quick_intelligence(
             )
             if environment.status != "AVAILABLE" or environment.observation is None:
                 notice(
-                    f"ENVIRONMENT = {environment.status} · no regional environmental observation attached.",
+                    f"ENVIRONMENT = {environment.status} · no regional model state attached.",
                     "yellow",
                 )
             else:
@@ -245,8 +245,8 @@ def render_vessel_quick_intelligence(
                     }
                 )
                 if environment.environment_age_seconds is not None:
-                    st.caption(f"Environment age · {environment.environment_age_seconds:.0f} s · Source · {latest.source}")
-                st.caption("Contextual correlation only; this does not infer environmental causality or risk.")
+                    st.caption(f"Model-state age · {environment.environment_age_seconds:.0f} s · Source · {latest.source}")
+                st.caption("Model-state context only · no physical observation is asserted · no environmental causality or risk is inferred.")
 
     # Historical Profile
     with st.expander(
@@ -367,7 +367,7 @@ def render_vessel_quick_intelligence(
                 {
                     "STATUS": combined.status,
                     "BEHAVIOR": combined.behavior.classification,
-                    "CONFIDENCE": combined.behavior.confidence,
+                    "COVERAGE QUALITY": combined.behavior.confidence,
                     "REGION": combined.region or "—",
                 }
             )
@@ -381,8 +381,8 @@ def render_vessel_quick_intelligence(
                     }
                 )
                 st.caption(
-                    "Behavior observed under the available regional environmental context. "
-                    "This is contextual correlation only; no environmental causality or risk is inferred."
+                    "Behavior is AIS-derived. Environment is an ENVIRONMENTAL_MODEL_STATE. "
+                    "Cross-source temporal alignment is LIMITED; this is contextual correlation only."
                 )
             elif combined.status == "INSUFFICIENT_BEHAVIOR":
                 notice("INSUFFICIENT_DATA · at least 2 valid current-session positions are required.", "yellow")
@@ -438,18 +438,17 @@ def render_vessel_quick_intelligence(
             )
             score = float(getattr(top, "score", 0) or 0)
             severity = "HIGH" if score >= 0.78 else "MEDIUM" if score >= 0.5 else "LOW"
-            conf = getattr(top, "confidence", None)
             metric_strip(
                 {
                     "SEVERITY": severity,
                     "SCORE": f"{score:.2f}",
-                    "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT PROVIDED",
+                    "SEMANTICS": ("SESSION_RELATIVE_RANK" if str(getattr(top, "category", "")).lower() == "behavioral deviation" else "RULE_SEVERITY"),
                     "CATEGORY": str(getattr(top, "category", "—")),
                 }
             )
             notice(str(getattr(top, "explanation", "")), "red")
         else:
-            notice("No current-session anomaly associated with this MMSI.", "green")
+            notice("No positive anomaly finding is currently recorded for this MMSI. This does not establish ANALYZED_NO_SIGNAL.", "yellow")
 
         st.markdown("**Historical**")
         if anomalies.historical:
@@ -466,10 +465,10 @@ def render_vessel_quick_intelligence(
             notice("N/A — no historical anomaly records for this MMSI.", "gray")
 
     # Confidence
-    with st.expander("Confidence", expanded=True):
+    with st.expander("Analysis coverage", expanded=True):
         st.markdown(provenance_badge("DERIVED"), unsafe_allow_html=True)
-        st.caption("Deterministic rules (no ML)")
-        metric_strip({"LEVEL": confidence.level})
+        st.caption("Deterministic coverage assessment · not calibrated probability")
+        metric_strip({"COVERAGE QUALITY": confidence.level})
         for reason in confidence.reasons:
             st.caption(f"· {reason}")
 
