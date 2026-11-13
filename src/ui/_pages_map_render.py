@@ -155,6 +155,17 @@ def engine_tracks(snapshot: EngineSnapshot):
     return by_mmsi.items()
 
 
+def visible_track_count(rows: list[dict], observations: list) -> int:
+    """Count multi-report tracks only for targets actually visible in this map."""
+    visible_mmsis = {str(row.get("mmsi")) for row in rows}
+    counts: dict[str, int] = {}
+    for observation in observations:
+        mmsi = str(observation.mmsi)
+        if mmsi in visible_mmsis:
+            counts[mmsi] = counts.get(mmsi, 0) + 1
+    return sum(1 for count in counts.values() if count >= 2)
+
+
 def _vessel_compact(vessel: VesselSnapshot) -> None:
     st.markdown(
         f"<div class='data-label'>MMSI</div><div class='data-value'>{vessel.mmsi}</div>",
@@ -635,14 +646,11 @@ def _render_vessel_map(
 
     style = TACTICAL_MAP_STYLE if map_style in (None, "", "Dark Matter", "dark", "tactical") else MAP_STYLES.get(map_style, TACTICAL_MAP_STYLE)
 
-    visible_mmsis = {str(row.get("mmsi")) for row in rows}
-    by_mmsi_obs: dict[str, int] = {}
-    if has_live_rows:
-        for observation in list(snapshot.current_session_observations or []):
-            mmsi = str(observation.mmsi)
-            if mmsi in visible_mmsis:
-                by_mmsi_obs[mmsi] = by_mmsi_obs.get(mmsi, 0) + 1
-    tracks_count = sum(1 for count in by_mmsi_obs.values() if count >= 2)
+    tracks_count = (
+        visible_track_count(rows, list(snapshot.current_session_observations or []))
+        if has_live_rows
+        else 0
+    )
     live_state = str(getattr(snapshot.status, "state", "DISCONNECTED") or "DISCONNECTED")
     region = "CUSTOM"
     try:
