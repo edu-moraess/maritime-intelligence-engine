@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import pytest
 from datetime import datetime, timezone
 
 from src.ingestion.models import AISObservation
@@ -214,10 +215,14 @@ def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monke
     assert stopped_snapshot.status.state == "DISCONNECTED"
     assert stopped_snapshot.status.websocket_status == "CLOSED"
 
-    engine.clear_session_data()
-    cleared_snapshot = engine.snapshot()
-    assert cleared_snapshot.current_session_observations == []
-    assert engine.store.all() == []
+    # Historical persistence is disabled in this test. Clear Session must
+    # refuse to discard real observations that exist only in volatile memory.
+    with pytest.raises(RuntimeError, match="historical persistence is disabled"):
+        engine.clear_session_data()
+    retained_snapshot = engine.snapshot()
+    assert len(retained_snapshot.current_session_observations) == 2
+    assert len(engine.store.all()) == 2
+    assert len(engine._unpersisted_observations) == 2
     assert engine.live_worker.status().queue_depth == 0
 
 def test_connecting_worker_degrades_when_no_first_position_report_arrives():
