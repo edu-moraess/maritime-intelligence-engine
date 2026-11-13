@@ -63,4 +63,3 @@ def test_average_speed_is_unavailable_without_fresh_sog_samples():
 
     assert summary["speed_sample_count"] == 0
     assert summary["average_speed_knots"] is None
-
