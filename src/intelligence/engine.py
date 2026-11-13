@@ -292,6 +292,12 @@ class MaritimeIntelligenceEngine:
     @_synchronized
     def start_live_monitoring(self) -> bool:
         """Start the managed continuous AIS consumer; safe to call on reruns."""
+        worker_status = self.live_worker.status()
+        if worker_status.thread_alive or worker_status.state not in {"STOPPED", "ERROR"}:
+            return False
+        reset_provider = getattr(self.provider, "reset_session", None)
+        if callable(reset_provider):
+            reset_provider()
         started = self.live_worker.start()
         if started:
             self._live_started_at = datetime.now(timezone.utc)
@@ -299,6 +305,7 @@ class MaritimeIntelligenceEngine:
             self._live_last_recompute_monotonic = 0.0
             self.last_collection_breakdown = {}
             self.last_collection_seconds = 0.0
+            self.historical_result = None
             self.current_session_observations = []
             self.current_session_findings = []
             self._session_generation += 1
