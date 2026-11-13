@@ -41,11 +41,7 @@ def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
     distances = [
         np.nan,
         *[
-            haversine_km(a, b, c, d)
-            if all(np.isfinite(value) for value in (a, b, c, d))
-            and -90.0 <= a <= 90.0 and -90.0 <= c <= 90.0
-            and -180.0 <= b <= 180.0 and -180.0 <= d <= 180.0
-            else np.nan
+            _distance_if_valid(a, b, c, d)
             for a, b, c, d in zip(
                 result["latitude"].iloc[:-1],
                 result["longitude"].iloc[:-1],
@@ -66,6 +62,20 @@ def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
         result["computed_speed_knots"].notna(), pd.NA
     )
     return result
+
+
+def _distance_if_valid(lat1, lon1, lat2, lon2) -> float:
+    try:
+        a, b, c, d = (float(value) for value in (lat1, lon1, lat2, lon2))
+    except (TypeError, ValueError):
+        return np.nan
+    if not all(np.isfinite(value) for value in (a, b, c, d)):
+        return np.nan
+    if not (-90.0 <= a <= 90.0 and -90.0 <= c <= 90.0):
+        return np.nan
+    if not (-180.0 <= b <= 180.0 and -180.0 <= d <= 180.0):
+        return np.nan
+    return haversine_km(a, b, c, d)
 
 
 def summarize_track(observations: Iterable[AISObservation]) -> TrajectorySummary | None:
