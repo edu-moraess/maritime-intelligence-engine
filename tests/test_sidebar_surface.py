@@ -32,7 +32,7 @@ def test_sidebar_keeps_mission_and_map_controls():
     assert '"Start Live AIS"' in source
     assert '"Stop Live AIS"' in source
     assert '"Collect Finite AIS Window"' in source
-    assert '"Clear Session"' in source
+    assert '"Clear Shared Session"' in source
 
 
 def test_sidebar_no_longer_renders_workspace_modules():
