@@ -205,6 +205,9 @@ def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monke
     assert live_snapshot.status.state == "LIVE AIS"
     assert len(live_snapshot.current_session_observations) == 2
     assert len(live_snapshot.vessels) == 2
+    assert live_snapshot.quality.messages_processed == 2
+    assert live_snapshot.summary["messages"] == 2
+    assert live_snapshot.summary["active_vessels"] == 2
 
     assert engine.stop_live_monitoring(timeout=1.0) is True
     stopped_snapshot = engine.snapshot()
