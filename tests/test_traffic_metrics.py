@@ -52,3 +52,15 @@ def test_speed_distribution_excludes_stale_last_known_positions():
     assert frame["mmsi"].tolist() == ["111111111"]
     assert frame["sog_knots"].tolist() == [8.0]
 
+def test_average_speed_is_unavailable_without_fresh_sog_samples():
+    now = datetime.now(timezone.utc)
+    vessels = [
+        VesselSnapshot("111111111", 1.0, 2.0, now, None, None, None, "NO SOG", 1, stale=False),
+        VesselSnapshot("222222222", 1.1, 2.1, now, 12.0, 90.0, 90.0, "STALE", 1, stale=True),
+    ]
+
+    summary = traffic_summary(vessels, [], [], monitoring_regions=1)
+
+    assert summary["speed_sample_count"] == 0
+    assert summary["average_speed_knots"] is None
+
