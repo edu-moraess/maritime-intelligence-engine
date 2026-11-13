@@ -57,7 +57,7 @@ def test_anomaly_mmsi_sets():
         SimpleNamespace(mmsi="3", score=0.1, category="critical_event"),
     ]
     anomaly, critical = anomaly_mmsi_sets(findings)
-    assert anomaly == {"1", "2", "3"} and critical == {"2", "3"}
+    assert anomaly == {"1", "2", "3"} and critical == {"3"}
 
 
 def test_ship_polygon_orientation_differs():
@@ -75,7 +75,7 @@ def test_vessel_type_families_are_distinct():
     assert vessel_type_family(60) == "PASSENGER"
     assert vessel_type_family(52) == "SERVICE"
     assert vessel_type_family(30) == "FISHING"
-    assert vessel_type_family(None) == "DEFAULT"
+    assert vessel_type_family(None) == "UNSPECIFIED"
     assert ship_polygon(0.0, 0.0, 0.0, ship_type=70) != ship_polygon(0.0, 0.0, 0.0, ship_type=80)
 
 
@@ -115,6 +115,7 @@ def test_enrich_integrity_and_selection_helper():
     assert out[0]["ship_type_family"] == "CARGO"
     assert out[1]["ship_type_family"] == "TANKER"
     assert out[2]["ship_type_family"] == "PASSENGER"
+    assert out[2]["polygon"] is None  # COG does not invent hull orientation
     assert out[0]["has_vector"] is True and out[1]["has_vector"] is False
     assert density_points_from_observations([]) == []
     from src.ui.pages_helpers import _apply_map_selection
