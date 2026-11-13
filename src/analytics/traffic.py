@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from math import isfinite
 from typing import Iterable
 
 import pandas as pd
@@ -19,7 +20,13 @@ def traffic_summary(
 ) -> dict[str, float | int | None]:
     """Return canonical session metrics with explicit population definitions."""
     fresh_vessels = [vessel for vessel in vessels if not vessel.stale]
-    speeds = [vessel.sog_knots for vessel in fresh_vessels if vessel.sog_knots is not None]
+    speeds = [
+        float(vessel.sog_knots)
+        for vessel in fresh_vessels
+        if vessel.sog_knots is not None
+        and isfinite(float(vessel.sog_knots))
+        and 0.0 <= float(vessel.sog_knots) <= 102.2
+    ]
     anomaly_vessels = {finding.mmsi for finding in findings}
     return {
         "active_vessels": len(fresh_vessels),
@@ -56,7 +63,10 @@ def speed_distribution(vessels: list[VesselSnapshot]) -> pd.DataFrame:
     rows = [
         {"mmsi": vessel.mmsi, "sog_knots": vessel.sog_knots}
         for vessel in vessels
-        if not vessel.stale and vessel.sog_knots is not None
+        if not vessel.stale
+        and vessel.sog_knots is not None
+        and isfinite(float(vessel.sog_knots))
+        and 0.0 <= float(vessel.sog_knots) <= 102.2
     ]
     return pd.DataFrame(rows, columns=["mmsi", "sog_knots"])
 
