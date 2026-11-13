@@ -627,9 +627,12 @@ class MaritimeIntelligenceEngine:
                     queue_depth=worker_status.queue_depth,
                     dropped_messages=worker_status.dropped_messages,
                     worker_state=worker_status.state,
-                    active_vessels=len(analysis_tracks),
+                    active_vessels=sum(1 for vessel in vessels if not vessel.stale),
                 )
-        status = replace(provider_status, active_vessels=len(analysis_tracks))
+        status = replace(
+            provider_status,
+            active_vessels=sum(1 for vessel in vessels if not vessel.stale),
+        )
         return EngineSnapshot(
             observations=observations,
             vessels=vessels,
