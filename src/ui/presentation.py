@@ -134,7 +134,11 @@ def inject_css() -> None:
 
 def render_header(status: IngestionStatus, page_name: str) -> None:
     state = status.state
-    css_state = "live" if state == "LIVE AIS" else "connecting" if state == "CONNECTING" else "disconnected"
+    css_state = (
+        "live" if state == "LIVE AIS"
+        else "connecting" if state in {"CONNECTING", "RECONNECTING", "DEGRADED"}
+        else "disconnected"
+    )
     utc_now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     st.markdown(
         f"<div class='operational-header'><div><span class='brand'>MARITIME INTELLIGENCE <small>/ {escape(page_name.upper())}</small></span></div>"
@@ -292,13 +296,19 @@ def render_region_comparison(comparison) -> None:
                 if region.average_temporal_score is not None
                 else "—"
             )
+            top_quartile_rate = (
+                f"{region.temporal_top_quartile_rate:.1%}"
+                if region.temporal_top_quartile_rate is not None
+                else f"N/A · {region.temporal_status}"
+            )
             st.caption(
                 "Temporal score: " + temporal_score
-                + " · top-quartile rate: "
-                + f"{region.temporal_top_quartile_rate:.1%}"
+                + " · top-quartile rate: " + top_quartile_rate
                 + " · anomaly rate: "
                 + f"{region.anomaly_rate:.1%}"
             )
+            if region.temporal_reason and region.temporal_status != "READY":
+                st.caption("Temporal availability · " + escape(region.temporal_reason))
     if comparison.ambiguous_observations:
         st.caption(
             f"{comparison.ambiguous_observations:,} observation(s) fell inside both regions "

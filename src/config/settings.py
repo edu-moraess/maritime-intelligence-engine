@@ -56,6 +56,7 @@ class AppSettings:
     config_error: str | None = None
     database_url: str | None = None
     historical_persistence_enabled: bool = False
+    ingestion_queue_capacity: int = 5000
 
     def __post_init__(self) -> None:
         """Keep legacy single-bbox construction compatible with dual monitoring."""
@@ -116,6 +117,10 @@ class AppSettings:
             config_error=config_error,
             database_url=_secret_or_env("DATABASE_URL", secrets).strip() or None,
             historical_persistence_enabled=_bool_setting("HISTORICAL_PERSISTENCE_ENABLED", False, secrets),
+            ingestion_queue_capacity=min(
+                int_setting("AIS_INGESTION_QUEUE_CAPACITY", 5000),
+                50000,
+            ),
         )
 
     @property
