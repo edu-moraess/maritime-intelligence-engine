@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 
 import pytest
 
@@ -95,4 +96,22 @@ def test_environmental_failure_classifier_distinguishes_failure_domains():
     assert classify_environmental_failure(URLError("offline")) == "NETWORK_ERROR"
     assert classify_environmental_failure(ValueError("invalid payload")) == "INVALID_RESPONSE"
     assert classify_environmental_failure(RuntimeError("unexpected")) == "PROVIDER_ERROR"
+
+def test_failed_refresh_preserves_last_valid_observation_and_marks_degraded():
+    valid = make_observation("B", 5, 1.2)
+    context = EnvironmentalContext(region="B", observations=(valid,))
+    failed = replace(
+        context,
+        failure_code="TIMEOUT",
+        failure_reason="TimeoutError: request timed out",
+        attempted_at=datetime(2026, 11, 13, 3, 0, tzinfo=timezone.utc),
+    )
+
+    assert failed.status == "DEGRADED"
+    assert failed.latest == valid
+    assert failed.observations == (valid,)
+    assert failed.failure_code == "TIMEOUT"
+    recovered = failed.add(make_observation("B", 6, 1.4))
+    assert recovered.status == "AVAILABLE"
+    assert recovered.failure_code is None
 
