@@ -192,18 +192,38 @@ def _engine_signature(settings: AppSettings) -> tuple:
     )
 
 
-_PROCESS_ENGINE_LOCK = threading.RLock()
-_PROCESS_ENGINE_SIGNATURE: tuple | None = None
-_PROCESS_ENGINE: MaritimeIntelligenceEngine | None = None
+class _ProcessEngineRegistry:
+    """Process-shared owner of the active engine and its one AIS worker."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.signature: tuple | None = None
+        self.engine: MaritimeIntelligenceEngine | None = None
+
+    def get(self, signature: tuple, settings: AppSettings) -> MaritimeIntelligenceEngine:
+        with self.lock:
+            if self.engine is None or self.signature != signature:
+                previous = self.engine
+                if previous is not None:
+                    previous.stop_live_monitoring(timeout=10.0)
+                    previous.historical_writer.close()
+                self.engine = create_engine(settings)
+                self.signature = signature
+            self.engine.configure_historical_writer(
+                settings.database_url,
+                settings.historical_persistence_enabled,
+            )
+            return self.engine
+
+
+@st.cache_resource(show_spinner=False)
+def _process_engine_registry() -> _ProcessEngineRegistry:
+    """One registry per Python process; not a cross-replica distributed lock."""
+    return _ProcessEngineRegistry()
 
 
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """Return the single process-local engine/worker for the active MIE configuration.
-
-    This enforces one subscription per Python process. It is not a distributed
-    lock: multiple deployment replicas can each own one worker.
-    """
-    global _PROCESS_ENGINE, _PROCESS_ENGINE_SIGNATURE
+    """Return the process-shared engine associated with the active configuration."""
     signature = _engine_signature(settings)
     if st.session_state.get("engine_signature") != signature:
         st.session_state.engine_signature = signature
@@ -214,21 +234,7 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
             "selected_mmsi_unified",
         ):
             st.session_state.pop(key, None)
-
-    with _PROCESS_ENGINE_LOCK:
-        if _PROCESS_ENGINE is None or _PROCESS_ENGINE_SIGNATURE != signature:
-            previous = _PROCESS_ENGINE
-            if previous is not None:
-                previous.stop_live_monitoring(timeout=10.0)
-                previous.historical_writer.close()
-            _PROCESS_ENGINE = create_engine(settings)
-            _PROCESS_ENGINE_SIGNATURE = signature
-        engine = _PROCESS_ENGINE
-        engine.configure_historical_writer(
-            settings.database_url,
-            settings.historical_persistence_enabled,
-        )
-        return engine
+    return _process_engine_registry().get(signature, settings)
 
 
 def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
