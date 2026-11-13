@@ -167,6 +167,11 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
                 details.append(f"Current {latest.ocean_current_velocity:.2f}")
             st.caption(" · ".join(details) if details else "Marine model data available")
             st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone(timezone.utc).strftime('%H:%M UTC')}")
+            if context.failure_code:
+                st.caption(
+                    f"Refresh {context.failure_code} · {context.failure_reason or 'Provider refresh failed'}; "
+                    "showing the last valid observation."
+                )
 
 
 def render_overview(
