@@ -593,8 +593,9 @@ def main() -> None:
             )
             active_page = candidate_page if candidate_page in active_views else active_views[0]
 
-        # Keep navigation visible on Overview as well as every secondary page.
-        render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
+        # Overview renders its own workspace controls; secondary pages share this rail.
+        if active_page != "Overview":
+            render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
         worker_is_active = snapshot.status.worker_state in {
             "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
         }
