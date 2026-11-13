@@ -409,7 +409,7 @@ def _render_sidebar(
         start_live = False
         stop_live = False
         with mission_placeholder.container():
-            with st.expander("MISSION CONTEXT", expanded=False):
+            with st.expander("MISSION CONTEXT", expanded=True):
                 duration_options = list(COLLECTION_DURATION_OPTIONS)
                 duration_index = min(
                     range(len(duration_options)),
