@@ -281,7 +281,7 @@ class MaritimeIntelligenceEngine:
         measured_phases = sum(
             value for key, value in breakdown.items() if key != "total"
         )
-        breakdown["orchestration_overhead"] = max(0.0, wall_elapsed - measured_phases)
+        breakdown["diagnostic_overhead"] = max(0.0, wall_elapsed - measured_phases)
         # The displayed total is the sum of mutually exclusive measured phases.
         breakdown["total"] = sum(
             value for key, value in breakdown.items() if key != "total"
