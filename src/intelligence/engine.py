@@ -636,20 +636,21 @@ class MaritimeIntelligenceEngine:
                     )
                 ):
                     mapped_state = "RECONNECTING"
-                reason = (
-                    "Receiving recent real AIS PositionReports."
-                    if mapped_state == "LIVE AIS"
-                    else (
-                        provider_status.last_error or "AISStream connection lost; reconnecting."
-                        if mapped_state == "RECONNECTING"
-                        else provider_status.reason if mapped_state == "DISCONNECTED"
-                        else worker_status.last_error or (
-                            provider_status.reason
-                            if mapped_state == "DEGRADED"
-                            else f"AIS ingestion worker state: {worker_status.state}."
-                        )
+                if mapped_state == "LIVE AIS":
+                    reason = "Receiving recent real AIS PositionReports."
+                elif mapped_state == "RECONNECTING":
+                    reason = provider_status.last_error or "AISStream connection lost; reconnecting."
+                elif mapped_state == "DISCONNECTED":
+                    reason = provider_status.reason
+                elif mapped_state == "DEGRADED":
+                    reason = worker_status.last_error or (
+                        "No fresh AIS PositionReport within "
+                        f"{self.settings.stale_after_seconds} seconds."
                     )
-                )
+                else:
+                    reason = worker_status.last_error or (
+                        f"AIS ingestion worker state: {worker_status.state}."
+                    )
                 provider_status = replace(
                     provider_status,
                     state=mapped_state,
