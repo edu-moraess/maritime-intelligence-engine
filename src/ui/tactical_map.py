@@ -88,7 +88,7 @@ def anomaly_mmsi_sets(findings):
             score = float(raw_score) if raw_score is not None else None
         except (TypeError, ValueError):
             score = None
-        if (score is not None and 0.0 <= score <= 1.0 and score >= 0.85) or "critical" in str(getattr(finding, "category", "") or "").lower():
+        if "critical" in str(getattr(finding, "category", "") or "").lower():
             critical.add(mmsi)
     return anomaly, critical
 
