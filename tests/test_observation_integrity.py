@@ -48,3 +48,22 @@ def test_embedding_vector_requires_exact_complete_real_window() -> None:
     assert vector is not None
     assert vector.shape == (32 * 4,)
     assert np.isfinite(vector).all()
+
+
+def test_temporal_sequence_features_are_transition_only() -> None:
+    import pandas as pd
+    from src.ml.temporal.preprocess import _build_feature_matrix
+
+    frame = pd.DataFrame(
+        {
+            "latitude": [25.0, 25.001, 25.002],
+            "longitude": [-80.0, -80.0, -80.001],
+            "sog_knots": [8.0, 8.1, 8.2],
+            "cog_degrees": [90.0, 91.0, 92.0],
+            "time_delta_seconds": [np.nan, 60.0, 60.0],
+        }
+    )
+    matrix = _build_feature_matrix(frame)
+    assert matrix is not None
+    assert matrix.shape == (2, 8)
+    assert np.isfinite(matrix).all()
