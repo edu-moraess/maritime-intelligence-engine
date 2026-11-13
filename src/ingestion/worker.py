@@ -28,6 +28,7 @@ class WorkerStatus:
     queue_depth: int
     dropped_messages: int
     last_error: str | None
+    thread_alive: bool
 
 
 class AISIngestionWorker:
@@ -140,6 +141,7 @@ class AISIngestionWorker:
                 queue_depth=self.observations.qsize(),
                 dropped_messages=self._dropped_messages,
                 last_error=self._last_error,
+                thread_alive=self._thread is not None and self._thread.is_alive(),
             )
 
     def _run(self) -> None:
