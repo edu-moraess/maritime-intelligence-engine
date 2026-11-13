@@ -146,7 +146,11 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
             latest = context.latest
             st.caption(label)
             if latest is None:
-                st.metric("Status", "UNAVAILABLE")
+                st.metric("Status", context.status)
+                if context.failure_code:
+                    st.caption(f"{context.failure_code} · {context.failure_reason or 'No additional provider detail.'}")
+                elif context.attempted_at is not None:
+                    st.caption(f"Last attempt · {context.attempted_at.astimezone().strftime('%H:%M:%S')}")
                 continue
             st.metric(
                 "Wave height",
