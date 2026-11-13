@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import compileall
 import sys
+from pathlib import Path
 
 import pytest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 
 P0_TESTS = (
