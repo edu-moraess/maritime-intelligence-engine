@@ -201,4 +201,3 @@ def test_provider_records_disconnect_and_reconnect_attempt_telemetry(monkeypatch
     assert status.last_disconnect_at is not None
     assert status.last_error is not None
     assert status.websocket_status == "CLOSED"
-
