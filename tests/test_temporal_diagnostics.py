@@ -39,17 +39,17 @@ def test_temporal_diagnostics_counts_thresholds_and_windows():
     assert result.median_points == 12.0
     assert result.max_points == 40
     # Each contiguous segment contributes max(0, n - window + 1) starts.
-    assert result.sliding_windows == {8: 43, 16: 26, 32: 9}
-    assert result.non_overlapping_windows == {8: 8, 16: 3, 32: 1}
+    assert result.sliding_windows == {8: 40, 16: 24, 32: 8}
+    assert result.non_overlapping_windows == {8: 5, 16: 2, 32: 0}
 
 
 def test_adaptive_selector_prefers_longest_supported_scale():
-    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 16 if i < 8 else 8) for i in range(10)}
+    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 17 if i < 8 else 9) for i in range(10)}
     assert select_adaptive_sequence_length(tracks, minimum_tracks=8) == 16
 
 
 def test_adaptive_selector_uses_short_scale_when_long_sequences_are_sparse():
-    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 8 if i < 11 else 4) for i in range(12)}
+    tracks = {f"v{i:02d}": _track(f"3682076{i:02d}", 9 if i < 11 else 5) for i in range(12)}
     assert select_adaptive_sequence_length(tracks, minimum_tracks=8) == 8
 
 
