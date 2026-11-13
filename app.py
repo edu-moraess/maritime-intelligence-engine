@@ -560,8 +560,22 @@ def main() -> None:
             config_error=active_engine.settings.config_error,
         )
         snapshot = active_engine.snapshot()
-        if page != "Overview":
-            render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
+
+        # Resolve navigation from current Session State on every fragment rerun.
+        # A fragment-only rerun does not re-execute main() or refresh its closure.
+        active_module = st.session_state.get("workspace_module", "Overview")
+        if active_module not in NAVIGATION:
+            active_module = "Overview"
+        active_views = NAVIGATION[active_module]
+        active_page = active_views[0]
+        if len(active_views) > 1:
+            candidate_page = st.session_state.get(
+                f"workspace_subarea_{active_module}", active_views[0]
+            )
+            active_page = candidate_page if candidate_page in active_views else active_views[0]
+
+        # Keep navigation visible on Overview as well as every secondary page.
+        render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
         worker_is_active = snapshot.status.worker_state in {
             "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
         }
@@ -581,7 +595,7 @@ def main() -> None:
                 )
                 for label, key in diagnostic_rows:
                     st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
-        render_header(snapshot.status, page)
+        render_header(snapshot.status, active_page)
 
         if snapshot.status.state != "LIVE AIS":
             status_type = (
@@ -591,25 +605,25 @@ def main() -> None:
             )
             notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
 
-        if page == "Overview":
+        if active_page == "Overview":
             render_overview(active_engine, snapshot, active_settings)
-        elif page == "Fleet":
+        elif active_page == "Fleet":
             render_vessels(active_engine, snapshot, active_settings)
-        elif page == "Vessel Intelligence":
+        elif active_page == "Vessel Intelligence":
             render_vessel_intelligence(active_engine, snapshot, active_settings)
-        elif page == "Trajectory Analysis":
+        elif active_page == "Trajectory Analysis":
             render_trajectory_analysis(active_engine, snapshot, active_settings)
-        elif page == "Behavior":
+        elif active_page == "Behavior":
             render_behavior(active_engine, snapshot, active_settings)
-        elif page == "Similarity":
+        elif active_page == "Similarity":
             render_similarity(active_engine, snapshot, active_settings)
-        elif page == "Anomalies":
+        elif active_page == "Anomalies":
             render_anomalies(active_engine, snapshot, active_settings)
-        elif page == "Traffic":
+        elif active_page == "Traffic":
             render_traffic(active_engine, snapshot, active_settings)
-        elif page == "Data Quality":
+        elif active_page == "Data Quality":
             render_data_quality(active_engine, snapshot, active_settings)
-        elif page == "System":
+        elif active_page == "System":
             render_system(active_engine, snapshot, active_settings)
 
     render_live_workspace()
