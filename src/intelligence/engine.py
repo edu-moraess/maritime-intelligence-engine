@@ -63,7 +63,7 @@ class EngineSnapshot:
     quality: QualityReport
     status: IngestionStatus
     embeddings: EmbeddingResult | None
-    summary: dict[str, float | int]
+    summary: dict[str, float | int | None]
     readiness: ReadinessSnapshot
     last_collection_seconds: float = 0.0
     last_collection_breakdown: dict[str, float] = field(default_factory=dict)
