@@ -27,7 +27,7 @@ if WORKDIR.exists():
     )
 
 def run(command, cwd=None):
-    print("\\n$", " ".join(map(str, command)), flush=True)
+    print("\n$", " ".join(map(str, command)), flush=True)
     subprocess.run(command, cwd=cwd, check=True)
 
 run(["git", "clone", "--branch", BRANCH, "--single-branch", REPO_URL, str(WORKDIR)])
@@ -40,7 +40,7 @@ if actual_head != REMOTE_HEAD:
 run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"], cwd=WORKDIR)
 run([sys.executable, "scripts/validate_p0.py"], cwd=WORKDIR)
 
-print("\\nP0 deterministic validation completed.")
+print("\nP0 deterministic validation completed.")
 print("Checkout:", WORKDIR)
 print("Commit:", actual_head)
 print("LIVE_AIS_30_MINUTE_ACCEPTANCE=NOT_RUN")
