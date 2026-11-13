@@ -147,9 +147,20 @@ class AISStreamProvider(AISProvider):
         self._websocket_status = "CONNECTING"
         return True, self._reason
 
-    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
-        """Read continuously for a finite collection window with bounded reconnects."""
+    def stream(
+        self,
+        stop_event: threading.Event | None = None,
+        duration_seconds: float | None = None,
+        *,
+        message_limit: int | None = None,
+    ) -> Iterator[AISObservation]:
+        """Read AIS with bounded reconnects.
+
+        ``message_limit=None`` preserves the configured per-window cap;
+        ``message_limit=0`` explicitly disables the cap for a managed live worker.
+        """
         stop_event = stop_event or threading.Event()
+        effective_limit = self.max_messages if message_limit is None else max(0, int(message_limit))
         deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
         ready, _ = self.connect()
         if not ready:
@@ -157,7 +168,7 @@ class AISStreamProvider(AISProvider):
         messages_at_start = self._messages_received
         backoff = 1.0
         opened = False
-        while not stop_event.is_set() and (self._messages_received - messages_at_start) < self.max_messages:
+        while not stop_event.is_set() and (effective_limit == 0 or (self._messages_received - messages_at_start) < effective_limit):
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
@@ -176,7 +187,7 @@ class AISStreamProvider(AISProvider):
                 socket.send(json.dumps(self._subscription()))
                 backoff = 1.0
                 messages_at_socket_start = self._messages_received
-                while not stop_event.is_set() and (self._messages_received - messages_at_socket_start) < self.max_messages:
+                while not stop_event.is_set() and (effective_limit == 0 or (self._messages_received - messages_at_socket_start) < effective_limit):
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     try:
