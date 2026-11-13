@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 
 from src.config.settings import AppSettings, DEFAULT_BBOX
 from src.ingestion.models import AISObservation
@@ -87,6 +88,17 @@ def test_snapshot_vessels_and_live_summary_exclude_historical_only_targets():
 
     historical = _tracks("900000")
     current = _tracks("800000")
+    # The assertion below concerns active vessels, so make this session fresh
+    # relative to the engine's real staleness threshold. Historical fixtures
+    # intentionally retain their old timestamps.
+    fresh_base = datetime.now(timezone.utc) - timedelta(seconds=5)
+    current = {
+        mmsi: [
+            replace(item, received_at=fresh_base + timedelta(seconds=index))
+            for index, item in enumerate(track)
+        ]
+        for mmsi, track in current.items()
+    }
 
     engine.store.extend(
         [item for track in historical.values() for item in track]
