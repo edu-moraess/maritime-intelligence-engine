@@ -158,6 +158,12 @@ class _ProcessEngineRegistry:
                         raise RuntimeError(
                             "The previous AIS worker is still alive; refusing to start a second subscription."
                         )
+                    if getattr(previous, "_unpersisted_observations", []):
+                        raise RuntimeError(
+                            "Operational configuration change blocked: unpersisted real AIS "
+                            "observations remain in memory. Enable historical persistence and "
+                            "finalize the session before changing monitoring configuration."
+                        )
                     archived_observations = previous.store.all()
                     previous.historical_writer.close()
                 self.engine = create_engine(settings)
