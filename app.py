@@ -549,55 +549,60 @@ def main() -> None:
         else:
             st.warning(result_message)
 
-    snapshot = engine.snapshot()
-    if snapshot.last_collection_breakdown:
-        with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
-            breakdown = snapshot.last_collection_breakdown
-            diagnostic_rows = (
-                ("AIS stream", "ais_stream"),
-                ("Historical restore", "historical_restore"),
-                ("Postgres persist", "postgres_persist"),
-                ("Region persistence", "region_persist"),
-                ("Environmental", "environmental"),
-                ("Recompute / ML", "recompute"),
-                ("Findings", "findings"),
-                ("Total", "total"),
-            )
-            for label, key in diagnostic_rows:
-                st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
-    render_header(snapshot.status, page)
-
     if page != "Overview":
         render_aux_workspace_controls(engine, settings, st.columns(3))
 
-    if snapshot.status.state != "LIVE AIS":
-        status_type = (
-            "red"
-            if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"}
-            else ""
-        )
-        notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
+    @st.fragment(run_every="2s")
+    def render_live_workspace() -> None:
+        """Refresh the active operational page while the process worker ingests AIS."""
+        snapshot = engine.snapshot()
+        if snapshot.last_collection_breakdown:
+            with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
+                breakdown = snapshot.last_collection_breakdown
+                diagnostic_rows = (
+                    ("AIS stream", "ais_stream"),
+                    ("Historical restore", "historical_restore"),
+                    ("Postgres persist", "postgres_persist"),
+                    ("Region persistence", "region_persist"),
+                    ("Environmental", "environmental"),
+                    ("Recompute / ML", "recompute"),
+                    ("Findings", "findings"),
+                    ("Total", "total"),
+                )
+                for label, key in diagnostic_rows:
+                    st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
+        render_header(snapshot.status, page)
 
-    if page == "Overview":
-        render_overview(engine, snapshot, settings)
-    elif page == "Fleet":
-        render_vessels(engine, snapshot, settings)
-    elif page == "Vessel Intelligence":
-        render_vessel_intelligence(engine, snapshot, settings)
-    elif page == "Trajectory Analysis":
-        render_trajectory_analysis(engine, snapshot, settings)
-    elif page == "Behavior":
-        render_behavior(engine, snapshot, settings)
-    elif page == "Similarity":
-        render_similarity(engine, snapshot, settings)
-    elif page == "Anomalies":
-        render_anomalies(engine, snapshot, settings)
-    elif page == "Traffic":
-        render_traffic(engine, snapshot, settings)
-    elif page == "Data Quality":
-        render_data_quality(engine, snapshot, settings)
-    elif page == "System":
-        render_system(engine, snapshot, settings)
+        if snapshot.status.state != "LIVE AIS":
+            status_type = (
+                "red"
+                if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"}
+                else ""
+            )
+            notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
+
+        if page == "Overview":
+            render_overview(engine, snapshot, settings)
+        elif page == "Fleet":
+            render_vessels(engine, snapshot, settings)
+        elif page == "Vessel Intelligence":
+            render_vessel_intelligence(engine, snapshot, settings)
+        elif page == "Trajectory Analysis":
+            render_trajectory_analysis(engine, snapshot, settings)
+        elif page == "Behavior":
+            render_behavior(engine, snapshot, settings)
+        elif page == "Similarity":
+            render_similarity(engine, snapshot, settings)
+        elif page == "Anomalies":
+            render_anomalies(engine, snapshot, settings)
+        elif page == "Traffic":
+            render_traffic(engine, snapshot, settings)
+        elif page == "Data Quality":
+            render_data_quality(engine, snapshot, settings)
+        elif page == "System":
+            render_system(engine, snapshot, settings)
+
+    render_live_workspace()
 
 
 if __name__ == "__main__":
