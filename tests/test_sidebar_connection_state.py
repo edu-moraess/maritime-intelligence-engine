@@ -59,16 +59,16 @@ def test_sidebar_resolves_engine_after_region_controls_and_uses_snapshot() -> No
     assert "connection_placeholder.markdown(" in APP_SOURCE
 
 
-def test_collection_refreshes_sidebar_after_collection():
-    """Sidebar renders before collection, so completion must trigger a rerun."""
-    assert 'st.session_state["collection_result"]' in APP_SOURCE
-    assert "The sidebar is rendered before collection" in APP_SOURCE
-    assert "st.rerun()" in APP_SOURCE
-    assert "collection_result = st.session_state.pop(" in APP_SOURCE
+def test_finite_collection_status_is_refreshed_by_workspace_fragment():
+    """The async worker status, not a synchronous sidebar result, drives the UI."""
+    assert '@st.fragment(run_every="2s")' in APP_SOURCE
+    assert "finite_collection_status()" in APP_SOURCE
+    assert 'finite_status["state"] == "RUNNING"' in APP_SOURCE
+    assert 'finite_status["state"] == "COMPLETED"' in APP_SOURCE
 
 
-def test_collection_result_is_preserved_across_refresh():
-    """The rerun must not discard the existing collection result message."""
-    assert '"success"' in APP_SOURCE
-    assert '"warning"' in APP_SOURCE
-    assert "Collection elapsed " in APP_SOURCE
+def test_finite_collection_completion_reports_received_observation_count():
+    """Completion feedback is derived from the worker's durable engine status."""
+    assert 'finite_status["received"]' in APP_SOURCE
+    assert "FINITE AIS COLLECTION COMPLETED" in APP_SOURCE
+    assert "FINITE AIS COLLECTION FAILED" in APP_SOURCE
