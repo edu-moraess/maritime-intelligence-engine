@@ -837,7 +837,15 @@ class MaritimeIntelligenceEngine:
             observation for observation in self._unpersisted_observations
             if not validate_observation(observation)
         ]
-        if all_in_memory and not self._unpersisted_observations and not self._historical_loaded:
+        if (
+            all_in_memory
+            and not self._unpersisted_observations
+            and not self._historical_loaded
+            and (
+                self.historical_result is None
+                or self.historical_result.session_id is None
+            )
+        ):
             raise RuntimeError(
                 "Clear Session blocked: in-memory observations have no verified historical origin."
             )
