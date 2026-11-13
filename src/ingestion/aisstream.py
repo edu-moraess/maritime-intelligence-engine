@@ -198,6 +198,7 @@ class AISStreamProvider(AISProvider):
                     compression="deflate",
                 )
                 opened = True
+                socket_opened_at = time.monotonic()
                 connected_at = datetime.now(timezone.utc)
                 if self._reconnect_attempts:
                     self._last_reconnect_at = connected_at
@@ -206,7 +207,6 @@ class AISStreamProvider(AISProvider):
                 self._reason = "Subscription sent; waiting for AIS messages."
                 self._websocket_status = "OPEN"
                 socket.send(json.dumps(self._subscription()))
-                backoff = 1.0
                 messages_at_socket_start = self._messages_received
                 while not stop_event.is_set() and (effective_limit == 0 or (self._messages_received - messages_at_socket_start) < effective_limit):
                     if deadline is not None and time.monotonic() >= deadline:
@@ -234,6 +234,8 @@ class AISStreamProvider(AISProvider):
                 self._last_disconnect_at = datetime.now(timezone.utc)
                 self._reconnect_attempts += 1
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
+                if "socket_opened_at" in locals() and time.monotonic() - socket_opened_at >= 60.0:
+                    backoff = 1.0
                 if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     break
                 sleep_for = min(backoff + random.uniform(0, 0.4), 8.0)
