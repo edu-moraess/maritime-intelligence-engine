@@ -574,6 +574,7 @@ def main() -> None:
                     ("Environmental", "environmental"),
                     ("Recompute / ML", "recompute"),
                     ("Findings", "findings"),
+                    ("Diagnostic overhead", "diagnostic_overhead"),
                     ("Total", "total"),
                 )
                 for label, key in diagnostic_rows:
