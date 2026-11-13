@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from src.ui._pages_map_render import visible_track_count
 from src.ui.tactical_map import (
     AIS_TARGETS_LAYER_ID,
     DENSITY_LAYER_TYPE,
@@ -239,4 +240,17 @@ def test_stale_target_tooltip_includes_real_last_report_age():
     assert enriched["tactical_status"] == "STALE"
     assert enriched["tooltip_status"].startswith("STALE · ")
     assert enriched["tooltip_age"].endswith("s")
+
+def test_visible_track_count_uses_only_current_map_targets():
+    rows = [{"mmsi": "111111111"}, {"mmsi": "222222222"}]
+    observations = [
+        SimpleNamespace(mmsi="111111111"),
+        SimpleNamespace(mmsi="111111111"),
+        SimpleNamespace(mmsi="222222222"),
+        SimpleNamespace(mmsi="333333333"),
+        SimpleNamespace(mmsi="333333333"),
+        SimpleNamespace(mmsi="333333333"),
+    ]
+
+    assert visible_track_count(rows, observations) == 1
 
