@@ -38,9 +38,9 @@ def test_temporal_diagnostics_counts_thresholds_and_windows():
     assert result.tracks_by_min_points == {4: 4, 8: 3, 16: 2, 32: 1}
     assert result.median_points == 12.0
     assert result.max_points == 40
-    # Each contiguous segment contributes max(0, n - window + 1) starts.
+    # Each T-transition window requires T+1 real reports.
     assert result.sliding_windows == {8: 40, 16: 24, 32: 8}
-    assert result.non_overlapping_windows == {8: 5, 16: 2, 32: 0}
+    assert result.non_overlapping_windows == {8: 5, 16: 2, 32: 1}
 
 
 def test_adaptive_selector_prefers_longest_supported_scale():
@@ -106,3 +106,10 @@ def test_temporal_diagnostics_empty_input():
     assert result.median_duration_seconds is None
     assert result.mean_interval_seconds is None
     assert result.sliding_windows == {8: 0, 16: 0, 32: 0}
+
+
+def test_adaptive_selector_requires_one_extra_report_for_transition_origin():
+    tracks = {"111111111": _track("111111111", 32)}
+    assert select_adaptive_sequence_length(tracks, minimum_tracks=1, candidate_lengths=(32,)) is None
+    tracks["111111111"] = _track("111111111", 33)
+    assert select_adaptive_sequence_length(tracks, minimum_tracks=1, candidate_lengths=(32,)) == 32
