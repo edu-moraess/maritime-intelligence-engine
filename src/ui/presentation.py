@@ -307,7 +307,10 @@ def render_region_comparison(comparison) -> None:
                 + " · anomaly rate: "
                 + f"{region.anomaly_rate:.1%}"
             )
-            if region.temporal_reason and region.temporal_status != "READY":
+            if region.temporal_reason and (
+                region.temporal_status != "READY"
+                or region.temporal_top_quartile_rate is None
+            ):
                 st.caption("Temporal availability · " + escape(region.temporal_reason))
     if comparison.ambiguous_observations:
         st.caption(
