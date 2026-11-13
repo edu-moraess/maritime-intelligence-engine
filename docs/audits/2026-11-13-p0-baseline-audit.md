@@ -91,7 +91,7 @@ Impact:
 
 Baseline source audit: COMPLETE.
 Runtime baseline: NOT RUN.
-P0 implementation: PARTIAL — process-local worker integrated with engine and Streamlit controls; P0 acceptance remains blocked pending runtime tests and the remaining metric/diagnostic/environmental work.
+P0 implementation: CODE CHECKPOINT COMPLETE FOR P0.1–P0.6; runtime validation and production acceptance remain BLOCKED.
 
 ## Follow-up implementation checkpoint
 
@@ -100,15 +100,20 @@ P0 implementation: PARTIAL — process-local worker integrated with engine and S
 - Added Start Live AIS / Stop Live AIS controls and a two-second fragment refresh for the active operational page.
 - Added engine-level synchronization around mutable operations and snapshots.
 - Added bounded queue telemetry, worker-thread liveness, provider reconnect counters/timestamps/errors, and LIVE freshness expiry.
-- Live session positions update as the engine drains the queue. Analytics recomputation is throttled to ten-second intervals. Completed live sessions are persisted through the existing historical writer.
-- Overview now includes stale last-known positions by default and distinguishes them from fresh targets with a stale style and report age.
+- Live session positions update as the engine drains the queue. Analytics recomputation is throttled to ten-second intervals. Completed live sessions are handed to the existing historical writer; durable PostgreSQL persistence occurs only when configured and enabled.
+- Overview includes stale last-known positions by default and distinguishes them from fresh targets with a stale style and report age.
+- Current-session and restored historical populations are separated in summary metrics, quality reports, traffic charts, tactical trails, and map track counts.
+- Traffic metrics use fresh-vessel speed samples, unique MMSI counts, anomaly-event and anomaly-vessel counts, and configured monitoring-region counts.
+- Environmental provider exceptions now carry a failure class, sanitized reason, and attempt timestamp instead of being swallowed.
+- Collection diagnostics use actual measured stream duration and explicit diagnostic overhead; environmental timestamps labeled UTC are converted to UTC before formatting.
+- Regional temporal metrics are N/A when the model or quartile threshold is unavailable. Project status documentation now identifies TCN as the current temporal production path.
 
 ### Remaining acceptance blockers
 
 1. No Python test suite has been executed in this environment; no PASS claim is made.
 2. The 30-minute live AIS / multi-page navigation / interruption-recovery test has not been run.
 3. Cross-process and cross-replica coordination is not implemented. The registry is process-local only.
-4. Environmental failure classification, canonical metric definitions, diagnostic reconciliation, and temporal unavailable semantics have been implemented in code and documented; automated verification remains pending.
+4. P0.4–P0.6 code paths have been updated and documented; automated verification remains pending.
 5. Verify queue saturation behavior under realistic AIS burst rates and confirm the configured queue capacity is appropriate.
 6. Verify Streamlit fragment refresh, process-shared region selection, and the shared historical-persistence toggle in the actual deployment target.
 7. Confirm historical observations remain correctly scoped after a process-wide region change; the registry transfers the previous in-memory store into the replacement engine.
