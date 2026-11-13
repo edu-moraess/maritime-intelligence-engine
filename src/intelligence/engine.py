@@ -156,6 +156,8 @@ class MaritimeIntelligenceEngine:
         self.findings: list[AnomalyFinding] = []
         self.current_session_findings: list[AnomalyFinding] = []
         self.current_session_observations: list[AISObservation] = []
+        # Real AIS retained until a historical writer confirms durability.
+        self._unpersisted_observations: list[AISObservation] = []
         self.environmental_provider = OpenMeteoMarineProvider()
         self.environmental_contexts: dict[str, EnvironmentalContext] = {}
         self.temporal: TemporalFitResult | None = None
@@ -194,6 +196,14 @@ class MaritimeIntelligenceEngine:
         self.store.extend(restored)
         self._recompute()
         return len(restored)
+
+    def _mark_observations_persisted(self, observations: list[AISObservation]) -> None:
+        """Remove only observations whose historical persistence was confirmed."""
+        persisted = {_observation_signature(item) for item in observations}
+        self._unpersisted_observations = [
+            item for item in self._unpersisted_observations
+            if _observation_signature(item) not in persisted
+        ]
 
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window starting immediately at operator action.
@@ -242,6 +252,7 @@ class MaritimeIntelligenceEngine:
             self.current_session_findings = []
             if collected:
                 self.store.extend(collected)
+                self._unpersisted_observations.extend(collected)
     
                 phase_started = time.monotonic()
                 self.historical_result = self.historical_writer.persist_collection(
@@ -252,6 +263,15 @@ class MaritimeIntelligenceEngine:
                     ended_at,
                 )
                 breakdown["postgres_persist"] = time.monotonic() - phase_started
+                valid_collected = [
+                    item for item in collected if not validate_observation(item)
+                ]
+                if (
+                    self.historical_result.session_id is not None
+                    and self.historical_result.persisted_observations
+                    + self.historical_result.duplicate_observations >= len(valid_collected)
+                ):
+                    self._mark_observations_persisted(valid_collected)
     
                 if (
                     self.historical_result.session_id is not None
@@ -413,6 +433,7 @@ class MaritimeIntelligenceEngine:
             self.current_session_observations + observations
         )[-self.settings.max_messages :]
         self.store.extend(observations)
+        self._unpersisted_observations.extend(observations)
         self._session_generation += 1
         now_monotonic = time.monotonic()
         if now_monotonic - self._live_last_recompute_monotonic >= 10.0:
@@ -447,17 +468,27 @@ class MaritimeIntelligenceEngine:
             "historical_restore": 0.0,
         }
 
-        if self.current_session_observations:
+        pending_observations = list(self._unpersisted_observations)
+        if pending_observations:
             phase_started = time.monotonic()
             elapsed = max(0.0, (ended_at - started_at).total_seconds())
             self.historical_result = self.historical_writer.persist_collection(
-                list(self.current_session_observations),
+                pending_observations,
                 self.settings.bbox,
                 elapsed,
                 started_at,
                 ended_at,
             )
             breakdown["postgres_persist"] = time.monotonic() - phase_started
+            valid_pending = [
+                item for item in pending_observations if not validate_observation(item)
+            ]
+            if (
+                self.historical_result.session_id is not None
+                and self.historical_result.persisted_observations
+                + self.historical_result.duplicate_observations >= len(valid_pending)
+            ):
+                self._mark_observations_persisted(valid_pending)
 
             phase_started = time.monotonic()
             if (
@@ -798,45 +829,42 @@ class MaritimeIntelligenceEngine:
             self.sync_live_ingestion()
 
         all_in_memory = self.store.all()
-        valid_current = [
-            observation for observation in self.current_session_observations
+        valid_pending = [
+            observation for observation in self._unpersisted_observations
             if not validate_observation(observation)
         ]
-        if all_in_memory and not self.current_session_observations and not self._historical_loaded:
+        if all_in_memory and not self._unpersisted_observations and not self._historical_loaded:
             raise RuntimeError(
                 "Clear Session blocked: in-memory observations have no verified historical origin."
             )
-        if valid_current:
-            result = self.historical_result
-            covered = (
-                result is not None
-                and result.session_id is not None
-                and result.persisted_observations + result.duplicate_observations >= len(valid_current)
-            )
-            if not covered:
-                if not self.historical_writer.enabled:
-                    raise RuntimeError(
-                        "Clear Session blocked: historical persistence is disabled; "
-                        "current AIS observations remain only in memory."
-                    )
-                ended_at = datetime.now(timezone.utc)
-                started_at = self._live_started_at or ended_at
-                result = self.historical_writer.persist_collection(
-                    valid_current,
-                    self.settings.bbox,
-                    self.last_collection_seconds,
-                    started_at,
-                    ended_at,
+        if valid_pending:
+            if not self.historical_writer.enabled:
+                raise RuntimeError(
+                    "Clear Session blocked: historical persistence is disabled; "
+                    "unpersisted AIS observations remain only in memory."
                 )
-                self.historical_result = result
-                if (
-                    result.session_id is None
-                    or result.persisted_observations + result.duplicate_observations < len(valid_current)
-                ):
-                    raise RuntimeError(
-                        "Clear Session blocked: historical persistence did not confirm "
-                        "all valid current-session observations."
-                    )
+            ended_at = datetime.now(timezone.utc)
+            started_at = min(
+                (item.received_at for item in valid_pending),
+                default=ended_at,
+            )
+            result = self.historical_writer.persist_collection(
+                valid_pending,
+                self.settings.bbox,
+                self.last_collection_seconds,
+                started_at,
+                ended_at,
+            )
+            self.historical_result = result
+            if (
+                result.session_id is None
+                or result.persisted_observations + result.duplicate_observations < len(valid_pending)
+            ):
+                raise RuntimeError(
+                    "Clear Session blocked: historical persistence did not confirm "
+                    "all unpersisted valid AIS observations."
+                )
+            self._mark_observations_persisted(valid_pending)
 
         if worker is not None:
             worker.reset()
@@ -844,6 +872,7 @@ class MaritimeIntelligenceEngine:
         self._live_started_monotonic = None
         self._live_last_recompute_monotonic = 0.0
         self.store.clear()
+        self._unpersisted_observations.clear()
         reset_provider = getattr(self.provider, "reset_session", None)
         if callable(reset_provider):
             reset_provider()
