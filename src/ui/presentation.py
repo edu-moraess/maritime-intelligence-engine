@@ -246,9 +246,9 @@ def render_ops_bar(
     <span class="region">{escape(str(region_label))}</span>
   </div>
   <div class="ops-metrics">
-    <div class="ops-metric"><div class="lbl">Vessels</div><div class="val">{escape(str(vessels))}</div></div>
+    <div class="ops-metric"><div class="lbl">Active vessels</div><div class="val">{escape(str(vessels))}</div></div>
     <div class="ops-metric"><div class="lbl">Messages</div><div class="val">{escape(str(messages))}</div></div>
-    <div class="ops-metric"><div class="lbl">Anomalies</div><div class="val">{escape(str(anomalies))}</div></div>
+    <div class="ops-metric"><div class="lbl">Anomaly events</div><div class="val">{escape(str(anomalies))}</div></div>
     {extra}
   </div>
   <div class="ops-meta">{escape(str(collection))}<br/>{escape(str(provenance))}</div>
@@ -285,10 +285,10 @@ def render_region_comparison(comparison) -> None:
             st.markdown(f"**{escape(region.label)}**")
             metric_strip(
                 {
-                    "Vessels": region.unique_vessels,
+                    "Observed vessels": region.unique_vessels,
                     "Reports": region.position_reports,
                     "Avg speed": (f"{region.average_speed_knots:.1f} kn" if region.average_speed_knots is not None else "N/A"),
-                    "Anomalies": region.anomalies,
+                    "Anomaly events": region.anomalies,
                 }
             )
             temporal_score = (
@@ -312,13 +312,22 @@ def render_region_comparison(comparison) -> None:
                 or region.temporal_top_quartile_rate is None
             ):
                 st.caption("Temporal availability · " + escape(region.temporal_reason))
+    exclusions = []
     if comparison.ambiguous_observations:
+        exclusions.append(
+            f"{comparison.ambiguous_observations:,} observation(s) inside both regions"
+        )
+    if comparison.unassigned_observations:
+        exclusions.append(
+            f"{comparison.unassigned_observations:,} observation(s) outside both regions"
+        )
+    if exclusions:
         st.caption(
-            f"{comparison.ambiguous_observations:,} observation(s) fell inside both regions "
-            "and were excluded from both regional metrics to avoid double-counting."
+            "Excluded from regional metrics: " + " · ".join(exclusions)
+            + ". Regional reports therefore need not sum to all session messages."
         )
     else:
-        st.caption("Regional metrics use the same real-AIS session and shared analytical models.")
+        st.caption("Regional metrics use the same real-AIS session and shared analytical models; all session observations were assigned to exactly one region.")
 
 
 def render_regional_events(events) -> None:
