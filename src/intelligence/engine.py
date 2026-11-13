@@ -587,6 +587,7 @@ class MaritimeIntelligenceEngine:
                 vessels,
                 self.current_session_observations,
                 self.findings,
+                monitoring_regions=len(self.settings.monitoring_bboxes),
             ),
             readiness=self._readiness(analysis_tracks),
             last_collection_seconds=self.last_collection_seconds,
