@@ -556,13 +556,12 @@ def main() -> None:
         else:
             st.warning(result_message)
 
-    if page != "Overview":
-        render_aux_workspace_controls(engine, settings, st.columns(3))
-
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
         """Refresh the active operational page while the process worker ingests AIS."""
         snapshot = engine.snapshot()
+        if page != "Overview":
+            render_aux_workspace_controls(engine, settings, st.columns(3))
         if snapshot.last_collection_breakdown:
             with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
                 breakdown = snapshot.last_collection_breakdown
