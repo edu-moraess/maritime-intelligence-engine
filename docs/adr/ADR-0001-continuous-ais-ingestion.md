@@ -9,11 +9,13 @@
 
 The branch now contains a first process-local implementation of this decision:
 
-- `AISIngestionWorker` owns the provider stream in one daemon thread, with explicit start/stop, a bounded queue (default capacity 5,000), queue-drop telemetry, and a receive-freshness state.
+- `AISIngestionWorker` owns the provider stream in one daemon thread, with explicit start/stop, a bounded queue (default capacity 5,000; configurable with `AIS_INGESTION_QUEUE_CAPACITY`, clamped to 50,000), queue-drop telemetry, and a receive-freshness state.
 - `AISStreamProvider.stream(..., message_limit=0)` supports a managed continuous mode without the finite collection cap. The legacy finite-window cap remains the default for existing callers.
 - The Streamlit app obtains its engine from a process-shared `st.cache_resource` registry. One active engine/worker configuration is selected per Python process; changing the active configuration stops and closes the previous engine before replacement.
-- The app exposes explicit Start Live AIS / Stop Live AIS controls and refreshes the operational page using a two-second Streamlit fragment.
+- The app exposes explicit Start Live AIS / Stop Live AIS controls and refreshes the operational page using a two-second Streamlit fragment. The process-wide registry also synchronizes active region configuration across sessions, transfers the previous in-memory observation store when regions change, and refuses to start a replacement worker if the old worker cannot stop.
 - Engine mutations and snapshots are serialized with an engine-level reentrant lock. Analytics recomputation during live ingestion is throttled to at most once every ten seconds; operational vessel positions are updated as observations are drained.
+- The historical-persistence toggle is process-wide rather than session-local, avoiding per-user reruns from racing the shared engine's writer configuration.
+- Traffic summary populations are explicit; configured region count is used instead of coordinate clusters. Environmental failures carry classified status/reason, regional temporal metrics use N/A when unavailable, and diagnostic overhead is reported explicitly.
 - A stopped continuous session is persisted through the existing historical writer. Last-known targets remain in the vessel snapshot and are now included on the overview map by default with a distinct stale style and actual last-report age.
 
 This remains a process-local design. A deployment with multiple replicas or independent Python worker processes can still open one subscription per process. There is no cross-replica lease or leader election.
