@@ -337,7 +337,7 @@ def _render_sidebar(
         conn_upper = str(conn).upper()
         if conn_upper in {"LIVE AIS", "LIVE"}:
             pill_cls = "status-live"
-        elif "CONNECT" in conn_upper:
+        elif "CONNECT" in conn_upper or conn_upper in {"DEGRADED", "RECONNECTING"}:
             pill_cls = "status-connecting"
         else:
             pill_cls = "status-disconnected"
@@ -576,7 +576,7 @@ def main() -> None:
         if snapshot.status.state != "LIVE AIS":
             status_type = (
                 "red"
-                if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"}
+                if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE", "ERROR"}
                 else ""
             )
             notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
