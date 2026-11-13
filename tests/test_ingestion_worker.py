@@ -144,19 +144,47 @@ def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monke
     from src.config.settings import AppSettings, DEFAULT_BBOX
     from src.intelligence.engine import MaritimeIntelligenceEngine
 
+    from src.ingestion.models import IngestionStatus
+
     class _EngineProvider:
+        def __init__(self):
+            self._state = "DISCONNECTED"
+            self._websocket_status = "CLOSED"
+            self._last_received = None
+            self._messages = 0
+
+        @property
+        def status(self):
+            return IngestionStatus(
+                state=self._state,
+                reason="test provider",
+                connected_at=None,
+                last_received_at=self._last_received,
+                messages_received=self._messages,
+                active_vessels=0,
+                latency_seconds=None,
+                websocket_status=self._websocket_status,
+            )
+
         def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
+            self._state = "CONNECTING"
+            self._websocket_status = "OPEN"
             for mmsi in ("123456789", "123456788"):
                 if stop_event is not None and stop_event.is_set():
-                    return
+                    break
+                self._last_received = datetime.now(timezone.utc)
+                self._messages += 1
+                self._state = "LIVE AIS"
                 yield AISObservation(
                     mmsi=mmsi,
                     latitude=1.0,
                     longitude=2.0,
-                    received_at=datetime.now(timezone.utc),
+                    received_at=self._last_received,
                 )
             while stop_event is not None and not stop_event.is_set():
                 time.sleep(0.005)
+            self._state = "DISCONNECTED"
+            self._websocket_status = "CLOSED"
 
     engine = MaritimeIntelligenceEngine(
         AppSettings(aisstream_api_key="test-key", bbox=DEFAULT_BBOX)
