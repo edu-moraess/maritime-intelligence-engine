@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.config.settings import AppSettings, DEFAULT_BBOX
 from src.ingestion.models import AISObservation
 from src.intelligence.engine import create_engine
@@ -69,16 +71,18 @@ def test_engine_signature_changes_on_real_region_change():
     assert _engine_signature(s1) != _engine_signature(s2)
 
 
-def test_clear_session_data_is_only_explicit_wipe():
+def test_clear_session_data_blocks_unverified_memory_wipe():
     engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
-    engine.store.extend([_obs()])
+    observation = _obs()
+    engine.store.extend([observation])
     assert len(engine.store.all()) == 1
-    engine.clear_session_data()
-    assert engine.store.all() == []
+
+    with pytest.raises(RuntimeError, match="no verified historical origin"):
+        engine.clear_session_data()
+
+    # A blocked clear must preserve the only in-memory copy.
+    assert engine.store.all() == [observation]
     assert engine.provider.status.messages_received == 0
-    assert engine.findings == []
-    assert engine.embeddings is None
-    assert engine.temporal is None
 
 
 def test_collect_extends_store_without_resetting_prior_observations():
