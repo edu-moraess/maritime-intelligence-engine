@@ -109,6 +109,25 @@ class AISIngestionWorker:
                 self._last_error = "Worker did not stop before the shutdown timeout."
         return stopped
 
+    def reset(self) -> None:
+        """Discard queued messages and reset telemetry after a confirmed stop."""
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                raise RuntimeError("Cannot reset an active AIS worker.")
+            while True:
+                try:
+                    self.observations.get_nowait()
+                except queue.Empty:
+                    break
+            self._thread = None
+            self._started_at = None
+            self._last_message_at = None
+            self._messages_received = 0
+            self._reconnect_attempts = 0
+            self._dropped_messages = 0
+            self._last_error = None
+            self._state = "STOPPED"
+
     def drain(self, limit: int = 1000) -> list[AISObservation]:
         """Return up to limit queued observations without blocking."""
         if limit < 1:
