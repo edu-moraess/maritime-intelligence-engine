@@ -16,7 +16,7 @@ The branch now contains a first process-local implementation of this decision:
 - Engine mutations and snapshots are serialized with an engine-level reentrant lock. Analytics recomputation during live ingestion is throttled to at most once every ten seconds; operational vessel positions are updated as observations are drained.
 - The historical-persistence toggle is process-wide rather than session-local, avoiding per-user reruns from racing the shared engine's writer configuration.
 - Traffic summary populations are explicit; configured region count is used instead of coordinate clusters. Environmental failures carry classified status/reason, regional temporal metrics use N/A when unavailable, and diagnostic overhead is reported explicitly.
-- A stopped continuous session is persisted through the existing historical writer. Last-known targets remain in the vessel snapshot and are now included on the overview map by default with a distinct stale style and actual last-report age.
+- A stopped continuous session is handed to the existing historical writer; durable PostgreSQL persistence occurs only when configured and enabled. Last-known targets remain in the vessel snapshot and are now included on the overview map by default with a distinct stale style and actual last-report age.
 
 This remains a process-local design. A deployment with multiple replicas or independent Python worker processes can still open one subscription per process. There is no cross-replica lease or leader election.
 
