@@ -329,6 +329,11 @@ def _render_sidebar(
         mission_placeholder = st.empty()
 
         existing = list(settings.monitoring_bboxes) or [settings.bbox]
+        if len(existing) == 1:
+            default_second = REGION_PRESETS["Malacca Strait"]
+            if _normalize_bbox(existing[0]) == _normalize_bbox(default_second):
+                default_second = REGION_PRESETS["Singapore"]
+            existing.append(default_second)
         st.session_state["monitoring_bboxes"] = tuple(existing)
         for label, bbox in zip(("a", "b"), existing):
             selected_region = region_name_for_bbox(bbox) or "Custom"
