@@ -1,12 +1,12 @@
-"""Targeted P0 validation; deliberately excludes model-training and live-network tests."""
+"""P0 regression, compilation, and repository-suite validation; no live AIS session is started."""
 
 from __future__ import annotations
 
 import compileall
 import os
+import subprocess
 import sys
 from pathlib import Path
-
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,6 @@ def main() -> int:
     os.chdir(REPO_ROOT)
     base_sha = "5bbe456f657bd4524e71937cf73da420db4f0898"
     print("[P0] Checking patch whitespace and merge markers ...", flush=True)
-    import subprocess
     subprocess.run(
         ["git", "diff", "--check", base_sha, "HEAD"],
         cwd=REPO_ROOT,
