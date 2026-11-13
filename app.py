@@ -186,17 +186,24 @@ def _engine_signature(settings: AppSettings) -> tuple:
         settings.stale_after_seconds,
         settings.provider,
         settings.config_error,
+        settings.database_url,
     )
 
 
+@st.cache_resource(show_spinner=False)
+def _process_engine(signature: tuple, _settings: AppSettings) -> MaritimeIntelligenceEngine:
+    """One shared engine/worker per configuration within this Python process.
+
+    Streamlit Cloud replicas or separate worker processes still require an
+    external coordinator; this cache is not a distributed singleton.
+    """
+    return create_engine(_settings)
+
+
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """Return the engine associated with the current live configuration."""
+    """Return the process-shared engine associated with the live configuration."""
     signature = _engine_signature(settings)
     if st.session_state.get("engine_signature") != signature:
-        previous_engine = st.session_state.get("engine")
-        if previous_engine is not None:
-            previous_engine.historical_writer.close()
-        st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
         for key in (
             "selected_mmsi",
@@ -206,7 +213,7 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         ):
             st.session_state.pop(key, None)
 
-    engine = st.session_state.engine
+    engine = _process_engine(signature, settings)
     engine.configure_historical_writer(
         settings.database_url,
         settings.historical_persistence_enabled,
