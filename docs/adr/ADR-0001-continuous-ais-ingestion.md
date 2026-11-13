@@ -1,9 +1,24 @@
 # ADR-0001: Continuous AIS ingestion ownership for MIE
 
-- Status: PROPOSED — implementation gate required
+- Status: ACCEPTED FOR PROCESS-LOCAL P0 PROTOTYPE — runtime acceptance pending
 - Date: 2026-11-13
 - Scope: P0.1/P0.2 operational reliability
 - Supersedes: none
+
+## Implementation checkpoint (2026-11-13)
+
+The branch now contains a first process-local implementation of this decision:
+
+- `AISIngestionWorker` owns the provider stream in one daemon thread, with explicit start/stop, a bounded queue (default capacity 5,000), queue-drop telemetry, and a receive-freshness state.
+- `AISStreamProvider.stream(..., message_limit=0)` supports a managed continuous mode without the finite collection cap. The legacy finite-window cap remains the default for existing callers.
+- The Streamlit app obtains its engine from a process-shared `st.cache_resource` registry. One active engine/worker configuration is selected per Python process; changing the active configuration stops and closes the previous engine before replacement.
+- The app exposes explicit Start Live AIS / Stop Live AIS controls and refreshes the operational page using a two-second Streamlit fragment.
+- Engine mutations and snapshots are serialized with an engine-level reentrant lock. Analytics recomputation during live ingestion is throttled to at most once every ten seconds; operational vessel positions are updated as observations are drained.
+- A stopped continuous session is persisted through the existing historical writer. Last-known targets remain in the vessel snapshot and are now included on the overview map by default with a distinct stale style and actual last-report age.
+
+This remains a process-local design. A deployment with multiple replicas or independent Python worker processes can still open one subscription per process. There is no cross-replica lease or leader election.
+
+Automated tests for worker lifecycle, continuous message-limit bypass, provider reconnect telemetry, engine drain/stop behavior, and stale target presentation have been added or updated. They have **not yet been executed** in this environment. The 30-minute live-network acceptance test and Colab full-suite validation remain mandatory before production acceptance.
 
 ## Context
 
