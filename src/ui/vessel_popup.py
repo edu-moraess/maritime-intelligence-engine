@@ -388,7 +388,7 @@ def render_vessel_quick_intelligence(
                 {
                     "STATUS": combined.status,
                     "BEHAVIOR": combined.behavior.classification,
-                    "CONFIDENCE": combined.behavior.confidence,
+                    "DATA COVERAGE": combined.behavior.confidence,
                     "REGION": combined.region or "—",
                 }
             )
@@ -488,11 +488,14 @@ def render_vessel_quick_intelligence(
         else:
             notice("N/A — no historical anomaly records for this MMSI.", "gray")
 
-    # Confidence
-    with st.expander("Confidence", expanded=True):
+    # Evidence coverage
+    with st.expander("Evidence coverage", expanded=True):
         st.markdown(provenance_badge("DERIVED"), unsafe_allow_html=True)
-        st.caption("Deterministic rules (no ML)")
-        metric_strip({"LEVEL": confidence.level})
+        st.caption(
+            "Deterministic coverage classification from observation count, "
+            "time span, and SOG/COG availability. Not statistical confidence."
+        )
+        metric_strip({"COVERAGE LEVEL": confidence.level})
         for reason in confidence.reasons:
             st.caption(f"· {reason}")
 
