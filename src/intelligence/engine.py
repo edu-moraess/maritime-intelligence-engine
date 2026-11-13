@@ -25,7 +25,7 @@ from src.ingestion.worker import AISIngestionWorker
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
 from src.ml.temporal.types import TemporalFitResult
-from src.processing.quality import QualityReport, build_quality_report
+from src.processing.quality import QualityReport, build_quality_report, validate_observation
 from src.processing.relevance import select_interesting_tracks
 from src.storage.memory import ObservationStore
 
@@ -774,17 +774,58 @@ class MaritimeIntelligenceEngine:
 
     @_synchronized
     def clear_session_data(self) -> None:
+        """Clear volatile state only after current-session observations are durable."""
         if self._finite_state == "RUNNING" or (
             self._finite_thread is not None and self._finite_thread.is_alive()
         ):
             raise RuntimeError("Cannot clear the session while finite AIS collection is running.")
+
         worker = getattr(self, "live_worker", None)
         if worker is not None:
-            stopped = worker.stop(timeout=10.0)
-            if not stopped:
+            if not self.stop_live_monitoring(timeout=10.0):
                 raise RuntimeError("AIS worker did not stop; session data was not cleared.")
+            # stop_live_monitoring drains the worker queue before finalizing.
+            self.sync_live_ingestion()
+
+        valid_current = [
+            observation for observation in self.current_session_observations
+            if not validate_observation(observation)
+        ]
+        if valid_current:
+            result = self.historical_result
+            covered = (
+                result is not None
+                and result.session_id is not None
+                and result.persisted_observations + result.duplicate_observations >= len(valid_current)
+            )
+            if not covered:
+                if not self.historical_writer.enabled:
+                    raise RuntimeError(
+                        "Clear Session blocked: historical persistence is disabled; "
+                        "current AIS observations remain only in memory."
+                    )
+                ended_at = datetime.now(timezone.utc)
+                started_at = self._live_started_at or ended_at
+                result = self.historical_writer.persist_collection(
+                    valid_current,
+                    self.settings.bbox,
+                    self.last_collection_seconds,
+                    started_at,
+                    ended_at,
+                )
+                self.historical_result = result
+                if (
+                    result.session_id is None
+                    or result.persisted_observations + result.duplicate_observations < len(valid_current)
+                ):
+                    raise RuntimeError(
+                        "Clear Session blocked: historical persistence did not confirm "
+                        "all valid current-session observations."
+                    )
+
+        if worker is not None:
             worker.reset()
-        self._live_started_at = None
+        self._live_started_at = None;
         self._live_started_monotonic = None
         self._live_last_recompute_monotonic = 0.0
         self.store.clear()
