@@ -190,6 +190,7 @@ class AISStreamProvider(AISProvider):
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
+            socket_opened_at: float | None = None
             try:
                 socket = websocket.create_connection(
                     STREAM_URL,
@@ -234,7 +235,7 @@ class AISStreamProvider(AISProvider):
                 self._last_disconnect_at = datetime.now(timezone.utc)
                 self._reconnect_attempts += 1
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
-                if "socket_opened_at" in locals() and time.monotonic() - socket_opened_at >= 60.0:
+                if socket_opened_at is not None and time.monotonic() - socket_opened_at >= 60.0:
                     backoff = 1.0
                 if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     break
