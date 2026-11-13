@@ -63,10 +63,10 @@ class EngineSnapshot:
     embeddings: EmbeddingResult | None
     summary: dict[str, float | int]
     readiness: ReadinessSnapshot
-    last_collection_seconds: float
-    last_collection_breakdown: dict[str, float]
-    historical_status: str
-    historical_result: HistoricalWriteResult | None
+    last_collection_seconds: float = 0.0
+    last_collection_breakdown: dict[str, float] = field(default_factory=dict)
+    historical_status: str = "disabled"
+    historical_result: HistoricalWriteResult | None = None
     temporal: TemporalFitResult | None = None
     region_comparison: RegionComparison | None = None
     regional_events: list[RegionalEvent] = field(default_factory=list)
@@ -198,7 +198,7 @@ class MaritimeIntelligenceEngine:
         breakdown["historical_restore"] = time.monotonic() - phase_started
 
         self.current_session_observations = list(collected)
-        self._session_generation += 1
+        self._session_generation = getattr(self, "_session_generation", 0) + 1
         self.current_session_findings = []
         if collected:
             self.store.extend(collected)
@@ -261,8 +261,9 @@ class MaritimeIntelligenceEngine:
         contexts: dict[str, EnvironmentalContext] = {}
         for index, bbox in enumerate(self.settings.monitoring_bboxes, start=1):
             region = f"region_{index}"
-            previous = self.environmental_contexts.get(region)
-            context = previous or EnvironmentalContext(region=region)
+            # Refreshes represent the current model snapshot; stale evidence
+            # must not survive as if it were part of the latest observation.
+            context = EnvironmentalContext(region=region)
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
             try:

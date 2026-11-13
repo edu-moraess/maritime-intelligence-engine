@@ -65,7 +65,14 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
             headers={"User-Agent": "maritime-intelligence-engine/1.0"},
         )
         with urlopen(request, timeout=self.timeout_seconds) as response:
-            payload = json.load(response)
+            if hasattr(response, "json"):
+                payload = response.json()
+            elif hasattr(response, "read"):
+                payload = json.load(response)
+            elif hasattr(response, "payload"):
+                payload = response.payload
+            else:
+                raise ValueError("Open-Meteo response is not a readable JSON response.")
 
         current = payload.get("current")
         if not isinstance(current, dict):

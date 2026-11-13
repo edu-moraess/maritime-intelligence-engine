@@ -18,18 +18,18 @@ MAX_REALISTIC_SPEED_KMH = 100.0
 @dataclass(frozen=True)
 class QualityReport:
     messages_processed: int
-    valid_records: int
-    invalid_records: int
-    duplicate_records: int
-    missing_values: int
-    receive_time_gaps: int
-    invalid_mmsi: int
-    impossible_speeds: int
-    impossible_jumps: int
-    stale_records: int
-    distinct_vessels: int
-    tracks_with_history: int
-    quality_percent: float
+    valid_records: int = 0
+    invalid_records: int = 0
+    duplicate_records: int = 0
+    missing_values: int = 0
+    receive_time_gaps: int = 0
+    invalid_mmsi: int = 0
+    impossible_speeds: int = 0
+    impossible_jumps: int = 0
+    stale_records: int = 0
+    distinct_vessels: int = 0
+    tracks_with_history: int = 0
+    quality_percent: float = 100.0
 
     @property
     def coverage_status(self) -> str:

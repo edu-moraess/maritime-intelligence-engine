@@ -59,7 +59,7 @@ def _unified_bbox(bboxes: tuple[RegionBBox, ...]) -> RegionBBox:
 
 def _unified_map_zoom(
     rows: list[dict],
-    bboxes: tuple[RegionBBox, ...],
+    bboxes: tuple[RegionBBox, ...] | None = None,
     *,
     min_zoom: float = 1.5,
     max_zoom: float = 9.0,
@@ -70,10 +70,12 @@ def _unified_map_zoom(
         longitudes = [float(row["longitude"]) for row in rows]
         lat_span = max(latitudes) - min(latitudes)
         lon_span = max(longitudes) - min(longitudes)
-    else:
+    elif bboxes:
         (min_lat, min_lon), (max_lat, max_lon) = _unified_bbox(bboxes)
         lat_span = max_lat - min_lat
         lon_span = max_lon - min_lon
+    else:
+        return max(min_zoom, min(max_zoom, 5.0))
     span = max(float(lat_span), float(lon_span), 0.01)
     zoom = log2(360.0 / (span * 1.25))
     return max(min_zoom, min(max_zoom, zoom))

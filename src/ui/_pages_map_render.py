@@ -487,6 +487,8 @@ def _render_vessel_map(
     show_heading: bool,
     show_trails: bool,
     show_anomalies: bool,
+    show_density: bool = False,
+    show_speed_field: bool = False,
     show_hexbin: bool = False,
     show_anomaly_types: bool = False,
     show_freshness: bool = False,
@@ -659,7 +661,7 @@ def _render_vessel_map(
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
-    event = st.pydeck_chart(deck, width="stretch", height=580, key=map_key, selection_mode="single-object", on_select="rerun")
+    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map" if map_key == "operational_ais_map" else map_key, selection_mode="single-object", on_select="rerun")
     (selection_handler or _apply_map_selection)(event)
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"

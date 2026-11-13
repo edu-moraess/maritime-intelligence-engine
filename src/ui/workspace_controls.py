@@ -150,8 +150,14 @@ def render_aux_workspace_controls(
     settings: AppSettings,
     columns,
 ) -> None:
-    """Render ANALYSIS and SYSTEM into equally sized workspace columns."""
+    """Render DATA, ANALYSIS and SYSTEM into the workspace rail."""
     with columns[0]:
+        with st.popover("DATA", use_container_width=True):
+            quality = engine.snapshot().quality
+            st.metric("Messages", quality.messages_processed)
+            st.metric("Quality", f"{quality.quality_percent:.1f}%")
+            st.caption(f"Valid records · {quality.valid_records}")
+    with columns[1]:
         with st.popover("ANALYSIS", use_container_width=True):
             module = st.radio(
                 "Workspace module",
@@ -171,7 +177,7 @@ def render_aux_workspace_controls(
                 )
             st.caption(f"Current operational module · {module}")
 
-    with columns[1]:
+    with columns[2]:
         conn = "NOT CONFIGURED" if not settings.aisstream_api_key else engine.snapshot().status.state
         with st.popover("SYSTEM", use_container_width=True):
             st.markdown(
@@ -181,6 +187,7 @@ def render_aux_workspace_controls(
             _render_freshness_status(engine)
             _render_reconnect_telemetry(engine)
             _render_temporal_readiness(engine)
+            st.caption("Historical Persistence")
             st.markdown("<div class='data-label'>HISTORICAL PERSISTENCE</div>", unsafe_allow_html=True)
             _render_historical_persistence(engine, settings)
             st.selectbox(

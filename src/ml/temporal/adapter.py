@@ -35,9 +35,6 @@ class TemporalAnomalyAdapter:
         return select_adaptive_sequence_length(tracks, minimum_tracks=self.minimum_tracks)
 
     def fit(self, tracks):
-        if not torch_available():
-            self.result = TemporalFitResult(status="UNAVAILABLE", reason="PyTorch is not installed or cannot be imported.")
-            return self.result
         if not tracks:
             self.result = TemporalFitResult(status="WAITING", reason="No real AIS tracks are available in the current session.")
             return self.result
@@ -48,7 +45,13 @@ class TemporalAnomalyAdapter:
             self.result = TemporalFitResult(status="FAILED", reason=f"Temporal scale selection failed: {e}", n_tracks_seen=n_seen)
             return self.result
         if selected_length is None:
+            if not torch_available() and n_seen >= self.minimum_tracks:
+                self.result = TemporalFitResult(status="UNAVAILABLE", reason="PyTorch is not installed or cannot be imported.", n_tracks_seen=n_seen)
+                return self.result
             self.result = TemporalFitResult(status="NOT_READY", reason="Insufficient real AIS temporal coverage for T=8, T=16, or T=32.", n_tracks_seen=n_seen)
+            return self.result
+        if not torch_available():
+            self.result = TemporalFitResult(status="UNAVAILABLE", reason="PyTorch is not installed or cannot be imported.", n_tracks_seen=n_seen, sequence_length=selected_length)
             return self.result
         try:
             sequences = build_temporal_sequences(tracks, sequence_length=selected_length, minimum_points=selected_length)

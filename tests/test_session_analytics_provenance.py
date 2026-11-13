@@ -103,4 +103,3 @@ def test_snapshot_vessels_and_live_summary_exclude_historical_only_targets():
     assert {vessel.mmsi for vessel in snapshot.vessels} == set(current)
     assert snapshot.status.active_vessels == len(current)
     assert snapshot.summary["messages"] == len(engine.current_session_observations)
-\n

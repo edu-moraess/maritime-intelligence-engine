@@ -64,6 +64,8 @@ def _behavior_change_events(
         ordered = sorted(observations, key=lambda item: item.received_at)
         prefix: list[AISObservation] = []
         previous_classification: str | None = None
+        previous_speed_state: str | None = None
+        previous_sog: float | None = None
 
         for observation in ordered:
             prefix.append(observation)
@@ -74,10 +76,25 @@ def _behavior_change_events(
             classification = profile.classification
             if classification == "INSUFFICIENT_DATA":
                 continue
+            sog = observation.sog_knots
+            speed_state = (
+                "STOPPED" if sog is not None and sog <= 0.5
+                else "SLOW_MOVEMENT" if sog is not None and sog <= 3.0
+                else "UNDERWAY" if sog is not None
+                else classification
+            )
 
             if (
                 previous_classification is not None
-                and classification != previous_classification
+                and (
+                    classification != previous_classification
+                    or speed_state != previous_speed_state
+                    or (
+                        sog is not None
+                        and previous_sog is not None
+                        and abs(float(sog) - previous_sog) >= 5.0
+                    )
+                )
             ):
                 region_index = _region_state(observation, bboxes)
                 if region_index is not None:
@@ -96,6 +113,8 @@ def _behavior_change_events(
                     )
 
             previous_classification = classification
+            previous_speed_state = speed_state
+            previous_sog = float(sog) if sog is not None else previous_sog
 
     return events
 
