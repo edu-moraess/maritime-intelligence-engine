@@ -382,7 +382,7 @@ def _render_sidebar(
                         "Start Live AIS",
                         width="stretch",
                         type="primary",
-                        disabled=not can_collect or live_active,
+                        disabled=not can_collect or live_active or finite_active,
                         help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
                     )
                 with stop_col:
@@ -394,8 +394,8 @@ def _render_sidebar(
                 collect = st.button(
                     "Collect Finite AIS Window",
                     width="stretch",
-                    disabled=not can_collect or live_active,
-                    help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
+                    disabled=not can_collect or live_active or finite_active,
+                    help="Runs a bounded collection in the background; unavailable while continuous monitoring is active.",
                 )
                 clear_view = st.button(
                     "Clear View",
