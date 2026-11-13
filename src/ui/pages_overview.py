@@ -152,7 +152,7 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
                 if context.failure_code:
                     st.caption(f"{context.failure_code} · {context.failure_reason or 'No additional provider detail.'}")
                 elif context.attempted_at is not None:
-                    st.caption(f"Last attempt · {context.attempted_at.astimezone().strftime('%H:%M:%S')}")
+                    st.caption(f"Last attempt · {context.attempted_at.astimezone(timezone.utc).strftime('%H:%M:%S UTC')}")
                 continue
             st.metric(
                 "Wave height",
