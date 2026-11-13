@@ -20,6 +20,7 @@ from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.historical.session_regions import persist_collection_session_regions
 from src.ingestion.models import AISObservation, AnomalyFinding, IngestionStatus, VesselSnapshot
+from src.ingestion.worker import AISIngestionWorker
 from src.ml.embeddings import EmbeddingResult, TrajectoryEmbeddingAdapter
 from src.ml.temporal import TemporalAnomalyAdapter
 from src.ml.temporal.types import TemporalFitResult
@@ -117,6 +118,9 @@ class MaritimeIntelligenceEngine:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
+        self.live_worker = AISIngestionWorker(self.provider, live_timeout_seconds=float(settings.stale_after_seconds))
+        self._live_started_at: datetime | None = None
+        self._live_started_monotonic: float | None = None
         self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
         self.temporal_adapter = TemporalAnomalyAdapter()
@@ -174,6 +178,9 @@ class MaritimeIntelligenceEngine:
         database latency cannot consume any part of the operator-selected AIS
         collection duration.
         """
+        worker_status = getattr(self, "live_worker", None)
+        if worker_status is not None and worker_status.status().state not in {"STOPPED", "ERROR"}:
+            raise RuntimeError("Stop continuous AIS monitoring before starting a finite collection window.")
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -255,6 +262,79 @@ class MaritimeIntelligenceEngine:
         breakdown["total"] = time.monotonic() - started
         self.last_collection_breakdown = breakdown
         return len(collected)
+
+    def start_live_monitoring(self) -> bool:
+        """Start the managed continuous AIS consumer; safe to call on reruns."""
+        started = self.live_worker.start()
+        if started:
+            self._live_started_at = datetime.now(timezone.utc)
+            self._live_started_monotonic = time.monotonic()
+            self.current_session_observations = []
+            self.current_session_findings = []
+            self._session_generation += 1
+            self._temporal_fingerprint = None
+        return started
+
+    def sync_live_ingestion(self) -> int:
+        """Drain queued AIS observations into engine-owned state on the caller thread."""
+        worker = getattr(self, "live_worker", None)
+        if worker is None:
+            return 0
+        observations = worker.drain(limit=5000)
+        if not observations:
+            return 0
+        self.current_session_observations.extend(observations)
+        self.store.extend(observations)
+        self._session_generation += 1
+        self._recompute()
+        self.current_session_findings = self._detect_current_session_findings()
+        if self._live_started_monotonic is not None:
+            self.last_collection_seconds = max(0.0, time.monotonic() - self._live_started_monotonic)
+        return len(observations)
+
+    def stop_live_monitoring(self, timeout: float = 10.0) -> bool:
+        """Stop the process-local worker and persist the completed live session."""
+        worker = getattr(self, "live_worker", None)
+        if worker is None:
+            return True
+        stopped = worker.stop(timeout=timeout)
+        self.sync_live_ingestion()
+        ended_at = datetime.now(timezone.utc)
+        if self._live_started_at is not None and self.current_session_observations:
+            started_at = self._live_started_at
+            elapsed = max(0.0, (ended_at - started_at).total_seconds())
+            self.last_collection_seconds = elapsed
+            self.historical_result = self.historical_writer.persist_collection(
+                list(self.current_session_observations),
+                self.settings.bbox,
+                elapsed,
+                started_at,
+                ended_at,
+            )
+            if (
+                self.historical_result.session_id is not None
+                and self._historical_persistence_enabled
+                and len(self.settings.monitoring_bboxes) > 1
+            ):
+                regions_persisted = persist_collection_session_regions(
+                    self._historical_database_url,
+                    self.historical_result.session_id,
+                    self.settings.monitoring_bboxes,
+                )
+                if not regions_persisted:
+                    self.historical_result = replace(
+                        self.historical_result,
+                        reason=(
+                            f"{self.historical_result.reason} "
+                            "Exact multi-region session provenance could not be persisted."
+                        ),
+                    )
+        self._live_started_at = None
+        self._live_started_monotonic = None
+        self._refresh_environmental_contexts()
+        self._recompute()
+        self.current_session_findings = self._detect_current_session_findings()
+        return stopped
 
     def _refresh_environmental_contexts(self) -> None:
         """Fetch real marine context and retain only the latest two observations per region."""
@@ -423,11 +503,40 @@ class MaritimeIntelligenceEngine:
         return sorted(vessels, key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
 
     def snapshot(self) -> EngineSnapshot:
+        self.sync_live_ingestion()
         observations = self.store.all()
         analysis_tracks = self._current_session_tracks()
         vessels = self._merged_vessels(analysis_tracks)
         quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
-        status = replace(self.provider.status, active_vessels=len(analysis_tracks))
+        provider_status = self.provider.status
+        worker = getattr(self, "live_worker", None)
+        if worker is not None:
+            worker_status = worker.status()
+            state_map = {
+                "STARTING": "CONNECTING",
+                "CONNECTING": "CONNECTING",
+                "LIVE": "LIVE AIS",
+                "RECONNECTING": "CONNECTING",
+                "DEGRADED": "DISCONNECTED",
+                "STOPPED": "DISCONNECTED",
+                "ERROR": "DISCONNECTED",
+            }
+            mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
+            reason = (
+                "Receiving recent real AIS PositionReports."
+                if mapped_state == "LIVE AIS"
+                else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
+            )
+            provider_status = replace(
+                provider_status,
+                state=mapped_state,
+                reason=reason,
+                messages_received=worker_status.messages_received,
+                reconnect_attempts=provider_status.reconnect_attempts,
+                last_error=provider_status.last_error or worker_status.last_error,
+                active_vessels=len(analysis_tracks),
+            )
+        status = replace(provider_status, active_vessels=len(analysis_tracks))
         return EngineSnapshot(
             observations=observations,
             vessels=vessels,
@@ -454,6 +563,11 @@ class MaritimeIntelligenceEngine:
         )
 
     def clear_session_data(self) -> None:
+        worker = getattr(self, "live_worker", None)
+        if worker is not None:
+            worker.stop(timeout=10.0)
+        self._live_started_at = None
+        self._live_started_monotonic = None
         self.store.clear()
         self.provider.reset_session()
         self.embeddings = None
