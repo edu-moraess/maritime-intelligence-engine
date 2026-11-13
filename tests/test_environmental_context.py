@@ -114,4 +114,3 @@ def test_failed_refresh_preserves_last_valid_observation_and_marks_degraded():
     recovered = failed.add(make_observation("B", 6, 1.4))
     assert recovered.status == "AVAILABLE"
     assert recovered.failure_code is None
-
