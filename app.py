@@ -351,8 +351,9 @@ def _render_sidebar(
         )
 
         can_collect = settings.config_error is None
-        worker_state = engine.live_worker.status().state
-        live_active = worker_state not in {"STOPPED", "ERROR"}
+        worker_status = engine.live_worker.status()
+        worker_state = worker_status.state
+        live_active = worker_status.thread_alive or worker_state not in {"STOPPED", "ERROR"}
         collect = False
         clear = False
         start_live = False
