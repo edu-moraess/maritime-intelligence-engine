@@ -114,3 +114,42 @@ def test_build_profile_for_ui_distinguishes_historical_selection_without_current
     assert profile.session_observation_count == 0
     assert profile.confidence.level == "N/A"
 
+def test_build_profile_for_ui_skips_historical_database_by_default(monkeypatch):
+    import src.ui.vessel_popup as vessel_popup
+
+    vessel = SimpleNamespace(
+        mmsi="538010091",
+        vessel_name="FEDERAL IMPACT",
+        sog_knots=None,
+        cog_degrees=None,
+        heading_degrees=None,
+        latitude=None,
+        longitude=None,
+        navigational_status=None,
+        last_received=datetime.now(timezone.utc),
+    )
+    snapshot = SimpleNamespace(
+        current_session_observations=[],
+        current_session_findings=[],
+    )
+    engine = SimpleNamespace(
+        settings=SimpleNamespace(
+            database_url="postgresql://configured",
+            historical_persistence_enabled=True,
+            stale_after_seconds=180,
+        )
+    )
+
+    def unexpected_history_lookup(*args, **kwargs):
+        raise AssertionError("historical DB lookup must be opt-in")
+
+    monkeypatch.setattr(
+        vessel_popup,
+        "_optional_historical_profile",
+        unexpected_history_lookup,
+    )
+
+    profile = build_profile_for_ui(vessel, snapshot, engine=engine)
+    assert profile.identity.mmsi == "538010091"
+    assert profile.historical.status == "N/A"
+
