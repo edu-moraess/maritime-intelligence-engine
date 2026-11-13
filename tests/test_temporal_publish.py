@@ -31,6 +31,7 @@ def test_contract():
 
 
 def test_preprocess_shape():
+    assert build_temporal_sequence(_track("368207620", 32)) is None
     s = build_temporal_sequence(_track("368207620", 33))
     assert s is not None and s.sequence.shape == (32, 8)
     assert s.sequence_length == 32 and s.feature_names is not None
