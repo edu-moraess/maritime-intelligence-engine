@@ -108,6 +108,16 @@ def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG, ship_type=No
     ring.append(ring[0])
     return ring
 
+def _valid_sog(value):
+    if value is None:
+        return None
+    try:
+        speed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return speed if 0.0 <= speed <= 102.2 else None
+
+
 def movement_vector_endpoint(lat, lon, course_deg, sog_knots):
     try: sog, course = float(sog_knots), float(course_deg)
     except (TypeError, ValueError): return None
@@ -137,8 +147,7 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["polygon"] = ship_polygon(lat, lon, heading, scale_deg=scale, ship_type=row.get("ship_type"))
         row["halo_radius"] = 100 if status=="SELECTED" else 70
         row["core_radius"] = 42 if status=="SELECTED" else 28
-        try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
-        except (TypeError, ValueError): sog_f = None
+        sog_f = _valid_sog(row.get("sog_knots"))
         hdg_f = heading
         row["tooltip_name"] = str(row.get("name") or "UNKNOWN VESSEL")
         row["tooltip_mmsi"] = str(row.get("mmsi") or "UNKNOWN")
