@@ -53,7 +53,11 @@ def hourly_volume(observations: Iterable[AISObservation]) -> pd.DataFrame:
 
 
 def speed_distribution(vessels: list[VesselSnapshot]) -> pd.DataFrame:
-    rows = [{"mmsi": v.mmsi, "sog_knots": v.sog_knots} for v in vessels if v.sog_knots is not None]
+    rows = [
+        {"mmsi": vessel.mmsi, "sog_knots": vessel.sog_knots}
+        for vessel in vessels
+        if not vessel.stale and vessel.sog_knots is not None
+    ]
     return pd.DataFrame(rows, columns=["mmsi", "sog_knots"])
 
 
