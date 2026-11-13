@@ -67,7 +67,7 @@ def _unified_snapshot(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...]) 
         "unique_vessels": len({item.mmsi for item in current_session_observations}),
         "messages": len(current_session_observations),
         "speed_sample_count": len(speeds),
-        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0,
+        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else None,
         "anomalies": len(findings),
         "anomaly_vessels": len({item.mmsi for item in findings}),
         "stale_vessels": len(vessels) - len(fresh_vessels),
