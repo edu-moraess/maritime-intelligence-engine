@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from functools import wraps
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -113,9 +114,22 @@ def _track_fingerprint(tracks: dict[str, list[AISObservation]]) -> str:
     return digest.hexdigest()
 
 
+def _synchronized(method):
+    """Serialize mutable engine operations while remaining compatible with test doubles."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        lock = getattr(self, "_state_lock", None)
+        if lock is None:
+            return method(self, *args, **kwargs)
+        with lock:
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class MaritimeIntelligenceEngine:
     """Session-scoped coordinator for one real AIS monitoring region."""
     def __init__(self, settings: AppSettings) -> None:
+        self._state_lock = threading.RLock()
         self.settings = settings
         self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
         self.live_worker = AISIngestionWorker(self.provider, live_timeout_seconds=float(settings.stale_after_seconds))
@@ -172,6 +186,7 @@ class MaritimeIntelligenceEngine:
         self._recompute()
         return len(restored)
 
+    @_synchronized
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window starting immediately at operator action.
 
@@ -264,6 +279,7 @@ class MaritimeIntelligenceEngine:
         self.last_collection_breakdown = breakdown
         return len(collected)
 
+    @_synchronized
     def start_live_monitoring(self) -> bool:
         """Start the managed continuous AIS consumer; safe to call on reruns."""
         started = self.live_worker.start()
@@ -277,6 +293,7 @@ class MaritimeIntelligenceEngine:
             self._temporal_fingerprint = None
         return started
 
+    @_synchronized
     def sync_live_ingestion(self) -> int:
         """Drain queued AIS observations into engine-owned state on the caller thread."""
         worker = getattr(self, "live_worker", None)
@@ -299,6 +316,7 @@ class MaritimeIntelligenceEngine:
             self.last_collection_seconds = max(0.0, time.monotonic() - self._live_started_monotonic)
         return len(observations)
 
+    @_synchronized
     def stop_live_monitoring(self, timeout: float = 10.0) -> bool:
         """Stop the process-local worker and persist the completed live session."""
         worker = getattr(self, "live_worker", None)
@@ -344,6 +362,7 @@ class MaritimeIntelligenceEngine:
         self.current_session_findings = self._detect_current_session_findings()
         return stopped
 
+    @_synchronized
     def _refresh_environmental_contexts(self) -> None:
         """Fetch real marine context and retain only the latest two observations per region."""
         contexts: dict[str, EnvironmentalContext] = {}
@@ -389,6 +408,7 @@ class MaritimeIntelligenceEngine:
             return []
         return detect_anomalies(tracks, self.embeddings)
 
+    @_synchronized
     def configure_historical_writer(self, database_url: str | None, persistence_enabled: bool) -> None:
         """Switch only the optional historical sink; preserve all live state."""
         if database_url == self._historical_database_url and persistence_enabled == self._historical_persistence_enabled:
@@ -424,6 +444,7 @@ class MaritimeIntelligenceEngine:
             digest.update(b"\n")
         return digest.hexdigest()
 
+    @_synchronized
     def _recompute(self) -> None:
         # Keep every real AIS observation in the store for persistence and
         # cross-session context, but fit session-relative analytics only on the
@@ -510,6 +531,7 @@ class MaritimeIntelligenceEngine:
             )
         return sorted(vessels, key=lambda vessel: vessel.last_received, reverse=True)[: self.settings.max_vessels]
 
+    @_synchronized
     def snapshot(self) -> EngineSnapshot:
         self.sync_live_ingestion()
         observations = self.store.all()
@@ -526,7 +548,7 @@ class MaritimeIntelligenceEngine:
                 "LIVE": "LIVE AIS",
                 "RECONNECTING": "RECONNECTING",
                 "DEGRADED": "DEGRADED",
-                "STOPPED": "STOPPED",
+                "STOPPED": "DISCONNECTED",
                 "ERROR": "ERROR",
             }
             mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
@@ -573,6 +595,7 @@ class MaritimeIntelligenceEngine:
             environmental_contexts=dict(self.environmental_contexts),
         )
 
+    @_synchronized
     def clear_session_data(self) -> None:
         worker = getattr(self, "live_worker", None)
         if worker is not None:
