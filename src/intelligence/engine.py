@@ -295,6 +295,9 @@ class MaritimeIntelligenceEngine:
         worker_status = self.live_worker.status()
         if worker_status.thread_alive or worker_status.state not in {"STOPPED", "ERROR"}:
             return False
+        if self._live_started_at is not None:
+            if not self.stop_live_monitoring(timeout=0.0):
+                return False
         reset_provider = getattr(self.provider, "reset_session", None)
         if callable(reset_provider):
             reset_provider()
