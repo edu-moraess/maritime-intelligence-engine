@@ -28,8 +28,8 @@ def _render_sidebar_node() -> ast.FunctionDef:
 def test_sidebar_keeps_mission_and_map_controls():
     source = _source(APP_PATH)
     assert 'st.expander("MAP CONFIGURATION", expanded=False)' in source
-    assert '"MISSION CONTEXT"' in source
-    assert 'st.expander("MISSION CONTEXT"' not in source
+    assert 'st.expander("MISSION CONTEXT", expanded=True)' in source
+    assert "mission_placeholder.container()" in source
     assert '"Start Live AIS"' in source
     assert '"Stop Live AIS"' in source
     assert '"Collect Finite AIS Window"' in source
