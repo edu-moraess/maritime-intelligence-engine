@@ -26,6 +26,7 @@ from src.config.settings import (
     _validate_bbox,
 )
 from src.intelligence.engine import MaritimeIntelligenceEngine, create_engine
+from src.ui import _install_floating_sidebar_controller
 from src.ui.pages import (
     render_anomalies,
     render_behavior,
@@ -51,6 +52,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# UI browser enhancements must run only after Streamlit page configuration.
+_install_floating_sidebar_controller()
 
 inject_css()
 
