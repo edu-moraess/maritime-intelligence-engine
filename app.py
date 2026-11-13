@@ -289,7 +289,7 @@ def _render_region_slot(
 
 def _render_sidebar(
     settings: AppSettings,
-) -> tuple[AppSettings, str, bool, bool, bool]:
+) -> tuple[AppSettings, str, bool, bool, bool, bool, bool]:
     """Render mission and map controls in the sidebar."""
     region_changed = False
     with st.sidebar:
@@ -351,8 +351,12 @@ def _render_sidebar(
         )
 
         can_collect = settings.config_error is None
+        worker_state = engine.live_worker.status().state
+        live_active = worker_state not in {"STOPPED", "ERROR"}
         collect = False
         clear = False
+        start_live = False
+        stop_live = False
         with mission_placeholder.container():
             with st.expander("MISSION CONTEXT", expanded=False):
                 duration_options = list(COLLECTION_DURATION_OPTIONS)
@@ -378,11 +382,26 @@ def _render_sidebar(
                     )
 
                 can_collect = settings.config_error is None
+                live_col, stop_col = st.columns(2)
+                with live_col:
+                    start_live = st.button(
+                        "Start Live AIS",
+                        width="stretch",
+                        type="primary",
+                        disabled=not can_collect or live_active,
+                        help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
+                    )
+                with stop_col:
+                    stop_live = st.button(
+                        "Stop Live AIS",
+                        width="stretch",
+                        disabled=not live_active,
+                    )
                 collect = st.button(
-                    "Collect Real AIS · 2 Regions",
+                    "Collect Finite AIS Window",
                     width="stretch",
-                    type="primary",
-                    disabled=not can_collect,
+                    disabled=not can_collect or live_active,
+                    help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
                 )
                 clear = st.button("Clear Session", width="stretch")
 
@@ -396,7 +415,7 @@ def _render_sidebar(
             if page not in views:
                 page = views[0]
 
-    return settings, page, collect, clear, region_changed
+    return settings, page, collect, clear, region_changed, start_live, stop_live
 
 
 def _render_collection_timer(seconds: float) -> None:
@@ -453,14 +472,40 @@ def main() -> None:
             ),
         )
 
-    settings, page, collect, clear, region_changed = _render_sidebar(settings)
+    settings, page, collect, clear, region_changed, start_live, stop_live = _render_sidebar(settings)
     engine = _engine_for(settings)
 
     if region_changed:
         notice(
-            "Monitoring regions changed. Run Collect Real AIS · 2 Regions "
-            "to open the new single AISStream subscription."
+            "Monitoring regions changed. Start Live AIS or run a finite collection "
+            "to open the new process-local AISStream subscription."
         )
+
+    if start_live:
+        started = engine.start_live_monitoring()
+        if started:
+            st.session_state["live_monitoring_result"] = ("success", "Continuous AIS monitoring started.")
+        else:
+            st.session_state["live_monitoring_result"] = ("info", "Continuous AIS monitoring is already active.")
+        st.rerun()
+
+    if stop_live:
+        stopped = engine.stop_live_monitoring()
+        st.session_state["live_monitoring_result"] = (
+            "success" if stopped else "warning",
+            "Continuous AIS monitoring stopped." if stopped else "Worker did not stop before timeout.",
+        )
+        st.rerun()
+
+    live_result = st.session_state.pop("live_monitoring_result", None)
+    if live_result:
+        result_type, result_message = live_result
+        if result_type == "success":
+            st.success(result_message)
+        elif result_type == "warning":
+            st.warning(result_message)
+        else:
+            st.info(result_message)
 
     if clear:
         engine.clear_session_data()
