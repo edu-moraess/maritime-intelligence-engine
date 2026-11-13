@@ -75,7 +75,7 @@ def detect_anomalies(
                     checks.append(
                         (
                             "speed anomaly",
-                            0.90,
+                            min(1.0, (float(sog) - config.speed_limit_knots) / max(config.speed_limit_knots, 1e-9)),
                             (
                                 f"Reported SOG {sog:.1f} kn exceeds "
                                 "the configured real-data review threshold."
@@ -86,7 +86,7 @@ def detect_anomalies(
             time_delta = getattr(
                 row,
                 "time_delta_seconds",
-                0,
+                None,
             )
 
             if (
@@ -108,7 +108,7 @@ def detect_anomalies(
             heading_change = getattr(
                 row,
                 "heading_change",
-                0,
+                None,
             )
 
             if (
@@ -144,7 +144,7 @@ def detect_anomalies(
                         longitude=float(row.longitude),
                         score=round(min(0.99, score), 3),
                         category=category,
-                        confidence=round(min(0.99, score), 3),
+                        confidence=None,
                         explanation=explanation,
                     )
                 )
@@ -159,10 +159,12 @@ def detect_anomalies(
                 - frame["received_at"].iloc[0]
             ).total_seconds() / 60
 
-            dwell_ratio = float(frame["is_dwell"].mean())
+            valid_dwell = frame["is_dwell"].dropna()
+            dwell_ratio = float(valid_dwell.mean()) if not valid_dwell.empty else None
 
             if (
                 duration >= config.dwell_minutes
+                and dwell_ratio is not None
                 and dwell_ratio >= 0.8
             ):
                 latest = frame.iloc[-1]
@@ -176,9 +178,9 @@ def detect_anomalies(
                         ),
                         latitude=float(latest["latitude"]),
                         longitude=float(latest["longitude"]),
-                        score=0.72,
+                        score=round(float(dwell_ratio), 3),
                         category="unusual stop",
-                        confidence=0.74,
+                        confidence=None,
                         explanation=(
                             f"Vessel remained below 0.5 kn for "
                             f"{duration:.0f} minutes "
