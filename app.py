@@ -217,10 +217,6 @@ class _ProcessEngineRegistry:
                 if archived_observations:
                     self.engine.store.extend(archived_observations)
                 self.signature = signature
-            self.engine.configure_historical_writer(
-                settings.database_url,
-                settings.historical_persistence_enabled,
-            )
             return self.engine
 
 
