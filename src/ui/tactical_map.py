@@ -46,15 +46,24 @@ TACTICAL_MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/styl
 TACTICAL_TOOLTIP_HTML = ("<div style='font-family:IBM Plex Mono,monospace;font-size:11px;line-height:1.45;min-width:150px'>" "<div style='color:#35c2c9;font-weight:600;font-size:12px'>{tooltip_name}</div>" "<div style='color:#79939b;margin-bottom:4px'>MMSI {tooltip_mmsi}</div>" "<div>SOG {tooltip_sog}</div><div>COG {tooltip_cog}</div>" "<div>HDG {tooltip_hdg}</div><div>STATUS {tooltip_status}</div></div>")
 TACTICAL_TOOLTIP_STYLE = {"backgroundColor":"rgba(7,17,22,0.96)","color":"#d9e6e9","border":"1px solid #1b3640","padding":"9px 11px"}
 
-def resolve_vessel_course(heading_degrees, cog_degrees):
-    for value in (heading_degrees, cog_degrees):
-        if value is None: continue
-        try: angle = float(value)
-        except (TypeError, ValueError): continue
-        if 0.0 <= angle < 360.0: return angle
-    return None
+def _valid_angle(value):
+    if value is None:
+        return None
+    try:
+        angle = float(value)
+    except (TypeError, ValueError):
+        return None
+    return angle if 0.0 <= angle < 360.0 else None
 
-def resolve_course_degrees(row): return resolve_vessel_course(row.get("heading_degrees"), row.get("cog_degrees"))
+
+def resolve_vessel_course(heading_degrees, cog_degrees=None):
+    """Resolve proa orientation from Heading only; COG is not a substitute."""
+    return _valid_angle(heading_degrees)
+
+
+def resolve_course_degrees(row):
+    """Return direction of travel from COG only."""
+    return _valid_angle(row.get("cog_degrees"))
 
 def classify_vessel_status(row, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
     mmsi = str(row.get("mmsi") or "")
@@ -74,9 +83,13 @@ def anomaly_mmsi_sets(findings):
         mmsi = str(getattr(finding, "mmsi", "") or "")
         if not mmsi: continue
         anomaly.add(mmsi)
-        try: score = float(getattr(finding, "score", 0.0) or 0.0)
-        except (TypeError, ValueError): score = 0.0
-        if score >= 0.85 or "critical" in str(getattr(finding, "category", "") or "").lower(): critical.add(mmsi)
+        try:
+            raw_score = getattr(finding, "score", None)
+            score = float(raw_score) if raw_score is not None else None
+        except (TypeError, ValueError):
+            score = None
+        if (score is not None and 0.0 <= score <= 1.0 and score >= 0.85) or "critical" in str(getattr(finding, "category", "") or "").lower():
+            critical.add(mmsi)
     return anomaly, critical
 
 def vessel_type_family(ship_type):
@@ -87,7 +100,9 @@ def vessel_type_family(ship_type):
     return "DEFAULT"
 
 def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG, ship_type=None):
-    angle = radians(float(course_deg) if course_deg is not None else 0.0)
+    if course_deg is None:
+        return None
+    angle = radians(float(course_deg))
     c, s = cos(angle), sin(angle)
     lon_scale = max(0.1, cos(radians(lat)))
     ring = []
@@ -119,16 +134,17 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["ring_color"] = list(STATUS_RING.get(status, STATUS_RING["NORMAL"]))
         lat, lon = float(row["latitude"]), float(row["longitude"])
         course = resolve_course_degrees(row)
+        heading = resolve_vessel_course(row.get("heading_degrees"))
         row["course_degrees"] = course
+        row["resolved_heading_degrees"] = heading
         row["ship_type_family"] = vessel_type_family(row.get("ship_type"))
         scale = SHIP_SCALE_DEG * (1.25 if status=="SELECTED" else 1.1 if status=="CRITICAL" else 1.05 if status=="ANOMALY" else 1.0)
-        row["polygon"] = ship_polygon(lat, lon, course, scale_deg=scale, ship_type=row.get("ship_type"))
+        row["polygon"] = ship_polygon(lat, lon, heading, scale_deg=scale, ship_type=row.get("ship_type"))
         row["halo_radius"] = 100 if status=="SELECTED" else 70
         row["core_radius"] = 42 if status=="SELECTED" else 28
         try: sog_f = float(row["sog_knots"]) if row.get("sog_knots") is not None else None
         except (TypeError, ValueError): sog_f = None
-        try: hdg_f = float(row["heading_degrees"]) if row.get("heading_degrees") is not None and 0 <= float(row["heading_degrees"]) < 360 else None
-        except (TypeError, ValueError): hdg_f = None
+        hdg_f = heading
         row["tooltip_name"] = str(row.get("name") or "UNKNOWN VESSEL")
         row["tooltip_mmsi"] = str(row.get("mmsi") or "UNKNOWN")
         row["tooltip_sog"] = f"{sog_f:.1f} kn" if sog_f is not None else "—"
