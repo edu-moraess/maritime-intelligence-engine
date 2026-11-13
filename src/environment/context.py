@@ -21,7 +21,7 @@ class EnvironmentalContext:
     @property
     def status(self) -> str:
         if self.observations:
-            return "AVAILABLE"
+            return "DEGRADED" if self.failure_code else "AVAILABLE"
         return "FAILED" if self.failure_code else "UNAVAILABLE"
 
     @property
