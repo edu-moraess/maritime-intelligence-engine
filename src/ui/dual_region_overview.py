@@ -42,7 +42,7 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
         "unique_vessels": len({item.mmsi for item in current_session_observations}),
         "messages": len(current_session_observations),
         "speed_sample_count": len(speeds),
-        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0,
+        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else None,
         "anomalies": len(findings),
         "anomaly_vessels": len({item.mmsi for item in findings}),
         "stale_vessels": len(vessels) - len(fresh_vessels),
@@ -262,7 +262,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     monitoring = tuple(settings.monitoring_bboxes)
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
-    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
+    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=(f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A"), last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
     render_region_comparison(snapshot.region_comparison)
     render_regional_events(snapshot.regional_events)
     _render_environmental_context(snapshot, monitoring)
