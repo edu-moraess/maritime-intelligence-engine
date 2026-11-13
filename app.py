@@ -316,7 +316,7 @@ def _render_sidebar(
 
         with st.expander("MAP CONFIGURATION", expanded=False):
             st.caption(
-                "Region A + Region B use one MIE app and one AISStream subscription."
+                "One active AISStream subscription per Python process; independent deployment replicas may each own one."
             )
             bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
             bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
@@ -418,7 +418,11 @@ def _render_sidebar(
                     disabled=not can_collect or live_active,
                     help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
                 )
-                clear = st.button("Clear Session", width="stretch")
+                clear = st.button(
+                    "Clear Shared Session",
+                    width="stretch",
+                    help="Clears the process-wide in-memory MIE session for all connected users.",
+                )
 
         module = st.session_state.get("workspace_module", "Overview")
         if module not in NAVIGATION:
