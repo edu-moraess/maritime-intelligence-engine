@@ -110,5 +110,5 @@ def _circular_difference(values: np.ndarray) -> np.ndarray:
     previous, current = values[:-1], values[1:]
     valid = np.isfinite(previous) & np.isfinite(current)
     delta = (current[valid] - previous[valid] + 180.0) % 360.0 - 180.0
-    result[1:][valid] = np.abs(delta)
+    result[np.flatnonzero(valid) + 1] = np.abs(delta)
     return result
