@@ -37,3 +37,11 @@ All operational summary metrics below are scoped to `current_session_observation
 4. Never substitute zero for an unavailable temporal metric.
 5. Keep current-session and restored historical populations visibly distinct.
 6. Every metric change must update its tests and this contract.
+
+
+## Regional comparison reconciliation
+
+- Regional `unique_vessels` means distinct MMSIs observed in that region during the current session; it is not the same as the overview's `active_vessels`, which includes only fresh vessel snapshots.
+- Regional `anomalies` counts finding events. Tactical-map `ANOMALOUS VESSELS` counts distinct MMSIs represented by those findings in the map's region.
+- Regional `position_reports` sum to the session message count only when every observation belongs to exactly one configured region. Observations inside both regions are counted as ambiguous and excluded from both; observations outside both regions are counted as unassigned and excluded.
+- The overview labels these populations explicitly. Do not compare active vessels with observed vessels, or anomaly events with anomalous-vessel counts, as if they were the same metric.
