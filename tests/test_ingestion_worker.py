@@ -236,3 +236,21 @@ def test_connecting_worker_degrades_when_no_first_position_report_arrives():
     assert worker.status().state == "DEGRADED"
     assert worker.stop(timeout=1.0)
 
+def test_worker_reset_discards_pending_queue_and_clears_telemetry():
+    provider = _BlockingProvider()
+    worker = AISIngestionWorker(provider, queue_capacity=100)
+    worker.start()
+    assert provider.started.wait(1.0)
+    deadline = time.monotonic() + 1.0
+    while worker.status().messages_received == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert worker.stop(timeout=1.0)
+    worker.reset()
+
+    status = worker.status()
+    assert status.state == "STOPPED"
+    assert status.started_at is None
+    assert status.queue_depth == 0
+    assert status.messages_received == 0
+    assert status.thread_alive is False
+
