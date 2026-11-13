@@ -2,9 +2,29 @@
 
 ## Status date
 
-2026-09-03
+2026-11-13
 
 This document records the current engineering and validation position of the Maritime Intelligence Engine (MIE). It is intended to keep the repository aligned with what has actually been implemented and observed in live AIS sessions.
+
+## P0 operational reliability — implementation in progress (2026-11-13)
+
+The branch `feat/mie-p0-operational-reliability` is based on the dual-region baseline `5bbe456f657bd4524e71937cf73da420db4f0898`. The following implementation has been added on that branch:
+
+- process-shared Streamlit resource registry with one active engine/worker configuration per Python process;
+- continuous AIS provider mode with explicit unlimited message streaming, preserving the legacy finite-window cap;
+- background worker with bounded queue, lifecycle state, queue-depth/drop telemetry, receive freshness, and explicit stop/join;
+- Start Live AIS / Stop Live AIS controls and two-second fragment refresh;
+- engine-level synchronization for mutable state and snapshots;
+- provider reconnect counters, timestamps, and last-error telemetry;
+- last-known vessel positions retained and rendered as visibly stale with report age;
+- canonical traffic metric populations and configured region count;
+- environmental provider failures classified and retained instead of silently swallowed;
+- temporal regional metrics use N/A when model scores or quartile thresholds are unavailable;
+- collection diagnostics include measured stream duration and explicit diagnostic overhead.
+
+**Acceptance remains pending.** Tests have been added or updated but have not been executed in the implementation environment. The 30-minute live-network test, navigation persistence test, interruption/reconnect test, and deployment-target validation are still required. The process registry does not coordinate separate replicas or Python processes; each replica may own one AIS subscription.
+
+No P1–P4 intelligence expansion is included in this checkpoint.
 
 ## Current system
 
@@ -57,7 +77,7 @@ This milestone addresses the operational presentation and selection flow. It doe
 - PostgreSQL/PostGIS historical persistence
 - Idempotent historical observation persistence
 - Temporal track diagnostics
-- GRU temporal autoencoder trained only on real AIS observations
+- TCN Temporal Autoencoder implementation using only real AIS observations
 
 ## Live multi-region observation
 
@@ -115,7 +135,7 @@ The comparison establishes that temporal coverage varies materially by region an
 
 ## Adaptive temporal model
 
-The current temporal production path uses a GRU Temporal Autoencoder with conservative data-driven sequence selection.
+The current temporal production path uses a TCN Temporal Autoencoder with conservative data-driven sequence selection. The legacy GRU implementation remains available for checkpoint/backward compatibility.
 
 The adapter chooses the longest supported scale:
 
@@ -157,7 +177,7 @@ The following should not yet be claimed as production-proven:
 - universal maritime anomaly classification;
 - calibrated anomaly probabilities;
 - malicious-intent detection;
-- quantitative superiority of GRU over Isolation Forest;
+- quantitative superiority of TCN over Isolation Forest;
 - cross-region generalization of temporal scores;
 - causal explanations for anomalies;
 - continuous-learning performance;
