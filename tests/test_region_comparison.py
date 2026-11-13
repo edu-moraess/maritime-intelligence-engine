@@ -138,4 +138,3 @@ def test_regional_average_speed_is_unavailable_without_sog_samples():
     assert comparison is not None
     assert comparison.regions[0].average_speed_knots is None
     assert comparison.regions[1].average_speed_knots is None
-
