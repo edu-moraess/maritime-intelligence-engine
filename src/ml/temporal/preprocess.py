@@ -9,7 +9,6 @@ import pandas as pd
 from src.ingestion.models import AISObservation
 from src.ml.temporal.types import (
     DEFAULT_SEQUENCE_LENGTH,
-    MAX_TIME_DELTA_SECONDS,
     MAX_TRACK_GAP_SECONDS,
     MINIMUM_POINTS_PER_TRACK,
     TEMPORAL_FEATURE_NAMES,
