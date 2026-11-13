@@ -44,7 +44,7 @@ print("\nP0 deterministic validation completed.")
 print("Checkout:", WORKDIR)
 print("Commit:", actual_head)
 print("LIVE_AIS_30_MINUTE_ACCEPTANCE=NOT_RUN")
-print("FULL_REPOSITORY_SUITE=NOT_RUN")
+print("FULL_REPOSITORY_SUITE=PASS if validator exits 0")
 ```
 
 ## What this gate proves
@@ -52,7 +52,8 @@ print("FULL_REPOSITORY_SUITE=NOT_RUN")
 The script runs:
 - patch whitespace/integrity check against the recorded baseline;
 - Python compilation for `app.py`, `src/`, and `tests/`;
-- deterministic P0 regression tests for worker lifecycle, engine integration, AIS provider states, stale map presentation, canonical metrics, temporal availability, environmental failure semantics, runtime settings, and process-wide engine ownership.
+- deterministic P0 regression tests for worker lifecycle, engine integration, AIS provider states, stale map presentation, canonical metrics, temporal availability, environmental failure semantics, runtime settings, and process-wide engine ownership;
+- the complete repository test suite, executed only after the targeted P0 tests pass.
 
 ## What this gate does not prove
 
@@ -63,4 +64,4 @@ A PASS does **not** establish:
 - exclusivity across separate Python processes or deployment replicas;
 - production readiness.
 
-After this gate passes, run the complete repository suite and then perform the 30-minute live-network acceptance test with real deployment credentials. Record logs, timestamps, observed reconnects, queue depth/drops, and vessel freshness. Do not merge to `main` until all gates are evidenced.
+After this gate passes, perform the 30-minute live-network acceptance test with real deployment credentials. Record logs, timestamps, observed reconnects, queue depth/drops, and vessel freshness. Do not merge to `main` until all gates are evidenced.
