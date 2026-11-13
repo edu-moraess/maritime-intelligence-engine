@@ -130,6 +130,11 @@ class MaritimeIntelligenceEngine:
     """Session-scoped coordinator for one real AIS monitoring region."""
     def __init__(self, settings: AppSettings) -> None:
         self._state_lock = threading.RLock()
+        self._finite_state = "IDLE"
+        self._finite_error: str | None = None
+        self._finite_received = 0
+        self._finite_started_monotonic: float | None = None
+        self._finite_thread: threading.Thread | None = None
         self.settings = settings
         self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
         self.live_worker = AISIngestionWorker(
@@ -190,7 +195,6 @@ class MaritimeIntelligenceEngine:
         self._recompute()
         return len(restored)
 
-    @_synchronized
     def collect(self, seconds: float | None = None) -> int:
         """Collect a bounded real-time window starting immediately at operator action.
 
@@ -214,89 +218,150 @@ class MaritimeIntelligenceEngine:
                 stop_event.set()
                 break
         stop_event.set()
-        collection_elapsed = max(0.0, time.monotonic() - started)
-        self.last_collection_seconds = collection_elapsed
-        ended_at = datetime.now(timezone.utc)
-        breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
-
-        # Restore persisted real AIS only after the live window has finished.
-        # This keeps the selected 60/300/600 s window anchored to the operator
-        # action rather than to database/network hydration latency.
-        phase_started = time.monotonic()
-        self._restore_historical_context()
-        breakdown["historical_restore"] = time.monotonic() - phase_started
-
-        self.current_session_observations = list(collected)
-        self._session_generation = getattr(self, "_session_generation", 0) + 1
-        self.current_session_findings = []
-        if collected:
-            self.store.extend(collected)
-
+        with self._state_lock:
+            collection_elapsed = max(0.0, time.monotonic() - started)
+            self.last_collection_seconds = collection_elapsed
+            ended_at = datetime.now(timezone.utc)
+            breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
+    
+            # Restore persisted real AIS only after the live window has finished.
+            # This keeps the selected 60/300/600 s window anchored to the operator
+            # action rather than to database/network hydration latency.
             phase_started = time.monotonic()
-            self.historical_result = self.historical_writer.persist_collection(
-                collected,
-                self.settings.bbox,
-                collection_elapsed,
-                started_at,
-                ended_at,
-            )
-            breakdown["postgres_persist"] = time.monotonic() - phase_started
-
-            if (
-                self.historical_result.session_id is not None
-                and self._historical_persistence_enabled
-                and len(self.settings.monitoring_bboxes) > 1
-            ):
+            self._restore_historical_context()
+            breakdown["historical_restore"] = time.monotonic() - phase_started
+    
+            self.current_session_observations = list(collected)
+            self._session_generation = getattr(self, "_session_generation", 0) + 1
+            self.current_session_findings = []
+            if collected:
+                self.store.extend(collected)
+    
                 phase_started = time.monotonic()
-                regions_persisted = persist_collection_session_regions(
-                    self._historical_database_url,
-                    self.historical_result.session_id,
-                    self.settings.monitoring_bboxes,
+                self.historical_result = self.historical_writer.persist_collection(
+                    collected,
+                    self.settings.bbox,
+                    collection_elapsed,
+                    started_at,
+                    ended_at,
                 )
-                breakdown["region_persist"] = time.monotonic() - phase_started
-                if not regions_persisted:
-                    self.historical_result = replace(
-                        self.historical_result,
-                        reason=(
-                            f"{self.historical_result.reason} "
-                            "Exact multi-region session provenance could not be persisted."
-                        ),
+                breakdown["postgres_persist"] = time.monotonic() - phase_started
+    
+                if (
+                    self.historical_result.session_id is not None
+                    and self._historical_persistence_enabled
+                    and len(self.settings.monitoring_bboxes) > 1
+                ):
+                    phase_started = time.monotonic()
+                    regions_persisted = persist_collection_session_regions(
+                        self._historical_database_url,
+                        self.historical_result.session_id,
+                        self.settings.monitoring_bboxes,
                     )
+                    breakdown["region_persist"] = time.monotonic() - phase_started
+                    if not regions_persisted:
+                        self.historical_result = replace(
+                            self.historical_result,
+                            reason=(
+                                f"{self.historical_result.reason} "
+                                "Exact multi-region session provenance could not be persisted."
+                            ),
+                        )
+                else:
+                    breakdown["region_persist"] = 0.0
             else:
+                self.historical_result = None
+                breakdown["postgres_persist"] = 0.0
                 breakdown["region_persist"] = 0.0
+    
+            phase_started = time.monotonic()
+            self._refresh_environmental_contexts()
+            breakdown["environmental"] = time.monotonic() - phase_started
+    
+            phase_started = time.monotonic()
+            self._recompute()
+            breakdown["recompute"] = time.monotonic() - phase_started
+    
+            phase_started = time.monotonic()
+            self.current_session_findings = self._detect_current_session_findings()
+            breakdown["findings"] = time.monotonic() - phase_started
+    
+            wall_elapsed = max(0.0, time.monotonic() - started)
+            measured_phases = sum(
+                value for key, value in breakdown.items() if key != "total"
+            )
+            breakdown["diagnostic_overhead"] = max(0.0, wall_elapsed - measured_phases)
+            # The displayed total is the sum of mutually exclusive measured phases.
+            breakdown["total"] = sum(
+                value for key, value in breakdown.items() if key != "total"
+            )
+            self.last_collection_breakdown = breakdown
+            return len(collected)
+
+    def finite_collection_status(self) -> dict[str, object]:
+        """Return a thread-safe status snapshot for the bounded collection worker."""
+        with self._state_lock:
+            elapsed = (
+                max(0.0, time.monotonic() - self._finite_started_monotonic)
+                if self._finite_started_monotonic is not None
+                else 0.0
+            )
+            return {
+                "state": self._finite_state,
+                "error": self._finite_error,
+                "received": self._finite_received,
+                "elapsed_seconds": elapsed,
+            }
+
+    def _run_finite_collection(self, seconds: float) -> None:
+        try:
+            received = self.collect(seconds=seconds)
+        except Exception as exc:
+            with self._state_lock:
+                self._finite_state = "FAILED"
+                self._finite_error = f"{exc.__class__.__name__}: {str(exc)[:240]}"
+                self._finite_received = 0
         else:
-            self.historical_result = None
-            breakdown["postgres_persist"] = 0.0
-            breakdown["region_persist"] = 0.0
+            with self._state_lock:
+                self._finite_state = "COMPLETED"
+                self._finite_received = received
+                self._finite_error = None
 
-        phase_started = time.monotonic()
-        self._refresh_environmental_contexts()
-        breakdown["environmental"] = time.monotonic() - phase_started
-
-        phase_started = time.monotonic()
-        self._recompute()
-        breakdown["recompute"] = time.monotonic() - phase_started
-
-        phase_started = time.monotonic()
-        self.current_session_findings = self._detect_current_session_findings()
-        breakdown["findings"] = time.monotonic() - phase_started
-
-        wall_elapsed = max(0.0, time.monotonic() - started)
-        measured_phases = sum(
-            value for key, value in breakdown.items() if key != "total"
-        )
-        breakdown["diagnostic_overhead"] = max(0.0, wall_elapsed - measured_phases)
-        # The displayed total is the sum of mutually exclusive measured phases.
-        breakdown["total"] = sum(
-            value for key, value in breakdown.items() if key != "total"
-        )
-        self.last_collection_breakdown = breakdown
-        return len(collected)
+    def start_finite_collection(self, seconds: float) -> bool:
+        """Start a bounded AIS window without blocking Streamlit's script thread."""
+        allowed = {30, 60, 120, 180, 300, 600, 900}
+        duration = float(seconds)
+        if duration not in allowed:
+            raise ValueError(f"Finite collection duration must be one of {sorted(allowed)} seconds.")
+        with self._state_lock:
+            live_status = self.live_worker.status()
+            if live_status.thread_alive or live_status.state not in {"STOPPED", "ERROR"}:
+                raise RuntimeError("Stop continuous AIS monitoring before starting a finite collection window.")
+            if self._finite_state == "RUNNING" or (
+                self._finite_thread is not None and self._finite_thread.is_alive()
+            ):
+                return False
+            self._finite_state = "RUNNING"
+            self._finite_error = None
+            self._finite_received = 0
+            self._finite_started_monotonic = time.monotonic()
+            self._finite_thread = threading.Thread(
+                target=self._run_finite_collection,
+                args=(duration,),
+                name="mie-ais-finite-collection",
+                daemon=True,
+            )
+            self._finite_thread.start()
+            return True
 
     @_synchronized
     def start_live_monitoring(self) -> bool:
         """Start the managed continuous AIS consumer; safe to call on reruns."""
         worker_status = self.live_worker.status()
+        if self._finite_state == "RUNNING" or (
+            self._finite_thread is not None and self._finite_thread.is_alive()
+        ):
+            raise RuntimeError("Wait for the finite AIS collection to finish before starting continuous monitoring.")
         if worker_status.thread_alive or worker_status.state not in {"STOPPED", "ERROR"}:
             return False
         if self._live_started_at is not None:
@@ -709,6 +774,10 @@ class MaritimeIntelligenceEngine:
 
     @_synchronized
     def clear_session_data(self) -> None:
+        if self._finite_state == "RUNNING" or (
+            self._finite_thread is not None and self._finite_thread.is_alive()
+        ):
+            raise RuntimeError("Cannot clear the session while finite AIS collection is running.")
         worker = getattr(self, "live_worker", None)
         if worker is not None:
             stopped = worker.stop(timeout=10.0)
