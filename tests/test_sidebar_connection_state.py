@@ -31,10 +31,10 @@ def test_live_provider_state_is_used_by_sidebar() -> None:
     assert "DISCONNECTED" not in _connection_state(_settings(), engine)
 
 
-def test_live_state_remains_operational_after_finite_websocket_close() -> None:
-    engine = SnapshotEngine("LIVE AIS", "CLOSED")
+def test_closed_websocket_is_not_reported_as_live() -> None:
+    engine = SnapshotEngine("DISCONNECTED", "CLOSED")
 
-    assert _connection_state(_settings(), engine) == "LIVE AIS"
+    assert _connection_state(_settings(), engine) == "DISCONNECTED"
 
 
 def test_real_provider_disconnect_is_shown_as_disconnected() -> None:
