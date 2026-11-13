@@ -42,7 +42,7 @@ def test_resolve_course_degrees_row():
 def test_status_matrix():
     base = {"mmsi": "111111111", "stale": False, "message_count": 5}
     assert classify_vessel_status(base, selected_mmsi=None, anomaly_mmsis=set(), critical_mmsis=set()) == "NORMAL"
-    assert classify_vessel_status({**base, "stale": True}, selected_mmsi=None, anomaly_mmsis=set(), critical_mmsis=set()) == "ATTENTION"
+    assert classify_vessel_status({**base, "stale": True}, selected_mmsi=None, anomaly_mmsis=set(), critical_mmsis=set()) == "STALE"
     assert classify_vessel_status(base, selected_mmsi=None, anomaly_mmsis={"111111111"}, critical_mmsis=set()) == "ANOMALY"
     assert classify_vessel_status(base, selected_mmsi=None, anomaly_mmsis={"111111111"}, critical_mmsis={"111111111"}) == "CRITICAL"
     assert classify_vessel_status(base, selected_mmsi="111111111", anomaly_mmsis={"111111111"}, critical_mmsis={"111111111"}) == "SELECTED"
@@ -107,7 +107,7 @@ def test_enrich_integrity_and_selection_helper():
     out = enrich_tactical_rows(rows, selected_mmsi="111111111", anomaly_mmsis={"333333333"}, critical_mmsis=set())
     assert len(out) == 3
     assert out[0]["tactical_status"] == "SELECTED"
-    assert out[1]["tactical_status"] == "ATTENTION"
+    assert out[1]["tactical_status"] == "STALE"
     assert out[2]["tactical_status"] == "ANOMALY"
     assert out[0]["ship_type_family"] == "CARGO"
     assert out[1]["ship_type_family"] == "TANKER"
@@ -215,3 +215,28 @@ def test_selection_handles_none_and_missing_event():
 
 def test_ais_targets_layer_id_constant():
     assert AIS_TARGETS_LAYER_ID == "ais-targets"
+
+def test_stale_target_tooltip_includes_real_last_report_age():
+    received_at = datetime.now(timezone.utc) - timedelta(seconds=245)
+    row = {
+        "mmsi": "444444444",
+        "name": "STALE TARGET",
+        "latitude": 1.0,
+        "longitude": 2.0,
+        "sog_knots": 4.0,
+        "cog_degrees": 90.0,
+        "heading_degrees": 90.0,
+        "last_received": received_at,
+        "stale": True,
+        "message_count": 3,
+    }
+    enriched = enrich_tactical_rows(
+        [row],
+        selected_mmsi=None,
+        anomaly_mmsis=set(),
+        critical_mmsis=set(),
+    )[0]
+    assert enriched["tactical_status"] == "STALE"
+    assert enriched["tooltip_status"].startswith("STALE · ")
+    assert enriched["tooltip_age"].endswith("s")
+
