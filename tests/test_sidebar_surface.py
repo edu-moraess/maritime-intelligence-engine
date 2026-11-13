@@ -29,7 +29,9 @@ def test_sidebar_keeps_mission_and_map_controls():
     source = _source(APP_PATH)
     assert 'st.expander("MAP CONFIGURATION", expanded=False)' in source
     assert 'st.expander("MISSION CONTEXT", expanded=False)' in source
-    assert '"Collect Real AIS · 2 Regions"' in source
+    assert '"Start Live AIS"' in source
+    assert '"Stop Live AIS"' in source
+    assert '"Collect Finite AIS Window"' in source
     assert '"Clear Session"' in source
 
 
@@ -102,7 +104,7 @@ def test_render_sidebar_return_contract():
     assert returns, "expected return statement"
     last = returns[-1]
     assert isinstance(last.value, ast.Tuple)
-    assert len(last.value.elts) == 5
+    assert len(last.value.elts) == 7
 
 
 def test_no_map_controls_in_sidebar():
