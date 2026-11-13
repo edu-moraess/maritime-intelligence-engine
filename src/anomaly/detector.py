@@ -98,10 +98,11 @@ def detect_anomalies(
                 checks.append(
                     (
                         "signal gap",
-                        0.82,
+                        min(1.0, (float(time_delta) - config.gap_seconds) / max(float(config.gap_seconds), 1.0)),
                         (
                             f"Observed timestamp gap of "
-                            f"{time_delta / 60:.1f} minutes."
+                            f"{time_delta / 60:.1f} minutes. "
+                            "Score is a rule-derived exceedance index, not confidence."
                         ),
                     )
                 )
@@ -120,7 +121,7 @@ def detect_anomalies(
                 checks.append(
                     (
                         "heading anomaly",
-                        0.78,
+                        min(1.0, (float(heading_change) - config.deviation_heading_degrees) / max(180.0 - config.deviation_heading_degrees, 1.0)),
                         (
                             f"Observed course change of "
                             f"{heading_change:.0f} degrees "
