@@ -45,6 +45,7 @@ class AISIngestionWorker:
         queue_capacity: int = 5000,
         retry_delay_seconds: float = 1.0,
         max_retry_delay_seconds: float = 8.0,
+        live_timeout_seconds: float = 30.0,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -52,10 +53,13 @@ class AISIngestionWorker:
             raise ValueError("queue_capacity must be >= 1")
         if retry_delay_seconds <= 0 or max_retry_delay_seconds < retry_delay_seconds:
             raise ValueError("retry delays must be positive and max >= initial")
+        if live_timeout_seconds <= 0:
+            raise ValueError("live_timeout_seconds must be positive")
         self.provider = provider
         self.observations: queue.Queue[AISObservation] = queue.Queue(maxsize=queue_capacity)
         self._retry_delay = retry_delay_seconds
         self._max_retry_delay = max_retry_delay_seconds
+        self._live_timeout = live_timeout_seconds
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._sleep = sleep
         self._stop = threading.Event()
@@ -120,8 +124,15 @@ class AISIngestionWorker:
 
     def status(self) -> WorkerStatus:
         with self._lock:
+            state = self._state
+            if (
+                state == "LIVE"
+                and self._last_message_at is not None
+                and (self._clock() - self._last_message_at).total_seconds() > self._live_timeout
+            ):
+                state = "DEGRADED"
             return WorkerStatus(
-                state=self._state,
+                state=state,
                 started_at=self._started_at,
                 last_message_at=self._last_message_at,
                 messages_received=self._messages_received,
