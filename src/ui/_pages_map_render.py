@@ -612,7 +612,9 @@ def _render_vessel_map(
 
     if has_live_rows:
         layers.append(pdk.Layer("ScatterplotLayer", data=rows, get_position=["longitude", "latitude"], get_fill_color="halo_color", get_radius="halo_radius", radius_min_pixels=8, radius_max_pixels=26, pickable=False))
-        layers.append(pdk.Layer("PolygonLayer", data=rows, get_polygon="polygon", get_fill_color="fill_color", get_line_color=[7, 17, 22, 220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
+        heading_rows = [row for row in rows if row.get("polygon") is not None]
+        if heading_rows:
+            layers.append(pdk.Layer("PolygonLayer", data=heading_rows, get_polygon="polygon", get_fill_color="fill_color", get_line_color=[7, 17, 22, 220], line_width_min_pixels=1, stroked=True, filled=True, pickable=False))
         layers.append(pdk.Layer("ScatterplotLayer", data=rows, id=AIS_TARGETS_LAYER_ID, get_position=["longitude", "latitude"], get_fill_color=[255, 255, 255, 1], get_radius="core_radius", radius_min_pixels=5, radius_max_pixels=14, pickable=True, auto_highlight=True))
 
     if selected_mmsi:
