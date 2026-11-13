@@ -13,7 +13,7 @@ from src.ingestion.models import AISObservation, VesselSnapshot
 def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
     rows: list[dict] = []
     for vessel in vessels:
-        heading = vessel.heading_degrees if vessel.heading_degrees is not None else vessel.cog_degrees
+        heading = vessel.heading_degrees
         heading = float(heading) if heading is not None else None
         end_lat, end_lon = heading_endpoint(vessel.latitude, vessel.longitude, heading) if heading is not None else (None, None)
         rows.append(
