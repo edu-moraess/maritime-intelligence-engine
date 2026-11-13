@@ -665,7 +665,7 @@ def _render_vessel_map(
             unsafe_allow_html=True,
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
-    deck = pdk.Deck(map_style=style, map_provider=map_provider, map_projection=map_projection, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
+    deck = pdk.Deck(map_style=style, map_provider=map_provider, map_projection=map_projection, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE}, show_error=(map_provider == "maplibre"))
     if map_provider == "maplibre":
         # Streamlit's native pydeck component currently bundles Mapbox GL, not
         # the MapLibre runtime exposed by pydeck 0.9.2+. Render the standalone
