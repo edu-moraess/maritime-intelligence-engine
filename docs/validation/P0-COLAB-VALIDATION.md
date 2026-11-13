@@ -26,9 +26,9 @@ if WORKDIR.exists():
         "the validator will not delete or overwrite an existing checkout."
     )
 
-def run(command):
+def run(command, cwd=None):
     print("\\n$", " ".join(map(str, command)), flush=True)
-    subprocess.run(command, check=True)
+    subprocess.run(command, cwd=cwd, check=True)
 
 run(["git", "clone", "--branch", BRANCH, "--single-branch", REPO_URL, str(WORKDIR)])
 actual_head = subprocess.check_output(
@@ -37,8 +37,8 @@ actual_head = subprocess.check_output(
 if actual_head != REMOTE_HEAD:
     raise RuntimeError(f"Unexpected branch commit: {actual_head}; expected {REMOTE_HEAD}")
 
-run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"])
-run([sys.executable, "scripts/validate_p0.py"])
+run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"], cwd=WORKDIR)
+run([sys.executable, "scripts/validate_p0.py"], cwd=WORKDIR)
 
 print("\\nP0 deterministic validation completed.")
 print("Checkout:", WORKDIR)
