@@ -186,7 +186,7 @@ def detect_anomalies(
                         explanation=(
                             f"Vessel remained below 0.5 kn for "
                             f"{duration:.0f} minutes "
-                            f"({dwell_ratio:.0%} of reports). "
+                            f"({dwell_ratio:.0%} of valid movement intervals). "
                             "Score is the observed dwell-report ratio, not confidence."
                         ),
                     )
