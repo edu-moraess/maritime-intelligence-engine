@@ -200,6 +200,10 @@ class _ProcessEngineRegistry:
         self.signature: tuple | None = None
         self.engine: MaritimeIntelligenceEngine | None = None
 
+    def current_engine(self) -> MaritimeIntelligenceEngine | None:
+        with self.lock:
+            return self.engine
+
     def current_settings(self) -> AppSettings | None:
         with self.lock:
             return self.engine.settings if self.engine is not None else None
@@ -600,9 +604,16 @@ def main() -> None:
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
         """Refresh the active operational page while the process worker ingests AIS."""
-        snapshot = engine.snapshot()
+        active_engine = _process_engine_registry().current_engine() or engine
+        active_settings = _with_settings(
+            settings,
+            bboxes=active_engine.settings.monitoring_bboxes,
+            bbox=active_engine.settings.bbox,
+            config_error=active_engine.settings.config_error,
+        )
+        snapshot = active_engine.snapshot()
         if page != "Overview":
-            render_aux_workspace_controls(engine, settings, st.columns(3))
+            render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
         if snapshot.last_collection_breakdown:
             with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
                 breakdown = snapshot.last_collection_breakdown
@@ -630,25 +641,25 @@ def main() -> None:
             notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
 
         if page == "Overview":
-            render_overview(engine, snapshot, settings)
+            render_overview(active_engine, snapshot, active_settings)
         elif page == "Fleet":
-            render_vessels(engine, snapshot, settings)
+            render_vessels(active_engine, snapshot, active_settings)
         elif page == "Vessel Intelligence":
-            render_vessel_intelligence(engine, snapshot, settings)
+            render_vessel_intelligence(active_engine, snapshot, active_settings)
         elif page == "Trajectory Analysis":
-            render_trajectory_analysis(engine, snapshot, settings)
+            render_trajectory_analysis(active_engine, snapshot, active_settings)
         elif page == "Behavior":
-            render_behavior(engine, snapshot, settings)
+            render_behavior(active_engine, snapshot, active_settings)
         elif page == "Similarity":
-            render_similarity(engine, snapshot, settings)
+            render_similarity(active_engine, snapshot, active_settings)
         elif page == "Anomalies":
-            render_anomalies(engine, snapshot, settings)
+            render_anomalies(active_engine, snapshot, active_settings)
         elif page == "Traffic":
-            render_traffic(engine, snapshot, settings)
+            render_traffic(active_engine, snapshot, active_settings)
         elif page == "Data Quality":
-            render_data_quality(engine, snapshot, settings)
+            render_data_quality(active_engine, snapshot, active_settings)
         elif page == "System":
-            render_system(engine, snapshot, settings)
+            render_system(active_engine, snapshot, active_settings)
 
     render_live_workspace()
 
