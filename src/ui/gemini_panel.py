@@ -15,8 +15,25 @@ def _render_historical_profile(
     engine: MaritimeIntelligenceEngine,
     vessel,
 ) -> None:
-    """Render persisted history separately from current-session telemetry."""
-    st.write("")
+    """Render persisted history only after an explicit user request."""
+    with st.expander("Historical vessel profile", expanded=False):
+        st.caption(
+            "Persisted history is separate from current-session AIS and is not loaded automatically."
+        )
+        if not st.button(
+            "Load historical vessel data",
+            key=f"load_gemini_history:{vessel.mmsi}",
+        ):
+            return
+
+        _render_historical_profile_on_request(engine, vessel)
+
+
+def _render_historical_profile_on_request(
+    engine: MaritimeIntelligenceEngine,
+    vessel,
+) -> None:
+    """Fetch and render persisted history after explicit user action."""
     panel_title("Historical vessel profile", "persisted real AIS")
 
     database_url = getattr(engine.settings, "database_url", None)
