@@ -25,7 +25,8 @@ All operational summary metrics below are scoped to `current_session_observation
 - `IngestionStatus.messages_received` is the provider's cumulative accepted report counter since its last explicit provider reset; it is not the same field as the current-session `summary.messages`.
 - Data Quality uses only the current-session observations. Historical hydration is not silently mixed into the session quality denominator.
 - The overview map includes last-known stale positions by default. Stale positions are not LIVE targets and show their actual last-report age.
-- Traffic throughput charts use current-session observations. SOG distribution uses fresh vessel snapshots only.
+- Traffic throughput charts, tactical trails, and map density layers use current-session observations. SOG distribution uses fresh vessel snapshots only.
+- Tactical map `targets` counts the visible current-session vessel snapshots. Tactical `tracks` counts only MMSIs represented among those visible targets with at least two current-session reports; tracks outside the map's selected region are excluded.
 - Regional temporal scores are session-relative. If the temporal model is not READY, eligible-track and top-quartile metrics are `N/A`, not zero. If the model is READY but there are too few scores to estimate a quartile threshold, the top-quartile rate remains `N/A`.
 
 ## Guardrails
