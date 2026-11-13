@@ -66,6 +66,14 @@ def _render_similarity_search(engine, snapshot, track, current_mmsi):
             "INSUFFICIENT REAL AIS DATA",
         )
     else:
+        if engine.embedding_adapter.embed(track) is None:
+            empty_state(
+                "The reference vessel requires 32 contiguous complete real AIS reports "
+                "with valid position, SOG, and COG. Missing fields and receive-time gaps "
+                "are not filled or interpolated.",
+                "INSUFFICIENT REAL AIS DATA",
+            )
+            return
         session_tracks = {}
         for observation in snapshot.current_session_observations:
             session_tracks.setdefault(observation.mmsi, []).append(observation)
