@@ -121,6 +121,7 @@ class MaritimeIntelligenceEngine:
         self.live_worker = AISIngestionWorker(self.provider, live_timeout_seconds=float(settings.stale_after_seconds))
         self._live_started_at: datetime | None = None
         self._live_started_monotonic: float | None = None
+        self._live_last_recompute_monotonic: float = 0.0
         self.store = ObservationStore(max_messages=settings.max_messages, max_vessels=settings.max_vessels)
         self.embedding_adapter = TrajectoryEmbeddingAdapter()
         self.temporal_adapter = TemporalAnomalyAdapter()
@@ -269,6 +270,7 @@ class MaritimeIntelligenceEngine:
         if started:
             self._live_started_at = datetime.now(timezone.utc)
             self._live_started_monotonic = time.monotonic()
+            self._live_last_recompute_monotonic = 0.0
             self.current_session_observations = []
             self.current_session_findings = []
             self._session_generation += 1
@@ -283,11 +285,16 @@ class MaritimeIntelligenceEngine:
         observations = worker.drain(limit=5000)
         if not observations:
             return 0
-        self.current_session_observations.extend(observations)
+        self.current_session_observations = (
+            self.current_session_observations + observations
+        )[-self.settings.max_messages :]
         self.store.extend(observations)
         self._session_generation += 1
-        self._recompute()
-        self.current_session_findings = self._detect_current_session_findings()
+        now_monotonic = time.monotonic()
+        if now_monotonic - self._live_last_recompute_monotonic >= 10.0:
+            self._recompute()
+            self.current_session_findings = self._detect_current_session_findings()
+            self._live_last_recompute_monotonic = now_monotonic
         if self._live_started_monotonic is not None:
             self.last_collection_seconds = max(0.0, time.monotonic() - self._live_started_monotonic)
         return len(observations)
@@ -331,6 +338,7 @@ class MaritimeIntelligenceEngine:
                     )
         self._live_started_at = None
         self._live_started_monotonic = None
+        self._live_last_recompute_monotonic = 0.0
         self._refresh_environmental_contexts()
         self._recompute()
         self.current_session_findings = self._detect_current_session_findings()
@@ -516,10 +524,10 @@ class MaritimeIntelligenceEngine:
                 "STARTING": "CONNECTING",
                 "CONNECTING": "CONNECTING",
                 "LIVE": "LIVE AIS",
-                "RECONNECTING": "CONNECTING",
-                "DEGRADED": "DISCONNECTED",
-                "STOPPED": "DISCONNECTED",
-                "ERROR": "DISCONNECTED",
+                "RECONNECTING": "RECONNECTING",
+                "DEGRADED": "DEGRADED",
+                "STOPPED": "STOPPED",
+                "ERROR": "ERROR",
             }
             mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
             reason = (
@@ -534,6 +542,9 @@ class MaritimeIntelligenceEngine:
                 messages_received=worker_status.messages_received,
                 reconnect_attempts=provider_status.reconnect_attempts,
                 last_error=provider_status.last_error or worker_status.last_error,
+                queue_depth=worker_status.queue_depth,
+                dropped_messages=worker_status.dropped_messages,
+                worker_state=worker_status.state,
                 active_vessels=len(analysis_tracks),
             )
         status = replace(provider_status, active_vessels=len(analysis_tracks))
