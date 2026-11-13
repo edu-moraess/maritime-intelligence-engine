@@ -108,6 +108,8 @@ P0 implementation: PARTIAL — process-local worker integrated with engine and S
 1. No Python test suite has been executed in this environment; no PASS claim is made.
 2. The 30-minute live AIS / multi-page navigation / interruption-recovery test has not been run.
 3. Cross-process and cross-replica coordination is not implemented. The registry is process-local only.
-4. Environmental failure classification, canonical metric definitions, diagnostic reconciliation, and temporal unavailable semantics remain to be completed.
+4. Environmental failure classification, canonical metric definitions, diagnostic reconciliation, and temporal unavailable semantics have been implemented in code and documented; automated verification remains pending.
 5. Verify queue saturation behavior under realistic AIS burst rates and confirm the configured queue capacity is appropriate.
-6. Verify that Streamlit fragment refresh and the process-shared registry behave as expected in the actual deployment target.
+6. Verify Streamlit fragment refresh, process-shared region selection, and the shared historical-persistence toggle in the actual deployment target.
+7. Confirm historical observations remain correctly scoped after a process-wide region change; the registry transfers the previous in-memory store into the replacement engine.
+8. Verify the process-wide configuration behavior with at least two simultaneous Streamlit sessions.
