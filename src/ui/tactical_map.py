@@ -195,4 +195,4 @@ def legend_markdown():
 
 def operational_strip(*, live_state, targets, tracks, anomalies, region):
     state_color = "#35c2c9" if "LIVE" in live_state.upper() else "#ef6b73"
-    return (f"<div style='display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.68rem;letter-spacing:.07em;margin:0 0 .4rem;color:#79939b'>" f"<span style='color:{state_color};font-weight:600'>{live_state}</span>" f"<span>TARGETS {targets}</span><span>TRACKS {tracks}</span>" f"<span>ANOMALIES {anomalies}</span><span>REGION {region}</span></div>")
+    return (f"<div style='display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.68rem;letter-spacing:.07em;margin:0 0 .4rem;color:#79939b'>" f"<span style='color:{state_color};font-weight:600'>{live_state}</span>" f"<span>TARGETS {targets}</span><span>TRACKS {tracks}</span>" f"<span>ANOMALOUS VESSELS {anomalies}</span><span>REGION {region}</span></div>")
