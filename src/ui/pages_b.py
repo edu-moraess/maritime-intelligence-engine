@@ -44,9 +44,10 @@ def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsho
     metric_strip({"FINDINGS": len(findings), "VESSELS": len({f.mmsi for f in findings}),
                   "MAX RULE SCORE": f"{max_rule_score:.2f}" if max_rule_score is not None else "—"})
     if not findings:
-        empty_state("Anomalies are calculated only from currently observed real AIS reports. No finding is fabricated when data is insufficient. "
-                    "Collect real AIS data for longer or select a denser monitoring region if more history is required.",
-                    "NO BEHAVIORAL ANOMALIES")
+        empty_state("No rule-based anomaly finding is available in the current session. "
+                    "Insufficient real AIS data produces no finding; absence of a finding is not a normality assessment. "
+                    "Collect more real AIS data or select a denser monitoring region.",
+                    "NO FINDINGS IN CURRENT SESSION")
         return
     categories = ["All categories"] + sorted({finding.category for finding in findings})
     selected_category = st.selectbox("Category", categories, label_visibility="collapsed")
