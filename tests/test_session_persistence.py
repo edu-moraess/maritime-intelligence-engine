@@ -85,6 +85,19 @@ def test_clear_session_data_blocks_unverified_memory_wipe():
     assert engine.provider.status.messages_received == 0
 
 
+def test_clear_session_blocks_when_current_observations_are_not_persisted():
+    engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
+    observation = _obs()
+    engine.current_session_observations = [observation]
+    engine.store.extend([observation])
+
+    with pytest.raises(RuntimeError, match="persistence is disabled"):
+        engine.clear_session_data()
+
+    assert engine.current_session_observations == [observation]
+    assert engine.store.all() == [observation]
+
+
 def test_collect_extends_store_without_resetting_prior_observations():
     """A second collection must accumulate, not replace, prior real AIS data."""
     engine = create_engine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
