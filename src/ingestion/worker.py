@@ -158,7 +158,7 @@ class AISIngestionWorker:
                 self._state = "CONNECTING"
             try:
                 received_any = False
-                for observation in self.provider.stream(self._stop, duration_seconds=None):
+                for observation in self.provider.stream(self._stop, duration_seconds=None, message_limit=0):
                     if self._stop.is_set():
                         break
                     received_any = True
