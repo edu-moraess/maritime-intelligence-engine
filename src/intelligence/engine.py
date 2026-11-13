@@ -132,7 +132,11 @@ class MaritimeIntelligenceEngine:
         self._state_lock = threading.RLock()
         self.settings = settings
         self.provider = AISStreamProvider(api_key=settings.aisstream_api_key, bbox=settings.bbox_payload, max_messages=settings.max_messages, max_vessels=settings.max_vessels, stale_after_seconds=settings.stale_after_seconds, config_error=settings.config_error)
-        self.live_worker = AISIngestionWorker(self.provider, live_timeout_seconds=float(settings.stale_after_seconds))
+        self.live_worker = AISIngestionWorker(
+            self.provider,
+            queue_capacity=settings.ingestion_queue_capacity,
+            live_timeout_seconds=float(settings.stale_after_seconds),
+        )
         self._live_started_at: datetime | None = None
         self._live_started_monotonic: float | None = None
         self._live_last_recompute_monotonic: float = 0.0
