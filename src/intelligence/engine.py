@@ -239,21 +239,21 @@ class MaritimeIntelligenceEngine:
             self.last_collection_seconds = collection_elapsed
             ended_at = datetime.now(timezone.utc)
             breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
-    
+
             # Restore persisted real AIS only after the live window has finished.
             # This keeps the selected 60/300/600 s window anchored to the operator
             # action rather than to database/network hydration latency.
             phase_started = time.monotonic()
             self._restore_historical_context()
             breakdown["historical_restore"] = time.monotonic() - phase_started
-    
+
             self.current_session_observations = list(collected)
             self._session_generation = getattr(self, "_session_generation", 0) + 1
             self.current_session_findings = []
             if collected:
                 self.store.extend(collected)
                 self._unpersisted_observations.extend(collected)
-    
+
                 phase_started = time.monotonic()
                 self.historical_result = self.historical_writer.persist_collection(
                     collected,
@@ -272,7 +272,7 @@ class MaritimeIntelligenceEngine:
                     + self.historical_result.duplicate_observations >= len(valid_collected)
                 ):
                     self._mark_observations_persisted(valid_collected)
-    
+
                 if (
                     self.historical_result.session_id is not None
                     and self._historical_persistence_enabled
@@ -299,19 +299,19 @@ class MaritimeIntelligenceEngine:
                 self.historical_result = None
                 breakdown["postgres_persist"] = 0.0
                 breakdown["region_persist"] = 0.0
-    
+
             phase_started = time.monotonic()
             self._refresh_environmental_contexts()
             breakdown["environmental"] = time.monotonic() - phase_started
-    
+
             phase_started = time.monotonic()
             self._recompute()
             breakdown["recompute"] = time.monotonic() - phase_started
-    
+
             phase_started = time.monotonic()
             self.current_session_findings = self._detect_current_session_findings()
             breakdown["findings"] = time.monotonic() - phase_started
-    
+
             wall_elapsed = max(0.0, time.monotonic() - started)
             measured_phases = sum(
                 value for key, value in breakdown.items() if key != "total"
