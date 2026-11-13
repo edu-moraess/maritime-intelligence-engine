@@ -628,8 +628,12 @@ class MaritimeIntelligenceEngine:
                 }
                 mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
                 if (
-                    worker_status.state == "LIVE"
+                    worker_status.state in {"LIVE", "CONNECTING", "RECONNECTING"}
                     and provider_status.websocket_status != "OPEN"
+                    and (
+                        provider_status.reconnect_attempts
+                        or worker_status.reconnect_attempts
+                    )
                 ):
                     mapped_state = "RECONNECTING"
                 reason = (
