@@ -70,15 +70,16 @@ def detect_anomalies(
 
             sog = getattr(row, "sog_knots", None)
 
-            if sog is not None and np.isfinite(sog):
+            if sog is not None and np.isfinite(sog) and 0.0 <= float(sog) <= 102.2:
                 if sog > config.speed_limit_knots:
                     checks.append(
                         (
                             "speed anomaly",
-                            0.90,
+                            min(1.0, (float(sog) - config.speed_limit_knots) / max(config.speed_limit_knots, 1e-9)),
                             (
                                 f"Reported SOG {sog:.1f} kn exceeds "
-                                "the configured real-data review threshold."
+                                "the configured real-data review threshold. "
+                                "Score is a rule-derived exceedance index, not confidence."
                             ),
                         )
                     )
@@ -86,7 +87,7 @@ def detect_anomalies(
             time_delta = getattr(
                 row,
                 "time_delta_seconds",
-                0,
+                None,
             )
 
             if (
@@ -97,10 +98,11 @@ def detect_anomalies(
                 checks.append(
                     (
                         "signal gap",
-                        0.82,
+                        min(1.0, (float(time_delta) - config.gap_seconds) / max(float(config.gap_seconds), 1.0)),
                         (
                             f"Observed timestamp gap of "
-                            f"{time_delta / 60:.1f} minutes."
+                            f"{time_delta / 60:.1f} minutes. "
+                            "Score is a rule-derived exceedance index, not confidence."
                         ),
                     )
                 )
@@ -108,7 +110,7 @@ def detect_anomalies(
             heading_change = getattr(
                 row,
                 "heading_change",
-                0,
+                None,
             )
 
             if (
@@ -119,11 +121,11 @@ def detect_anomalies(
                 checks.append(
                     (
                         "heading anomaly",
-                        0.78,
+                        min(1.0, (float(heading_change) - config.deviation_heading_degrees) / max(180.0 - config.deviation_heading_degrees, 1.0)),
                         (
                             f"Observed course change of "
                             f"{heading_change:.0f} degrees "
-                            "between reports."
+                            "between reports. Score is a rule-derived exceedance index, not confidence."
                         ),
                     )
                 )
@@ -142,9 +144,9 @@ def detect_anomalies(
                         ),
                         latitude=float(row.latitude),
                         longitude=float(row.longitude),
-                        score=round(min(0.99, score), 3),
+                        score=round(min(1.0, max(0.0, score)), 3),
                         category=category,
-                        confidence=round(min(0.99, score), 3),
+                        confidence=None,
                         explanation=explanation,
                     )
                 )
@@ -159,10 +161,12 @@ def detect_anomalies(
                 - frame["received_at"].iloc[0]
             ).total_seconds() / 60
 
-            dwell_ratio = float(frame["is_dwell"].mean())
+            valid_dwell = frame["is_dwell"].dropna()
+            dwell_ratio = float(valid_dwell.mean()) if not valid_dwell.empty else None
 
             if (
                 duration >= config.dwell_minutes
+                and dwell_ratio is not None
                 and dwell_ratio >= 0.8
             ):
                 latest = frame.iloc[-1]
@@ -176,13 +180,14 @@ def detect_anomalies(
                         ),
                         latitude=float(latest["latitude"]),
                         longitude=float(latest["longitude"]),
-                        score=0.72,
+                        score=round(float(dwell_ratio), 3),
                         category="unusual stop",
-                        confidence=0.74,
+                        confidence=None,
                         explanation=(
                             f"Vessel remained below 0.5 kn for "
                             f"{duration:.0f} minutes "
-                            f"({dwell_ratio:.0%} of reports)."
+                            f"({dwell_ratio:.0%} of valid movement intervals). "
+                            "Score is the observed dwell-report ratio, not confidence."
                         ),
                     )
                 )
@@ -246,25 +251,6 @@ def _ais_second(value: object) -> int | None:
         int(number)
         if np.isfinite(number) and number.is_integer()
         else None
-    )
-
-
-def vessel_normality_score(
-    findings: list[AnomalyFinding],
-    mmsi: str,
-) -> float:
-    vessel_findings = [
-        finding.score
-        for finding in findings
-        if finding.mmsi == mmsi
-    ]
-
-    return round(
-        max(
-            0.0,
-            1.0 - max(vessel_findings, default=0.0),
-        ),
-        3,
     )
 
 

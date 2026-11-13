@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import cos, radians, sin
+from math import cos, isfinite, radians, sin
 from typing import Sequence
 
 from src.config.settings import RegionBBox
@@ -13,8 +13,12 @@ from src.ingestion.models import AISObservation, VesselSnapshot
 def vessel_rows(vessels: list[VesselSnapshot]) -> list[dict]:
     rows: list[dict] = []
     for vessel in vessels:
-        heading = vessel.heading_degrees if vessel.heading_degrees is not None else vessel.cog_degrees
-        heading = float(heading) if heading is not None else None
+        try:
+            heading = float(vessel.heading_degrees) if vessel.heading_degrees is not None else None
+        except (TypeError, ValueError):
+            heading = None
+        if heading is not None and (not isfinite(heading) or not 0.0 <= heading < 360.0):
+            heading = None
         end_lat, end_lon = heading_endpoint(vessel.latitude, vessel.longitude, heading) if heading is not None else (None, None)
         rows.append(
             {

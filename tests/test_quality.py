@@ -29,10 +29,10 @@ def observation(
     )
 
 
-def test_empty_session_is_waiting_and_perfect_by_definition() -> None:
+def test_empty_session_is_waiting_and_quality_is_unavailable() -> None:
     report = build_quality_report([], reference_time=BASE)
     assert report.messages_processed == 0
-    assert report.quality_percent == 100.0
+    assert report.quality_percent is None
     assert report.coverage_status == "WAITING"
 
 

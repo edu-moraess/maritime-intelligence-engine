@@ -9,7 +9,6 @@ import pandas as pd
 from src.ingestion.models import AISObservation
 from src.ml.temporal.types import (
     DEFAULT_SEQUENCE_LENGTH,
-    MAX_TIME_DELTA_SECONDS,
     MAX_TRACK_GAP_SECONDS,
     MINIMUM_POINTS_PER_TRACK,
     TEMPORAL_FEATURE_NAMES,
@@ -77,100 +76,88 @@ class TemporalSequenceScaler:
         return obj
 
 
-def _circular_diff_degrees(values: np.ndarray) -> np.ndarray:
-    v = np.asarray(values, dtype=np.float64)
-    if v.size == 0:
-        return v
-    out = np.zeros_like(v)
-    if v.size == 1:
-        return out
-    delta = np.diff(v)
-    delta = (delta + 180.0) % 360.0 - 180.0
-    out[1:] = delta
-    return out
-
-
 def _build_feature_matrix(frame: pd.DataFrame) -> np.ndarray | None:
+    """Build transition features without imputing absent AIS attributes.
+
+    Each output row represents a transition between two real reports. The
+    first report is only the origin of the transition and therefore does not
+    receive fabricated zero deltas.
+    """
     if frame is None or len(frame) < 2:
         return None
+    required = ("latitude", "longitude", "sog_knots", "cog_degrees", "time_delta_seconds")
+    if any(column not in frame.columns for column in required):
+        return None
+
     lat = frame["latitude"].to_numpy(dtype=np.float64)
     lon = frame["longitude"].to_numpy(dtype=np.float64)
-    if not np.isfinite(lat).all() or not np.isfinite(lon).all():
+    sog = frame["sog_knots"].to_numpy(dtype=np.float64)
+    cog = frame["cog_degrees"].to_numpy(dtype=np.float64)
+    td = frame["time_delta_seconds"].to_numpy(dtype=np.float64)
+
+    if not all(np.isfinite(values).all() for values in (lat, lon, sog, cog)):
         return None
     if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
         return None
+    if np.any((sog < 0.0) | (sog > 102.2)) or np.any((cog < 0.0) | (cog >= 360.0)):
+        return None
+    if not np.isfinite(td[1:]).all() or np.any(td[1:] <= 0.0):
+        return None
+    if np.any(td[1:] > MAX_TRACK_GAP_SECONDS):
+        return None
 
-    lat_rad = np.deg2rad(lat)
-    mean_lat_rad = float(np.mean(lat_rad))
     meters_per_degree_lat = 111_132.0
+    mean_lat_rad = float(np.mean(np.deg2rad(lat)))
     meters_per_degree_lon = 111_320.0 * max(np.cos(mean_lat_rad), 1e-6)
-    delta_lat_m = np.zeros(len(frame), dtype=np.float64)
-    delta_lon_m = np.zeros(len(frame), dtype=np.float64)
-    delta_lat_m[1:] = np.diff(lat) * meters_per_degree_lat
-    delta_lon_m[1:] = np.diff(lon) * meters_per_degree_lon
-
-    sog = frame["sog_knots"].to_numpy(dtype=np.float64) if "sog_knots" in frame.columns else np.zeros(len(frame))
-    sog = np.where(np.isfinite(sog), sog, 0.0)
-    sog = np.clip(sog, 0.0, 80.0)
-
-    cog = frame["cog_degrees"].to_numpy(dtype=np.float64) if "cog_degrees" in frame.columns else np.zeros(len(frame))
-    cog = np.where(np.isfinite(cog), cog, 0.0)
-    cog = np.mod(cog, 360.0)
-    cog_sin = np.sin(np.deg2rad(cog))
-    cog_cos = np.cos(np.deg2rad(cog))
-
-    computed_speed = (
-        frame["computed_speed_knots"].to_numpy(dtype=np.float64)
-        if "computed_speed_knots" in frame.columns
-        else np.zeros(len(frame))
+    delta_lat_m = np.diff(lat) * meters_per_degree_lat
+    delta_lon_m = np.diff(lon) * meters_per_degree_lon
+    distance_km = np.asarray(
+        [
+            _haversine_km_pair(lat[i], lon[i], lat[i + 1], lon[i + 1])
+            for i in range(len(lat) - 1)
+        ],
+        dtype=np.float64,
     )
-    computed_speed = np.where(np.isfinite(computed_speed), computed_speed, 0.0)
-    computed_speed = np.clip(computed_speed, 0.0, 80.0)
-
-    heading_change = (
-        frame["heading_change"].to_numpy(dtype=np.float64)
-        if "heading_change" in frame.columns
-        else _circular_diff_degrees(cog)
-    )
-    heading_change = np.where(np.isfinite(heading_change), heading_change, 0.0)
-    heading_change = np.clip(heading_change, -180.0, 180.0)
-
-    td = (
-        frame["time_delta_seconds"].to_numpy(dtype=np.float64)
-        if "time_delta_seconds" in frame.columns
-        else np.zeros(len(frame))
-    )
-    td = np.where(np.isfinite(td), td, 0.0)
-    td = np.clip(td, 0.0, MAX_TIME_DELTA_SECONDS)
-    log_td = np.log1p(td)
+    computed_speed = distance_km / (td[1:] / 3600.0) / 1.852
+    course_delta = _circular_diff_degrees(cog)[1:]
+    log_td = np.log1p(td[1:])
 
     mat = np.column_stack(
         [
             delta_lat_m,
             delta_lon_m,
-            sog,
-            cog_sin,
-            cog_cos,
+            sog[1:],
+            np.sin(np.deg2rad(cog[1:])),
+            np.cos(np.deg2rad(cog[1:])),
             computed_speed,
-            heading_change,
+            course_delta,
             log_td,
         ]
     ).astype(np.float64)
-    if mat.shape[1] != FEATURE_DIM:
-        return None
-    if not np.isfinite(mat).all():
+    if mat.shape != (len(frame) - 1, FEATURE_DIM) or not np.isfinite(mat).all():
         return None
     return mat
 
 
-def _resample_to_length(mat: np.ndarray, target_length: int) -> np.ndarray:
-    """Select the latest contiguous real observations; never interpolate AIS."""
-    n, _ = mat.shape
-    if target_length < 1:
-        raise ValueError("target_length must be >= 1")
-    if n < target_length:
-        raise ValueError("Cannot build temporal window without enough real observations.")
-    return mat[-target_length:].astype(np.float32)
+def _haversine_km_pair(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_km = 6371.0088
+    lat_delta = np.deg2rad(lat2 - lat1)
+    lon_delta = np.deg2rad(lon2 - lon1)
+    a = (
+        np.sin(lat_delta / 2.0) ** 2
+        + np.cos(np.deg2rad(lat1))
+        * np.cos(np.deg2rad(lat2))
+        * np.sin(lon_delta / 2.0) ** 2
+    )
+    return float(earth_radius_km * 2.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0))))
+
+
+def _circular_diff_degrees(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float64)
+    if values.size < 2 or not np.isfinite(values).all():
+        return np.array([], dtype=np.float64)
+    delta = np.diff(values)
+    return np.abs((delta + 180.0) % 360.0 - 180.0)
 
 
 def _split_track_on_gaps(
@@ -190,7 +177,7 @@ def _split_track_on_gaps(
     for obs in cleaned[1:]:
         previous = segments[-1][-1]
         gap = (obs.received_at - previous.received_at).total_seconds()
-        if gap > threshold:
+        if gap <= 0.0 or gap > threshold:
             segments.append([obs])
         else:
             segments[-1].append(obs)
@@ -204,7 +191,7 @@ def _build_sequence_from_observations(
     minimum_points: int,
     mmsi: str,
 ) -> TemporalSequence | None:
-    if len(observations) < minimum_points or len(observations) < sequence_length:
+    if len(observations) < minimum_points or len(observations) < sequence_length + 1:
         return None
     try:
         frame = enrich_track(track_to_frame(observations))
@@ -212,7 +199,7 @@ def _build_sequence_from_observations(
         return None
     if frame is None or len(frame) < minimum_points or len(frame) < sequence_length:
         return None
-    window_frame = frame.iloc[-int(sequence_length):].copy()
+    window_frame = frame.iloc[-(int(sequence_length) + 1):].copy()
     mat = _build_feature_matrix(window_frame)
     if mat is None or mat.shape[0] != sequence_length:
         return None
@@ -259,11 +246,11 @@ def build_temporal_sequences(
     minimum_points: int = MINIMUM_POINTS_PER_TRACK,
     max_windows_per_track: int = 8,
 ) -> list[TemporalSequence]:
-    """Build multiple non-overlapping windows from contiguous real-AIS segments.
+    """Build windows from contiguous real-AIS transitions.
 
-    Windows never cross a large receive-time gap and never overlap. Non-overlap
-    avoids overweighting long tracks and keeps future train/validation grouping
-    by MMSI meaningful. Only complete windows of real observations are emitted.
+    Each window requires N+1 real reports to represent N transitions. Adjacent
+    windows may share one endpoint report, but never interpolate, duplicate,
+    or fabricate an AIS observation.
     """
     if isinstance(tracks, dict):
         items = list(tracks.items())
@@ -278,15 +265,18 @@ def build_temporal_sequences(
         # the per-track cap preserve the most recent real operational context.
         collected: list[TemporalSequence] = []
         for segment in reversed(_split_track_on_gaps(obs)):
-            if len(segment) < max(window, minimum):
+            if len(segment) < max(window + 1, minimum):
                 continue
             # Anchor windows at the segment end; only the oldest remainder can
             # be excluded when the segment length is not divisible by window.
-            for start in range(len(segment) - window, -1, -window):
+            for end in range(len(segment), window, -window):
                 if len(collected) >= cap:
                     break
+                start = end - (window + 1)
+                if start < 0:
+                    continue
                 seq = _build_sequence_from_observations(
-                    segment[start : start + window],
+                    segment[start:end],
                     sequence_length=window,
                     minimum_points=minimum,
                     mmsi=str(mmsi),

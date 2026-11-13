@@ -388,7 +388,7 @@ def render_vessel_quick_intelligence(
                 {
                     "STATUS": combined.status,
                     "BEHAVIOR": combined.behavior.classification,
-                    "CONFIDENCE": combined.behavior.confidence,
+                    "DATA COVERAGE": combined.behavior.confidence,
                     "REGION": combined.region or "—",
                 }
             )
@@ -441,7 +441,7 @@ def render_vessel_quick_intelligence(
             st.markdown(provenance_badge("INSUFFICIENT DATA"), unsafe_allow_html=True)
             notice(
                 "INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least "
-                "3 independent real AIS trajectories in-session.",
+                "3 independent vessels, each with at least 32 contiguous complete real AIS reports (valid position, SOG, and COG).",
                 "yellow",
             )
 
@@ -457,16 +457,18 @@ def render_vessel_quick_intelligence(
                 anomalies.current_session,
                 key=lambda f: float(getattr(f, "score", 0) or 0),
             )
-            score = float(getattr(top, "score", 0) or 0)
-            severity = "HIGH" if score >= 0.78 else "MEDIUM" if score >= 0.5 else "LOW"
+            score = float(top.score)
             conf = getattr(top, "confidence", None)
             metric_strip(
                 {
-                    "SEVERITY": severity,
-                    "SCORE": f"{score:.2f}",
-                    "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT PROVIDED",
+                    "RULE SCORE": f"{score:.2f}",
+                    "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT CALIBRATED",
                     "CATEGORY": str(getattr(top, "category", "—")),
                 }
+            )
+            st.caption(
+                "Rule-derived score only. It is not a probability, calibrated "
+                "confidence, or standalone risk assessment."
             )
             notice(str(getattr(top, "explanation", "")), "red")
         else:
@@ -486,11 +488,14 @@ def render_vessel_quick_intelligence(
         else:
             notice("N/A — no historical anomaly records for this MMSI.", "gray")
 
-    # Confidence
-    with st.expander("Confidence", expanded=True):
+    # Evidence coverage
+    with st.expander("Evidence coverage", expanded=True):
         st.markdown(provenance_badge("DERIVED"), unsafe_allow_html=True)
-        st.caption("Deterministic rules (no ML)")
-        metric_strip({"LEVEL": confidence.level})
+        st.caption(
+            "Deterministic coverage classification from observation count, "
+            "time span, and SOG/COG availability. Not statistical confidence."
+        )
+        metric_strip({"COVERAGE LEVEL": confidence.level})
         for reason in confidence.reasons:
             st.caption(f"· {reason}")
 

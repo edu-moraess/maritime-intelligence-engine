@@ -58,7 +58,7 @@ def render_overview(
             "ACTIVE VESSELS": summary["active_vessels"],
             "MESSAGES": f"{summary['messages']:,}",
             "ANOMALIES": summary["anomalies"],
-            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
+            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A",
             "LAST MESSAGE": _utc(
                 snapshot.status.last_received_at
             ),
@@ -465,25 +465,22 @@ def render_vessel_intelligence(
             if finding.mmsi == selected.mmsi
         ]
 
-        max_anomaly = max(
-            (
-                finding.score
-                for finding in findings
-            ),
-            default=0.0,
-        )
-
-        normality = max(
-            0.0,
-            1.0 - max_anomaly,
+        max_rule_score = (
+            max(float(finding.score) for finding in findings)
+            if findings
+            else None
         )
 
         metric_strip(
             {
-                "NORMALITY": f"{normality:.2f}",
-                "ANOMALY": f"{max_anomaly:.2f}",
+                "MAX RULE SCORE": f"{max_rule_score:.2f}" if max_rule_score is not None else "—",
+                "FINDINGS": len(findings),
                 "REPORTS": selected.message_count,
             }
+        )
+        st.caption(
+            "Rule-derived exceedance score; not a probability, confidence, "
+            "or proof of abnormal intent."
         )
 
         st.write("")
@@ -564,8 +561,9 @@ def render_vessel_intelligence(
             )
         else:
             notice(
-                "No behavioral anomaly detected in the "
-                "available real AIS observations.",
+                "No rule-based finding is available for this vessel "
+                "in the current session. Absence of a finding is not "
+                "a normality assessment.",
                 "green",
             )
 
@@ -748,6 +746,7 @@ def render_behavior(
         )
         if str(mmsi).isdigit()
         and len(str(mmsi)) == 9
+        and str(mmsi) in behavioral_scores
     ]
 
     if not valid_indices:
@@ -760,10 +759,7 @@ def render_behavior(
 
     ranked_indices = sorted(
         valid_indices,
-        key=lambda i: behavioral_scores.get(
-            str(result.mmsis[i]),
-            0.0,
-        ),
+        key=lambda i: behavioral_scores[str(result.mmsis[i])],
         reverse=True,
     )
 
@@ -826,7 +822,7 @@ def render_behavior(
                 [
                     str(result.mmsis[i]),
                     int(result.clusters[i]),
-                    behavioral_scores.get(str(result.mmsis[i]), 0.0),
+                    behavioral_scores[str(result.mmsis[i])],
                 ]
                 for i in valid_indices
             ],
@@ -869,10 +865,11 @@ def render_behavior(
 
     if selected_idx is not None and selected_idx in valid_indices:
         current_mmsi = str(result.mmsis[selected_idx])
-        current_score = behavioral_scores.get(current_mmsi, 0.0)
+        current_score = behavioral_scores.get(current_mmsi)
         current_cluster = int(result.clusters[selected_idx])
         current_pc1 = result.projection[selected_idx, 0]
         current_pc2 = result.projection[selected_idx, 1]
+        current_score_label = f"{current_score:.3f}" if current_score is not None else "N/A"
 
         fig.add_trace(
             go.Scatter(
@@ -898,7 +895,7 @@ def render_behavior(
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
                     f"<br><b>Cluster</b>: {current_cluster}"
-                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}"
+                    f"<br><b>Isolation Forest score</b>: {current_score_label}"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),

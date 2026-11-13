@@ -50,8 +50,10 @@ def _no_real_data_reason(status_reason: str) -> str:
 def _track_readiness_reason(module: str, current: int, required: int = 3) -> str:
     return (
         f"{module} analysis requires {required} distinct vessels "
-        "with sufficient trajectory history. "
-        f"Current: {current}/{required}. "
+        "with at least 32 contiguous complete real AIS reports each "
+        "(valid position, SOG, and COG). "
+        f"Current tracks with at least two reports: {current}; this is not yet "
+        "a count of eligible 32-report tracks. "
         "Collect real AIS data for longer or select a denser monitoring region."
     )
 
@@ -64,6 +66,14 @@ def _render_similarity_search(engine, snapshot, track, current_mmsi):
             "INSUFFICIENT REAL AIS DATA",
         )
     else:
+        if engine.embedding_adapter.embed(track) is None:
+            empty_state(
+                "The reference vessel requires 32 contiguous complete real AIS reports "
+                "with valid position, SOG, and COG. Missing fields and receive-time gaps "
+                "are not filled or interpolated.",
+                "INSUFFICIENT REAL AIS DATA",
+            )
+            return
         session_tracks = {}
         for observation in snapshot.current_session_observations:
             session_tracks.setdefault(observation.mmsi, []).append(observation)
@@ -126,7 +136,12 @@ def _build_speed_rows(rows):
         longitude = row.get("longitude")
         if latitude is None or longitude is None:
             continue
-        speed = max(0.0, float(sog))
+        try:
+            speed = float(sog)
+        except (TypeError, ValueError):
+            continue
+        if not pd.notna(speed) or not 0.0 <= speed <= 102.2:
+            continue
         radius = max(250.0, min(1200.0, 250.0 + speed * 55.0))
         result.append({
             "latitude": float(latitude),

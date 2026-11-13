@@ -1,8 +1,8 @@
 """Diagnostics for the temporal quality of real AIS tracks.
 
 This module measures source coverage and provides a conservative selector for
-temporal model scales. It never fabricates observations or interpolates a
-track unless the selected scale has enough real source points.
+temporal model scales. A window of T transitions requires T+1 real source
+reports; this module never fabricates observations or interpolates a track.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def _contiguous_segment_lengths(track: Sequence[AISObservation], gap_threshold_s
     lengths = [1]
     for previous, current in zip(track, track[1:]):
         gap = (current.received_at - previous.received_at).total_seconds()
-        if gap > threshold:
+        if gap <= 0.0 or gap > threshold:
             lengths.append(1)
         else:
             lengths[-1] += 1
@@ -99,7 +99,7 @@ def analyze_temporal_tracks(
         segment_lengths_by_track.append(segment_lengths)
         for previous, current in zip(track, track[1:]):
             delta = (current.received_at - previous.received_at).total_seconds()
-            if delta < 0:
+            if delta <= 0:
                 continue
             delta = float(delta)
             intervals.append(delta)
@@ -109,11 +109,11 @@ def analyze_temporal_tracks(
 
     by_threshold = {threshold: sum(n >= threshold for n in point_counts) for threshold in thresholds}
     sliding = {
-        length: sum(max(0, segment_length - length + 1) for segments in segment_lengths_by_track for segment_length in segments)
+        length: sum(max(0, segment_length - length) for segments in segment_lengths_by_track for segment_length in segments)
         for length in lengths
     }
     non_overlapping = {
-        length: sum(segment_length // length for segments in segment_lengths_by_track for segment_length in segments)
+        length: sum(max(0, segment_length - 1) // length for segments in segment_lengths_by_track for segment_length in segments)
         for length in lengths
     }
 
@@ -151,7 +151,8 @@ def select_adaptive_sequence_length(
         eligible_vessels = 0
         for _mmsi, observations in items:
             track = _clean_track(observations)
-            if max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length:
+            # T model rows represent transitions, so T transitions require T+1 reports.
+            if max(_contiguous_segment_lengths(track, MAX_TRACK_GAP_SECONDS), default=0) >= length + 1:
                 eligible_vessels += 1
         if eligible_vessels >= required:
             return length

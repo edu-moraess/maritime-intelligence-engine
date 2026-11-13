@@ -31,7 +31,8 @@ def test_contract():
 
 
 def test_preprocess_shape():
-    s = build_temporal_sequence(_track("368207620", 32))
+    assert build_temporal_sequence(_track("368207620", 32)) is None
+    s = build_temporal_sequence(_track("368207620", 33))
     assert s is not None and s.sequence.shape == (32, 8)
     assert s.sequence_length == 32 and s.feature_names is not None
 
@@ -74,7 +75,7 @@ def test_tcn_forward_contract():
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
 def test_adapter_ready():
-    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
+    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 9, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     r = TemporalAnomalyAdapter().fit(tracks)
     assert r.status == "READY" and r.training_completed and r.inference_available
     assert r.method == "TCN Temporal Autoencoder"
@@ -91,7 +92,7 @@ def test_engine_ready():
     e = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
     rows = []
     for v in range(MINIMUM_TRACKS_FOR_DEEP_MODEL):
-        rows.extend(_track(f"3682076{v:02d}", 8, 25 + v * 0.02))
+        rows.extend(_track(f"3682076{v:02d}", 9, 25 + v * 0.02))
     e.store.extend(rows)
     e.current_session_observations = list(rows)
     e._recompute()
@@ -139,7 +140,7 @@ def test_temporal_failure_does_not_break_classical(monkeypatch):
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
 def test_trainer_direct_defaults_to_tcn():
-    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
+    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 9, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     seqs = build_temporal_sequences(tracks, sequence_length=8, minimum_points=8)
     tr = TemporalTrainer(TrainingConfig(max_training_seconds=3.0, seed=42)).train(seqs)
     assert len(seqs) >= MINIMUM_TRACKS_FOR_DEEP_MODEL and tr.ok and tr.model_state is not None

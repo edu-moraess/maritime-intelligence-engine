@@ -54,6 +54,7 @@ def extract_movement_features(obs: Sequence[AISObservation]) -> MovementFeatures
         return _empty_movement()
 
     traveled = 0.0
+    valid_segments = 0
     stopped_s = 0.0
     moving_s = 0.0
 
@@ -66,8 +67,9 @@ def extract_movement_features(obs: Sequence[AISObservation]) -> MovementFeatures
         if not isfinite(dist):
             continue
         traveled += dist
+        valid_segments += 1
         hours = dt / 3600.0
-        seg_sog = (dist / hours) / 1.852 if hours > 0 else 0.0
+        seg_sog = (dist / hours) / 1.852
         if seg_sog < STOPPED_SEGMENT_SOG_KNOTS:
             stopped_s += dt
         else:
@@ -85,12 +87,16 @@ def extract_movement_features(obs: Sequence[AISObservation]) -> MovementFeatures
         total_s = None
 
     ratio = _safe_ratio(moving_s, moving_s + stopped_s) if (moving_s + stopped_s) > 0 else None
-    efficiency = _safe_ratio(displacement or 0.0, traveled) if traveled > 0 else None
+    efficiency = (
+        _safe_ratio(displacement, traveled)
+        if displacement is not None and traveled > 0.0
+        else None
+    )
     if efficiency is not None:
         efficiency = max(0.0, min(1.0, efficiency))
 
     return MovementFeatures(
-        traveled_distance_km=traveled if traveled > 0 else (0.0 if len(obs) >= 2 else None),
+        traveled_distance_km=traveled if valid_segments > 0 else None,
         displacement_km=displacement,
         movement_duration_s=moving_s if total_s is not None else None,
         stopped_duration_s=stopped_s if total_s is not None else None,
