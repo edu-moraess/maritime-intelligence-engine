@@ -457,16 +457,18 @@ def render_vessel_quick_intelligence(
                 anomalies.current_session,
                 key=lambda f: float(getattr(f, "score", 0) or 0),
             )
-            score = float(getattr(top, "score", 0) or 0)
-            severity = "HIGH" if score >= 0.78 else "MEDIUM" if score >= 0.5 else "LOW"
+            score = float(top.score)
             conf = getattr(top, "confidence", None)
             metric_strip(
                 {
-                    "SEVERITY": severity,
-                    "SCORE": f"{score:.2f}",
-                    "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT PROVIDED",
+                    "RULE SCORE": f"{score:.2f}",
+                    "CONFIDENCE": f"{conf:.2f}" if conf is not None else "NOT CALIBRATED",
                     "CATEGORY": str(getattr(top, "category", "—")),
                 }
+            )
+            st.caption(
+                "Rule-derived score only. It is not a probability, calibrated "
+                "confidence, or standalone risk assessment."
             )
             notice(str(getattr(top, "explanation", "")), "red")
         else:
