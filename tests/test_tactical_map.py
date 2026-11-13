@@ -26,9 +26,10 @@ def test_resolve_vessel_course_prefers_heading():
     assert resolve_vessel_course(90.0, 180.0) == 90.0
 
 
-def test_resolve_vessel_course_cog_fallback():
-    assert resolve_vessel_course(None, 180.0) == 180.0
-    assert resolve_vessel_course(400.0, 180.0) == 180.0
+def test_heading_is_never_substituted_with_cog():
+    assert resolve_vessel_course(None, 180.0) is None
+    assert resolve_vessel_course(400.0, 180.0) is None
+    assert resolve_course_degrees({"heading_degrees": None, "cog_degrees": 180.0}) == 180.0
 
 
 def test_resolve_vessel_course_missing():
@@ -36,8 +37,8 @@ def test_resolve_vessel_course_missing():
     assert resolve_vessel_course(-1, 360) is None
 
 
-def test_resolve_course_degrees_row():
-    assert resolve_course_degrees({"heading_degrees": 10, "cog_degrees": 90}) == 10.0
+def test_resolve_course_degrees_row_uses_cog_for_direction_of_travel():
+    assert resolve_course_degrees({"heading_degrees": 10, "cog_degrees": 90}) == 90.0
 
 
 def test_status_matrix():
@@ -62,6 +63,7 @@ def test_anomaly_mmsi_sets():
 def test_ship_polygon_orientation_differs():
     north = ship_polygon(0.0, 0.0, 0.0, scale_deg=0.02)
     east = ship_polygon(0.0, 0.0, 90.0, scale_deg=0.02)
+    assert ship_polygon(0.0, 0.0, None, scale_deg=0.02) is None
     assert north[0] == north[-1] and north != east
     assert len(north) == 14
     assert north[0] != north[1] != north[2]
