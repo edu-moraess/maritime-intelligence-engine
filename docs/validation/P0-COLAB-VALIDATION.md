@@ -34,8 +34,8 @@ run(["git", "clone", "--branch", BRANCH, "--single-branch", REPO_URL, str(WORKDI
 actual_head = subprocess.check_output(
     ["git", "rev-parse", "HEAD"], cwd=WORKDIR, text=True
 ).strip()
-if actual_head != EXPECTED_HEAD:
-    raise RuntimeError(f"Unexpected branch commit: {actual_head}; expected {EXPECTED_HEAD}")
+if actual_head != REMOTE_HEAD:
+    raise RuntimeError(f"Unexpected branch commit: {actual_head}; expected {REMOTE_HEAD}")
 
 run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"])
 run([sys.executable, "scripts/validate_p0.py"])
