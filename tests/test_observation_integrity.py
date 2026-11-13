@@ -101,3 +101,23 @@ def test_unobserved_interval_does_not_become_zero_distance() -> None:
     movement = extract_movement_features([first, second])
     assert movement.traveled_distance_km is None
     assert movement.trajectory_efficiency is None
+
+
+def test_invalid_position_is_not_used_for_derived_distance() -> None:
+    frame = enrich_track(
+        track_to_frame(
+            [
+                _obs(0),
+                AISObservation(
+                    mmsi="123456789",
+                    latitude=999.0,
+                    longitude=-80.0,
+                    received_at=datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=60),
+                    sog_knots=8.0,
+                    cog_degrees=90.0,
+                ),
+            ]
+        )
+    )
+    assert pd.isna(frame.loc[1, "distance_km"])
+    assert pd.isna(frame.loc[1, "computed_speed_knots"])
