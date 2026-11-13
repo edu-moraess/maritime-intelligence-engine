@@ -400,7 +400,7 @@ def _render_sidebar(
             unsafe_allow_html=True,
         )
 
-        can_collect = settings.config_error is None
+        can_collect = settings.validate_for_connection()[0]
         worker_status = engine.live_worker.status()
         worker_state = worker_status.state
         live_active = worker_status.thread_alive or worker_state not in {"STOPPED", "ERROR"}
@@ -432,7 +432,7 @@ def _render_sidebar(
                         collection_seconds=float(selected_duration),
                     )
 
-                can_collect = settings.config_error is None
+                can_collect = settings.validate_for_connection()[0]
                 live_col, stop_col = st.columns(2)
                 with live_col:
                     start_live = st.button(
