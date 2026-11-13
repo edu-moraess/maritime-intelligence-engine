@@ -20,7 +20,7 @@ The following facts were verified on the baseline commit.
 ### 2.1 Existing vessel-map capabilities
 
 - `src/ui/tactical_map.py` already generates procedural vector hull polygons by coarse AIS ship-type family.
-- Vessel symbols can be oriented using heading, falling back to COG when heading is unavailable.
+- Vessel symbols are oriented only when AIS Heading is available. COG remains a separate direction-of-travel signal and is never substituted for Heading.
 - Movement vectors, observed track trails, selection emphasis, anomaly rings, freshness, density, traffic corridors, and anomaly hotspots already exist.
 - `src/ui/_pages_map_render.py` composes these as PyDeck layers and supports vessel selection through Streamlit's native PyDeck chart selection.
 - `src/ui/pages_overview.py` exposes map controls and renders the vessel map and selected-vessel intelligence panel.
