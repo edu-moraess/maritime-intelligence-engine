@@ -42,6 +42,10 @@ def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
         np.nan,
         *[
             haversine_km(a, b, c, d)
+            if all(np.isfinite(value) for value in (a, b, c, d))
+            and -90.0 <= a <= 90.0 and -90.0 <= c <= 90.0
+            and -180.0 <= b <= 180.0 and -180.0 <= d <= 180.0
+            else np.nan
             for a, b, c, d in zip(
                 result["latitude"].iloc[:-1],
                 result["longitude"].iloc[:-1],
@@ -69,7 +73,9 @@ def summarize_track(observations: Iterable[AISObservation]) -> TrajectorySummary
     if frame.empty:
         return None
     duration = max(0.0, (frame["received_at"].iloc[-1] - frame["received_at"].iloc[0]).total_seconds() / 60)
-    speeds = frame["sog_knots"].dropna()
+    speeds = frame["sog_knots"].where(
+        frame["sog_knots"].between(0.0, 102.2)
+    ).dropna()
     return TrajectorySummary(
         mmsi=str(frame["mmsi"].iloc[0]),
         points=len(frame),
@@ -90,12 +96,20 @@ def trajectory_vector(observations: Iterable[AISObservation], length: int = 32) 
     """
     if length < 2:
         raise ValueError("length must be >= 2")
-    frame = track_to_frame(observations)
+    frame = track_to_frame(
+        observation for observation in observations
+        if isinstance(observation, AISObservation) and observation.valid
+    )
     columns = ["latitude", "longitude", "sog_knots", "cog_degrees"]
     if len(frame) < length or any(column not in frame for column in columns):
         return None
     values = frame[columns].tail(length).to_numpy(dtype=float)
     if not np.isfinite(values).all():
+        return None
+    lat, lon, sog, cog = values.T
+    if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
+        return None
+    if np.any((sog < 0.0) | (sog > 102.2)) or np.any((cog < 0.0) | (cog >= 360.0)):
         return None
     scale = values.std(axis=0)
     normalized = (values - values.mean(axis=0)) / np.where(scale < 1e-9, 1.0, scale)
@@ -108,7 +122,11 @@ def _circular_difference(values: np.ndarray) -> np.ndarray:
     if len(values) < 2:
         return result
     previous, current = values[:-1], values[1:]
-    valid = np.isfinite(previous) & np.isfinite(current)
+    valid = (
+        np.isfinite(previous) & np.isfinite(current)
+        & (previous >= 0.0) & (previous < 360.0)
+        & (current >= 0.0) & (current < 360.0)
+    )
     delta = (current[valid] - previous[valid] + 180.0) % 360.0 - 180.0
     result[np.flatnonzero(valid) + 1] = np.abs(delta)
     return result
