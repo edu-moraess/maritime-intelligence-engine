@@ -121,3 +121,16 @@ def test_invalid_position_is_not_used_for_derived_distance() -> None:
     )
     assert pd.isna(frame.loc[1, "distance_km"])
     assert pd.isna(frame.loc[1, "computed_speed_knots"])
+
+
+def test_embedding_vector_rejects_gap_spanning_windows() -> None:
+    track = [_obs(i) for i in range(32)]
+    track[-1] = AISObservation(
+        mmsi="123456789",
+        latitude=25.031,
+        longitude=-79.969,
+        received_at=track[-2].received_at + timedelta(hours=1),
+        sog_knots=8.0,
+        cog_degrees=90.0,
+    )
+    assert trajectory_vector(track, length=32) is None
