@@ -72,6 +72,7 @@ def build_profile_for_ui(
     snapshot: Any,
     *,
     engine: Any | None = None,
+    include_historical: bool = False,
 ) -> VesselIntelligenceProfile:
     """Assemble a VesselIntelligenceProfile from live snapshot + optional history."""
     mmsi = str(vessel.mmsi)
@@ -85,7 +86,11 @@ def build_profile_for_ui(
         for f in (getattr(snapshot, "current_session_findings", None) or [])
         if str(getattr(f, "mmsi", "")) == mmsi
     ]
-    historical = _optional_historical_profile(mmsi, engine)
+    historical = (
+        _optional_historical_profile(mmsi, engine)
+        if include_historical
+        else None
+    )
     stale = 180
     if engine is not None and getattr(engine, "settings", None) is not None:
         stale = int(getattr(engine.settings, "stale_after_seconds", 180) or 180)
@@ -116,7 +121,17 @@ def render_vessel_quick_intelligence(
         )
         return
 
-    profile = build_profile_for_ui(vessel, snapshot, engine=engine)
+    history_requested = st.button(
+        "Load persisted historical profile",
+        key=f"load_vessel_history:{vessel.mmsi}",
+        help="Historical database lookup runs only when explicitly requested.",
+    )
+    profile = build_profile_for_ui(
+        vessel,
+        snapshot,
+        engine=engine,
+        include_historical=history_requested,
+    )
     identity = profile.identity
     telemetry = profile.telemetry
     historical = profile.historical
@@ -255,7 +270,13 @@ def render_vessel_quick_intelligence(
     ):
         st.markdown(provenance_badge("HISTORICAL"), unsafe_allow_html=True)
         if not historical.available or historical.status == "N/A":
-            notice("N/A — no persisted historical profile for this MMSI.", "gray")
+            if history_requested:
+                notice("N/A — no persisted historical profile for this MMSI.", "gray")
+            else:
+                notice(
+                    "Historical lookup not requested. Use “Load persisted historical profile” to query the database.",
+                    "gray",
+                )
         else:
             metric_strip(
                 {
