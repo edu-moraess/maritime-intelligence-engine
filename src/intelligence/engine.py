@@ -685,7 +685,9 @@ class MaritimeIntelligenceEngine:
     def clear_session_data(self) -> None:
         worker = getattr(self, "live_worker", None)
         if worker is not None:
-            worker.stop(timeout=10.0)
+            stopped = worker.stop(timeout=10.0)
+            if not stopped:
+                raise RuntimeError("AIS worker did not stop; session data was not cleared.")
         self._live_started_at = None
         self._live_started_monotonic = None
         self.store.clear()
