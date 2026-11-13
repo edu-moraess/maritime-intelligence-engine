@@ -7,6 +7,8 @@ mock, fallback, or fabricated AIS mode.
 
 from __future__ import annotations
 
+import threading
+
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -190,18 +192,18 @@ def _engine_signature(settings: AppSettings) -> tuple:
     )
 
 
-@st.cache_resource(show_spinner=False)
-def _process_engine(signature: tuple, _settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """One shared engine/worker per configuration within this Python process.
-
-    Streamlit Cloud replicas or separate worker processes still require an
-    external coordinator; this cache is not a distributed singleton.
-    """
-    return create_engine(_settings)
+_PROCESS_ENGINE_LOCK = threading.RLock()
+_PROCESS_ENGINE_SIGNATURE: tuple | None = None
+_PROCESS_ENGINE: MaritimeIntelligenceEngine | None = None
 
 
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """Return the process-shared engine associated with the live configuration."""
+    """Return the single process-local engine/worker for the active MIE configuration.
+
+    This enforces one subscription per Python process. It is not a distributed
+    lock: multiple deployment replicas can each own one worker.
+    """
+    global _PROCESS_ENGINE, _PROCESS_ENGINE_SIGNATURE
     signature = _engine_signature(settings)
     if st.session_state.get("engine_signature") != signature:
         st.session_state.engine_signature = signature
@@ -213,12 +215,20 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
         ):
             st.session_state.pop(key, None)
 
-    engine = _process_engine(signature, settings)
-    engine.configure_historical_writer(
-        settings.database_url,
-        settings.historical_persistence_enabled,
-    )
-    return engine
+    with _PROCESS_ENGINE_LOCK:
+        if _PROCESS_ENGINE is None or _PROCESS_ENGINE_SIGNATURE != signature:
+            previous = _PROCESS_ENGINE
+            if previous is not None:
+                previous.stop_live_monitoring(timeout=10.0)
+                previous.historical_writer.close()
+            _PROCESS_ENGINE = create_engine(settings)
+            _PROCESS_ENGINE_SIGNATURE = signature
+        engine = _PROCESS_ENGINE
+        engine.configure_historical_writer(
+            settings.database_url,
+            settings.historical_persistence_enabled,
+        )
+        return engine
 
 
 def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
