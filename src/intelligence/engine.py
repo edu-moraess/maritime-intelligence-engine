@@ -435,7 +435,10 @@ class MaritimeIntelligenceEngine:
             region = f"region_{index}"
             # Refreshes represent the current model snapshot; stale evidence
             # must not survive as if it were part of the latest observation.
-            context = EnvironmentalContext(region=region)
+            context = self.environmental_contexts.get(
+                region,
+                EnvironmentalContext(region=region),
+            )
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
             try:
@@ -457,8 +460,8 @@ class MaritimeIntelligenceEngine:
                     attempted_at=observation.observed_at,
                 )
             except Exception as exc:
-                context = EnvironmentalContext(
-                    region=region,
+                context = replace(
+                    context,
                     failure_code=classify_environmental_failure(exc),
                     failure_reason=f"{exc.__class__.__name__}: {str(exc)[:200]}",
                     attempted_at=datetime.now(timezone.utc),
