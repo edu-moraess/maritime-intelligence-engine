@@ -58,7 +58,7 @@ def render_overview(
             "ACTIVE VESSELS": summary["active_vessels"],
             "MESSAGES": f"{summary['messages']:,}",
             "ANOMALIES": summary["anomalies"],
-            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn",
+            "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A",
             "LAST MESSAGE": _utc(
                 snapshot.status.last_received_at
             ),
@@ -745,6 +745,7 @@ def render_behavior(
         )
         if str(mmsi).isdigit()
         and len(str(mmsi)) == 9
+        and str(mmsi) in behavioral_scores
     ]
 
     if not valid_indices:
@@ -757,10 +758,7 @@ def render_behavior(
 
     ranked_indices = sorted(
         valid_indices,
-        key=lambda i: behavioral_scores.get(
-            str(result.mmsis[i]),
-            0.0,
-        ),
+        key=lambda i: behavioral_scores[str(result.mmsis[i])],
         reverse=True,
     )
 
@@ -823,7 +821,7 @@ def render_behavior(
                 [
                     str(result.mmsis[i]),
                     int(result.clusters[i]),
-                    behavioral_scores.get(str(result.mmsis[i]), 0.0),
+                    behavioral_scores[str(result.mmsis[i])],
                 ]
                 for i in valid_indices
             ],
@@ -866,7 +864,7 @@ def render_behavior(
 
     if selected_idx is not None and selected_idx in valid_indices:
         current_mmsi = str(result.mmsis[selected_idx])
-        current_score = behavioral_scores.get(current_mmsi, 0.0)
+        current_score = behavioral_scores.get(current_mmsi)
         current_cluster = int(result.clusters[selected_idx])
         current_pc1 = result.projection[selected_idx, 0]
         current_pc2 = result.projection[selected_idx, 1]
@@ -895,7 +893,7 @@ def render_behavior(
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
                     f"<br><b>Cluster</b>: {current_cluster}"
-                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}"
+                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}" if current_score is not None else "<br><b>Isolation Forest score</b>: N/A"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),
