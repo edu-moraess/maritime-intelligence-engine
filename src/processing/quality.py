@@ -82,7 +82,7 @@ def build_quality_report(
     reference_time: datetime | None = None,
 ) -> QualityReport:
     if not observations:
-        return QualityReport(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100.0)
+        return QualityReport(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None)
 
     invalid = duplicate = missing = gaps = invalid_mmsi = 0
     impossible_speeds = impossible_jumps = stale = 0
