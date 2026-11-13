@@ -43,7 +43,7 @@ The MIE must never convert missing, invalid, or unobserved information into a va
 
 ### Runtime trajectory embeddings
 
-- An embedding uses an exact window of 32 complete, real AIS reports by default.
+- An embedding uses an exact window of 32 complete, contiguous real AIS reports by default. A non-positive receive-time interval or a gap above 900 seconds breaks continuity.
 - The required fields are latitude, longitude, SOG, and COG.
 - Missing, invalid, or insufficient source data causes the track to be excluded from embedding.
 - No temporal interpolation, missing-value fill, or synthetic padding is allowed.
