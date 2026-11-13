@@ -180,10 +180,14 @@ def test_managed_stream_can_exceed_finite_window_message_cap(monkeypatch):
     assert provider.status.state == "DISCONNECTED"
 
 def test_provider_records_disconnect_and_reconnect_attempt_telemetry(monkeypatch):
-    stop_event = threading.Event()
+    class _StopOnWait(threading.Event):
+        def wait(self, timeout=None):
+            self.set()
+            return True
+
+    stop_event = _StopOnWait()
     socket = _FakeSocket(_frame(367000001, 1.0, 2.0, 10))
     monkeypatch.setattr(aisstream.websocket, "create_connection", lambda *_a, **_k: socket)
-    monkeypatch.setattr(aisstream.time, "sleep", lambda _seconds: stop_event.set())
     provider = AISStreamProvider(
         api_key="k",
         bbox=[[[1.0, 2.0], [3.0, 4.0]]],
