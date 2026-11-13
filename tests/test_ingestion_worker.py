@@ -211,6 +211,12 @@ def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monke
     assert stopped_snapshot.status.state == "DISCONNECTED"
     assert stopped_snapshot.status.websocket_status == "CLOSED"
 
+    engine.clear_session_data()
+    cleared_snapshot = engine.snapshot()
+    assert cleared_snapshot.current_session_observations == []
+    assert engine.store.all() == []
+    assert engine.live_worker.status().queue_depth == 0
+
 def test_connecting_worker_degrades_when_no_first_position_report_arrives():
     from datetime import timedelta
 
