@@ -124,10 +124,17 @@ class AISIngestionWorker:
     def status(self) -> WorkerStatus:
         with self._lock:
             state = self._state
+            now = self._clock()
             if (
                 state == "LIVE"
                 and self._last_message_at is not None
-                and (self._clock() - self._last_message_at).total_seconds() > self._live_timeout
+                and (now - self._last_message_at).total_seconds() > self._live_timeout
+            ):
+                state = "DEGRADED"
+            elif (
+                state in {"STARTING", "CONNECTING"}
+                and self._started_at is not None
+                and (now - self._started_at).total_seconds() > self._live_timeout
             ):
                 state = "DEGRADED"
             return WorkerStatus(
