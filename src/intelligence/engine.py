@@ -547,33 +547,34 @@ class MaritimeIntelligenceEngine:
         worker = getattr(self, "live_worker", None)
         if worker is not None:
             worker_status = worker.status()
-            state_map = {
-                "STARTING": "CONNECTING",
-                "CONNECTING": "CONNECTING",
-                "LIVE": "LIVE AIS",
-                "RECONNECTING": "RECONNECTING",
-                "DEGRADED": "DEGRADED",
-                "STOPPED": "DISCONNECTED",
-                "ERROR": "ERROR",
-            }
-            mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
-            reason = (
-                "Receiving recent real AIS PositionReports."
-                if mapped_state == "LIVE AIS"
-                else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
-            )
-            provider_status = replace(
-                provider_status,
-                state=mapped_state,
-                reason=reason,
-                messages_received=worker_status.messages_received,
-                reconnect_attempts=provider_status.reconnect_attempts,
-                last_error=provider_status.last_error or worker_status.last_error,
-                queue_depth=worker_status.queue_depth,
-                dropped_messages=worker_status.dropped_messages,
-                worker_state=worker_status.state,
-                active_vessels=len(analysis_tracks),
-            )
+            if worker_status.started_at is not None:
+                state_map = {
+                    "STARTING": "CONNECTING",
+                    "CONNECTING": "CONNECTING",
+                    "LIVE": "LIVE AIS",
+                    "RECONNECTING": "RECONNECTING",
+                    "DEGRADED": "DEGRADED",
+                    "STOPPED": "DISCONNECTED",
+                    "ERROR": "ERROR",
+                }
+                mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
+                reason = (
+                    "Receiving recent real AIS PositionReports."
+                    if mapped_state == "LIVE AIS"
+                    else provider_status.reason if mapped_state == "DISCONNECTED"
+                    else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
+                )
+                provider_status = replace(
+                    provider_status,
+                    state=mapped_state,
+                    reason=reason,
+                    reconnect_attempts=provider_status.reconnect_attempts,
+                    last_error=provider_status.last_error or worker_status.last_error,
+                    queue_depth=worker_status.queue_depth,
+                    dropped_messages=worker_status.dropped_messages,
+                    worker_state=worker_status.state,
+                    active_vessels=len(analysis_tracks),
+                )
         status = replace(provider_status, active_vessels=len(analysis_tracks))
         return EngineSnapshot(
             observations=observations,
