@@ -344,6 +344,7 @@ def _render_sidebar(
         finite_active = engine.finite_collection_status()["state"] == "RUNNING"
         collect = False
         clear = False
+        clear_view = False
         start_live = False
         stop_live = False
         st.markdown(
@@ -396,10 +397,15 @@ def _render_sidebar(
                     disabled=not can_collect or live_active,
                     help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
                 )
-                clear = st.button(
-                    "Clear Shared Session",
+                clear_view = st.button(
+                    "Clear View",
                     width="stretch",
-                    help="Clears the process-wide in-memory MIE session for all connected users.",
+                    help="Clears view selections only. It does not stop AIS collection or delete observations.",
+                )
+                clear = st.button(
+                    "Clear Session",
+                    width="stretch",
+                    help="Stops ingestion and clears volatile session data only after persistence is confirmed.",
                 )
 
         module = st.session_state.get("workspace_module", "Overview")
@@ -412,7 +418,7 @@ def _render_sidebar(
             if page not in views:
                 page = views[0]
 
-    return settings, page, collect, clear, region_changed, start_live, stop_live
+    return settings, page, collect, clear, clear_view, region_changed, start_live, stop_live
 
 
 def _render_collection_timer(seconds: float) -> None:
@@ -469,8 +475,18 @@ def main() -> None:
             ),
         )
 
-    settings, page, collect, clear, region_changed, start_live, stop_live = _render_sidebar(settings)
+    settings, page, collect, clear, clear_view, region_changed, start_live, stop_live = _render_sidebar(settings)
     engine = _engine_for(settings)
+
+    if clear_view:
+        for key in (
+            "selected_mmsi",
+            "selected_mmsi_a",
+            "selected_mmsi_b",
+            "selected_mmsi_unified",
+        ):
+            st.session_state.pop(key, None)
+        st.rerun()
 
     if region_changed:
         notice(
