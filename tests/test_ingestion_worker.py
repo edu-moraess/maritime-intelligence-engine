@@ -16,7 +16,7 @@ class _BlockingProvider:
     def connect(self):
         return True, "ready"
 
-    def stream(self, stop_event=None, duration_seconds=None):
+    def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
         self.started.set()
         index = 0
         while stop_event is not None and not stop_event.is_set():
