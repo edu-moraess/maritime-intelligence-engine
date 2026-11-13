@@ -287,7 +287,7 @@ def render_region_comparison(comparison) -> None:
                 {
                     "Vessels": region.unique_vessels,
                     "Reports": region.position_reports,
-                    "Avg speed": f"{region.average_speed_knots:.1f} kn",
+                    "Avg speed": (f"{region.average_speed_knots:.1f} kn" if region.average_speed_knots is not None else "N/A"),
                     "Anomalies": region.anomalies,
                 }
             )
