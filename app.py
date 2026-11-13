@@ -621,7 +621,10 @@ def main() -> None:
         snapshot = active_engine.snapshot()
         if page != "Overview":
             render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
-        if snapshot.last_collection_breakdown:
+        worker_is_active = snapshot.status.worker_state in {
+            "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
+        }
+        if snapshot.last_collection_breakdown and not worker_is_active:
             with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
                 breakdown = snapshot.last_collection_breakdown
                 diagnostic_rows = (
