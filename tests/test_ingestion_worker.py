@@ -38,7 +38,7 @@ class _FiniteProvider:
     def connect(self):
         return True, "ready"
 
-    def stream(self, stop_event=None, duration_seconds=None):
+    def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
         self.calls += 1
         if self.calls == 1:
             yield AISObservation(
@@ -115,7 +115,7 @@ def test_live_health_expires_when_no_new_position_reports_arrive():
         def connect(self):
             return True, "ready"
 
-        def stream(self, stop_event=None, duration_seconds=None):
+        def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
             yield AISObservation(
                 mmsi="123456789",
                 latitude=1.0,
