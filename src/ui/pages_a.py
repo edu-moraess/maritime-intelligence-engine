@@ -561,8 +561,9 @@ def render_vessel_intelligence(
             )
         else:
             notice(
-                "No behavioral anomaly detected in the "
-                "available real AIS observations.",
+                "No rule-based finding is available for this vessel "
+                "in the current session. Absence of a finding is not "
+                "a normality assessment.",
                 "green",
             )
 
