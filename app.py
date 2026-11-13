@@ -200,6 +200,10 @@ class _ProcessEngineRegistry:
         self.signature: tuple | None = None
         self.engine: MaritimeIntelligenceEngine | None = None
 
+    def current_settings(self) -> AppSettings | None:
+        with self.lock:
+            return self.engine.settings if self.engine is not None else None
+
     def get(self, signature: tuple, settings: AppSettings) -> MaritimeIntelligenceEngine:
         with self.lock:
             if self.engine is None or self.signature != signature:
@@ -306,13 +310,34 @@ def _render_sidebar(
 ) -> tuple[AppSettings, str, bool, bool, bool, bool, bool]:
     """Render mission and map controls in the sidebar."""
     region_changed = False
+    active_settings = _process_engine_registry().current_settings()
+    if active_settings is not None:
+        settings = _with_settings(
+            settings,
+            bboxes=active_settings.monitoring_bboxes,
+            bbox=active_settings.bbox,
+            config_error=active_settings.config_error,
+        )
     with st.sidebar:
         connection_placeholder = st.empty()
         mission_placeholder = st.empty()
 
-        existing = list(
-            st.session_state.get("monitoring_bboxes", settings.monitoring_bboxes)
-        ) or [settings.bbox]
+        existing = list(settings.monitoring_bboxes) or [settings.bbox]
+        st.session_state["monitoring_bboxes"] = tuple(existing)
+        for label, bbox in zip(("a", "b"), existing):
+            selected_region = region_name_for_bbox(bbox) or "Custom"
+            st.session_state[f"monitor_region_{label}"] = selected_region
+            if selected_region == "Custom":
+                for key, value in zip(
+                    (
+                        f"region_{label}_min_lat",
+                        f"region_{label}_min_lon",
+                        f"region_{label}_max_lat",
+                        f"region_{label}_max_lon",
+                    ),
+                    _bbox_values(bbox),
+                ):
+                    st.session_state[key] = value
 
         with st.expander("MAP CONFIGURATION", expanded=False):
             st.caption(
