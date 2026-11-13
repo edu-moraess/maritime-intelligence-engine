@@ -17,7 +17,7 @@ class TrajectorySummary:
     mmsi: str
     points: int
     duration_minutes: float
-    distance_km: float
+    distance_km: float | None
     average_speed_knots: float | None
     max_speed_knots: float | None
     average_heading_change: float | None
