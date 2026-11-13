@@ -69,7 +69,7 @@ def extract_movement_features(obs: Sequence[AISObservation]) -> MovementFeatures
         traveled += dist
         valid_segments += 1
         hours = dt / 3600.0
-        seg_sog = (dist / hours) / 1.852 if hours > 0 else 0.0
+        seg_sog = (dist / hours) / 1.852
         if seg_sog < STOPPED_SEGMENT_SOG_KNOTS:
             stopped_s += dt
         else:
