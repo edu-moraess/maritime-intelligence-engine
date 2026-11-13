@@ -593,7 +593,10 @@ class MaritimeIntelligenceEngine:
         observations = self.store.all()
         analysis_tracks = self._current_session_tracks()
         vessels = self._merged_vessels(analysis_tracks)
-        quality = build_quality_report(observations, self.settings.stale_after_seconds, self.store.duplicate_count)
+        quality = build_quality_report(
+            self.current_session_observations,
+            self.settings.stale_after_seconds,
+        )
         provider_status = self.provider.status
         worker = getattr(self, "live_worker", None)
         if worker is not None:
