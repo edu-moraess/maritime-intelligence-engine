@@ -61,7 +61,7 @@ def _contiguous_segment_lengths(track: Sequence[AISObservation], gap_threshold_s
     lengths = [1]
     for previous, current in zip(track, track[1:]):
         gap = (current.received_at - previous.received_at).total_seconds()
-        if gap > threshold:
+        if gap <= 0.0 or gap > threshold:
             lengths.append(1)
         else:
             lengths[-1] += 1
@@ -99,7 +99,7 @@ def analyze_temporal_tracks(
         segment_lengths_by_track.append(segment_lengths)
         for previous, current in zip(track, track[1:]):
             delta = (current.received_at - previous.received_at).total_seconds()
-            if delta < 0:
+            if delta <= 0:
                 continue
             delta = float(delta)
             intervals.append(delta)
