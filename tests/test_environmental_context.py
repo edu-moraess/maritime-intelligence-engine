@@ -58,3 +58,32 @@ def test_add_rejects_wrong_region() -> None:
 
     with pytest.raises(ValueError, match="does not match"):
         context.add(observation)
+
+def test_failed_context_preserves_failure_class_and_attempt_time():
+    attempted_at = datetime(2026, 11, 13, 3, 0, tzinfo=timezone.utc)
+    context = EnvironmentalContext(
+        region="B",
+        failure_code="TIMEOUT",
+        failure_reason="TimeoutError: request timed out",
+        attempted_at=attempted_at,
+    )
+
+    assert context.status == "FAILED"
+    payload = context.as_dict()
+    assert payload["failure_code"] == "TIMEOUT"
+    assert payload["failure_reason"] == "TimeoutError: request timed out"
+    assert payload["attempted_at"] == attempted_at.isoformat()
+
+
+def test_adding_successful_observation_clears_failure_state():
+    failed = EnvironmentalContext(
+        region="B",
+        failure_code="NETWORK_ERROR",
+        failure_reason="connection reset",
+    )
+    updated = failed.add(make_observation("B", 5, 1.2))
+
+    assert updated.status == "AVAILABLE"
+    assert updated.failure_code is None
+    assert updated.failure_reason is None
+
