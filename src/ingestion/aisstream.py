@@ -239,8 +239,8 @@ class AISStreamProvider(AISProvider):
                 sleep_for = min(backoff + random.uniform(0, 0.4), 8.0)
                 if deadline is not None:
                     sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                if sleep_for > 0 and stop_event.wait(sleep_for):
+                    break
                 backoff = min(backoff * 2.0, 8.0)
             finally:
                 if socket is not None:
