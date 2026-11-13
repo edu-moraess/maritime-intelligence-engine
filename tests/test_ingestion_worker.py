@@ -211,3 +211,28 @@ def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monke
     assert stopped_snapshot.status.state == "DISCONNECTED"
     assert stopped_snapshot.status.websocket_status == "CLOSED"
 
+def test_connecting_worker_degrades_when_no_first_position_report_arrives():
+    from datetime import timedelta
+
+    now = [datetime(2026, 11, 13, 3, 0, tzinfo=timezone.utc)]
+
+    class _SilentProvider:
+        def connect(self):
+            return True, "ready"
+
+        def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
+            if stop_event is not None:
+                stop_event.wait(2.0)
+            return
+            yield  # pragma: no cover
+
+    worker = AISIngestionWorker(
+        _SilentProvider(),
+        live_timeout_seconds=30.0,
+        clock=lambda: now[0],
+    )
+    worker.start()
+    now[0] = now[0] + timedelta(seconds=31)
+    assert worker.status().state == "DEGRADED"
+    assert worker.stop(timeout=1.0)
+
