@@ -91,4 +91,23 @@ Impact:
 
 Baseline source audit: COMPLETE.
 Runtime baseline: NOT RUN.
-P0 implementation: PARTIAL — isolated worker primitive and deterministic tests added; not yet integrated into engine/Streamlit runtime.
+P0 implementation: PARTIAL — process-local worker integrated with engine and Streamlit controls; P0 acceptance remains blocked pending runtime tests and the remaining metric/diagnostic/environmental work.
+
+## Follow-up implementation checkpoint
+
+- Added a process-shared Streamlit resource registry that owns one active engine/worker configuration per Python process. A configuration switch stops the previous worker and closes its historical writer before replacing it.
+- Added continuous AIS mode with an explicit unlimited stream cap; finite-window mode retains its configured message limit.
+- Added Start Live AIS / Stop Live AIS controls and a two-second fragment refresh for the active operational page.
+- Added engine-level synchronization around mutable operations and snapshots.
+- Added bounded queue telemetry, worker-thread liveness, provider reconnect counters/timestamps/errors, and LIVE freshness expiry.
+- Live session positions update as the engine drains the queue. Analytics recomputation is throttled to ten-second intervals. Completed live sessions are persisted through the existing historical writer.
+- Overview now includes stale last-known positions by default and distinguishes them from fresh targets with a stale style and report age.
+
+### Remaining acceptance blockers
+
+1. No Python test suite has been executed in this environment; no PASS claim is made.
+2. The 30-minute live AIS / multi-page navigation / interruption-recovery test has not been run.
+3. Cross-process and cross-replica coordination is not implemented. The registry is process-local only.
+4. Environmental failure classification, canonical metric definitions, diagnostic reconciliation, and temporal unavailable semantics remain to be completed.
+5. Verify queue saturation behavior under realistic AIS burst rates and confirm the configured queue capacity is appropriate.
+6. Verify that Streamlit fragment refresh and the process-shared registry behave as expected in the actual deployment target.
