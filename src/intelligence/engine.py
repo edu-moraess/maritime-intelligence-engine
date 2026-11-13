@@ -277,7 +277,15 @@ class MaritimeIntelligenceEngine:
         self.current_session_findings = self._detect_current_session_findings()
         breakdown["findings"] = time.monotonic() - phase_started
 
-        breakdown["total"] = time.monotonic() - started
+        wall_elapsed = max(0.0, time.monotonic() - started)
+        measured_phases = sum(
+            value for key, value in breakdown.items() if key != "total"
+        )
+        breakdown["orchestration_overhead"] = max(0.0, wall_elapsed - measured_phases)
+        # The displayed total is the sum of mutually exclusive measured phases.
+        breakdown["total"] = sum(
+            value for key, value in breakdown.items() if key != "total"
+        )
         self.last_collection_breakdown = breakdown
         return len(collected)
 
@@ -289,6 +297,8 @@ class MaritimeIntelligenceEngine:
             self._live_started_at = datetime.now(timezone.utc)
             self._live_started_monotonic = time.monotonic()
             self._live_last_recompute_monotonic = 0.0
+            self.last_collection_breakdown = {}
+            self.last_collection_seconds = 0.0
             self.current_session_observations = []
             self.current_session_findings = []
             self._session_generation += 1
@@ -315,7 +325,9 @@ class MaritimeIntelligenceEngine:
             self.current_session_findings = self._detect_current_session_findings()
             self._live_last_recompute_monotonic = now_monotonic
         if self._live_started_monotonic is not None:
-            self.last_collection_seconds = max(0.0, time.monotonic() - self._live_started_monotonic)
+            elapsed = max(0.0, time.monotonic() - self._live_started_monotonic)
+            self.last_collection_seconds = elapsed
+            self.last_collection_breakdown = {"ais_stream": elapsed, "total": elapsed}
         return len(observations)
 
     @_synchronized
