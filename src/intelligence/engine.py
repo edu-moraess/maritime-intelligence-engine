@@ -651,7 +651,10 @@ class MaritimeIntelligenceEngine:
                         if mapped_state == "RECONNECTING"
                         else provider_status.websocket_status
                     ),
-                    reconnect_attempts=provider_status.reconnect_attempts,
+                    reconnect_attempts=max(
+                        provider_status.reconnect_attempts,
+                        worker_status.reconnect_attempts,
+                    ),
                     last_error=provider_status.last_error or worker_status.last_error,
                     queue_depth=worker_status.queue_depth,
                     dropped_messages=worker_status.dropped_messages,
