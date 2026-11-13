@@ -472,11 +472,15 @@ class MaritimeIntelligenceEngine:
         if pending_observations:
             phase_started = time.monotonic()
             elapsed = max(0.0, (ended_at - started_at).total_seconds())
+            pending_started_at = min(
+                (item.received_at for item in pending_observations),
+                default=started_at,
+            )
             self.historical_result = self.historical_writer.persist_collection(
                 pending_observations,
                 self.settings.bbox,
                 elapsed,
-                started_at,
+                pending_started_at,
                 ended_at,
             )
             breakdown["postgres_persist"] = time.monotonic() - phase_started
