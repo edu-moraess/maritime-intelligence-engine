@@ -31,10 +31,10 @@ def test_live_provider_state_is_used_by_sidebar() -> None:
     assert "DISCONNECTED" not in _connection_state(_settings(), engine)
 
 
-def test_live_state_remains_operational_after_finite_websocket_close() -> None:
-    engine = SnapshotEngine("LIVE AIS", "CLOSED")
+def test_closed_websocket_is_not_reported_as_live() -> None:
+    engine = SnapshotEngine("DISCONNECTED", "CLOSED")
 
-    assert _connection_state(_settings(), engine) == "LIVE AIS"
+    assert _connection_state(_settings(), engine) == "DISCONNECTED"
 
 
 def test_real_provider_disconnect_is_shown_as_disconnected() -> None:
@@ -44,10 +44,10 @@ def test_real_provider_disconnect_is_shown_as_disconnected() -> None:
 
 
 def test_current_engine_state_is_not_replaced_by_stale_bbox_fallback() -> None:
-    current_engine = SnapshotEngine("LIVE AIS", "CLOSED", bbox=((1, 2), (3, 4)))
+    current_engine = SnapshotEngine("DISCONNECTED", "CLOSED", bbox=((1, 2), (3, 4)))
     current_settings = _settings(bbox=((5, 6), (7, 8)))
 
-    assert _connection_state(current_settings, current_engine) == "LIVE AIS"
+    assert _connection_state(current_settings, current_engine) == "DISCONNECTED"
     assert "existing_engine = st.session_state.get" not in APP_SOURCE
     assert "existing_settings.bbox != settings.bbox" not in APP_SOURCE
 

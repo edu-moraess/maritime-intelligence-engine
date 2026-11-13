@@ -1,6 +1,8 @@
 """Full-width operational overview renderer — Operations Workstation layout."""
 from __future__ import annotations
 
+from datetime import timezone
+
 import streamlit as st
 
 from src.config.regions import region_name_for_bbox
@@ -87,9 +89,9 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
         )
         include_stale = st.checkbox(
             "Include stale session targets",
-            value=False,
+            value=True,
             key="overview_include_stale",
-            help="Off keeps the operational map live-only. Session observations and temporal tracks are never deleted.",
+            help="Keeps last-known positions visible after the freshness threshold. Stale targets are visually distinct and show report age; they are not live positions.",
         )
         map_style = st.selectbox(
             "Basemap",
@@ -146,7 +148,11 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
             latest = context.latest
             st.caption(label)
             if latest is None:
-                st.metric("Status", "UNAVAILABLE")
+                st.metric("Status", context.status)
+                if context.failure_code:
+                    st.caption(f"{context.failure_code} · {context.failure_reason or 'No additional provider detail.'}")
+                elif context.attempted_at is not None:
+                    st.caption(f"Last attempt · {context.attempted_at.astimezone(timezone.utc).strftime('%H:%M:%S UTC')}")
                 continue
             st.metric(
                 "Wave height",
@@ -160,7 +166,12 @@ def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None
             if latest.ocean_current_velocity is not None:
                 details.append(f"Current {latest.ocean_current_velocity:.2f}")
             st.caption(" · ".join(details) if details else "Marine model data available")
-            st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone().strftime('%H:%M UTC')}")
+            st.caption(f"Source: {latest.source} · {latest.observed_at.astimezone(timezone.utc).strftime('%H:%M UTC')}")
+            if context.failure_code:
+                st.caption(
+                    f"Refresh {context.failure_code} · {context.failure_reason or 'Provider refresh failed'}; "
+                    "showing the last valid observation."
+                )
 
 
 def render_overview(

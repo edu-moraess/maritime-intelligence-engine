@@ -37,7 +37,13 @@ class AISProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
+    def stream(
+        self,
+        stop_event: threading.Event | None = None,
+        duration_seconds: float | None = None,
+        *,
+        message_limit: int | None = None,
+    ) -> Iterator[AISObservation]:
         raise NotImplementedError
 
 
@@ -73,6 +79,10 @@ class AISStreamProvider(AISProvider):
         self._position_reports_accepted = 0
         self._parse_errors = 0
         self._non_position_frames = 0
+        self._reconnect_attempts = 0
+        self._last_disconnect_at: datetime | None = None
+        self._last_reconnect_at: datetime | None = None
+        self._last_error: str | None = None
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -95,6 +105,10 @@ class AISStreamProvider(AISProvider):
             position_reports_accepted=self._position_reports_accepted,
             parse_errors=self._parse_errors,
             non_position_frames=self._non_position_frames,
+            reconnect_attempts=self._reconnect_attempts,
+            last_disconnect_at=self._last_disconnect_at,
+            last_reconnect_at=self._last_reconnect_at,
+            last_error=self._last_error,
         )
 
     def reset_session(self) -> None:
@@ -108,6 +122,10 @@ class AISStreamProvider(AISProvider):
         self._position_reports_accepted = 0
         self._parse_errors = 0
         self._non_position_frames = 0
+        self._reconnect_attempts = 0
+        self._last_disconnect_at = None
+        self._last_reconnect_at = None
+        self._last_error = None
         self._state = "DISCONNECTED"
         self._reason = "Not connected."
         self._websocket_status = "CLOSED"
@@ -147,9 +165,20 @@ class AISStreamProvider(AISProvider):
         self._websocket_status = "CONNECTING"
         return True, self._reason
 
-    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
-        """Read continuously for a finite collection window with bounded reconnects."""
+    def stream(
+        self,
+        stop_event: threading.Event | None = None,
+        duration_seconds: float | None = None,
+        *,
+        message_limit: int | None = None,
+    ) -> Iterator[AISObservation]:
+        """Read AIS with bounded reconnects.
+
+        ``message_limit=None`` preserves the configured per-window cap;
+        ``message_limit=0`` explicitly disables the cap for a managed live worker.
+        """
         stop_event = stop_event or threading.Event()
+        effective_limit = self.max_messages if message_limit is None else max(0, int(message_limit))
         deadline = time.monotonic() + max(0.1, duration_seconds) if duration_seconds is not None else None
         ready, _ = self.connect()
         if not ready:
@@ -157,10 +186,11 @@ class AISStreamProvider(AISProvider):
         messages_at_start = self._messages_received
         backoff = 1.0
         opened = False
-        while not stop_event.is_set() and (self._messages_received - messages_at_start) < self.max_messages:
+        while not stop_event.is_set() and (effective_limit == 0 or (self._messages_received - messages_at_start) < effective_limit):
             if deadline is not None and time.monotonic() >= deadline:
                 break
             socket = None
+            socket_opened_at: float | None = None
             try:
                 socket = websocket.create_connection(
                     STREAM_URL,
@@ -169,14 +199,17 @@ class AISStreamProvider(AISProvider):
                     compression="deflate",
                 )
                 opened = True
-                self._connected_at = datetime.now(timezone.utc)
+                socket_opened_at = time.monotonic()
+                connected_at = datetime.now(timezone.utc)
+                if self._reconnect_attempts:
+                    self._last_reconnect_at = connected_at
+                self._connected_at = connected_at
                 self._state = "CONNECTING"
                 self._reason = "Subscription sent; waiting for AIS messages."
                 self._websocket_status = "OPEN"
                 socket.send(json.dumps(self._subscription()))
-                backoff = 1.0
                 messages_at_socket_start = self._messages_received
-                while not stop_event.is_set() and (self._messages_received - messages_at_socket_start) < self.max_messages:
+                while not stop_event.is_set() and (effective_limit == 0 or (self._messages_received - messages_at_socket_start) < effective_limit):
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     try:
@@ -198,14 +231,19 @@ class AISStreamProvider(AISProvider):
                 self._websocket_status = "CLOSED"
                 self._state = "DISCONNECTED"
                 self._reason = _safe_reason(exc, self.api_key)
+                self._last_error = self._reason
+                self._last_disconnect_at = datetime.now(timezone.utc)
+                self._reconnect_attempts += 1
                 LOGGER.warning("AISStream connection ended: %s", self._reason)
+                if socket_opened_at is not None and time.monotonic() - socket_opened_at >= 60.0:
+                    backoff = 1.0
                 if stop_event.is_set() or (deadline is not None and time.monotonic() >= deadline):
                     break
                 sleep_for = min(backoff + random.uniform(0, 0.4), 8.0)
                 if deadline is not None:
                     sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                if sleep_for > 0 and stop_event.wait(sleep_for):
+                    break
                 backoff = min(backoff * 2.0, 8.0)
             finally:
                 if socket is not None:
@@ -218,13 +256,16 @@ class AISStreamProvider(AISProvider):
                 break
         received_this_window = self._messages_received > messages_at_start
         self._websocket_status = "CLOSED"
-        if not received_this_window and opened:
+        if stop_event.is_set():
+            self._state = "DISCONNECTED"
+            self._reason = "AISStream consumer stopped; the WebSocket is closed."
+        elif not received_this_window and opened:
             self._state = "REAL AIS DATA UNAVAILABLE"
             self._reason = "No real AIS PositionReport was received during the collection window."
-        elif received_this_window and self._state == "CONNECTING":
-            self._state = "LIVE AIS"
+        elif received_this_window:
+            self._state = "DISCONNECTED"
             self._reason = (
-                "Real AIS PositionReports received during the collection window. "
+                "Collection window ended; WebSocket closed after receiving real AIS PositionReports. "
                 f"Ingestion diagnostics: frames={self._frames_received}, "
                 f"position_reports={self._position_reports_received}, "
                 f"accepted={self._position_reports_accepted}, "
