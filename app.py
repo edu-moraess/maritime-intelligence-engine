@@ -238,7 +238,11 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
             "selected_mmsi_unified",
         ):
             st.session_state.pop(key, None)
-    return _process_engine_registry().get(signature, settings)
+    try:
+        return _process_engine_registry().get(signature, settings)
+    except RuntimeError as exc:
+        st.error(f"Operational configuration change blocked: {exc}")
+        st.stop()
 
 
 def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
