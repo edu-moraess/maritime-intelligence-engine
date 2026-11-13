@@ -113,3 +113,20 @@ def test_adaptive_selector_requires_one_extra_report_for_transition_origin():
     assert select_adaptive_sequence_length(tracks, minimum_tracks=1, candidate_lengths=(32,)) is None
     tracks["111111111"] = _track("111111111", 33)
     assert select_adaptive_sequence_length(tracks, minimum_tracks=1, candidate_lengths=(32,)) == 32
+
+
+def test_duplicate_receive_timestamp_breaks_temporal_continuity():
+    track = _track("111111111", 33)
+    track[16] = AISObservation(
+        track[16].mmsi,
+        track[16].latitude,
+        track[16].longitude,
+        track[15].received_at,
+        sog_knots=track[16].sog_knots,
+        cog_degrees=track[16].cog_degrees,
+    )
+    assert select_adaptive_sequence_length(
+        {"111111111": track},
+        minimum_tracks=1,
+        candidate_lengths=(32,),
+    ) is None
