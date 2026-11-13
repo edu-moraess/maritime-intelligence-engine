@@ -105,6 +105,11 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
             events.append("stream-end")
 
     engine = MaritimeIntelligenceEngine.__new__(MaritimeIntelligenceEngine)
+    engine._state_lock = threading.RLock()
+    engine._unpersisted_observations = []
+    engine._historical_loaded = False
+    engine._historical_database_url = None
+    engine._session_generation = 0
     engine.provider = _Provider()
     engine.store = ObservationStore(max_messages=10)
     engine.settings = type(
@@ -122,6 +127,7 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
     engine.current_session_observations = []
     engine.current_session_findings = []
     engine._recompute = lambda: None
+    engine._refresh_environmental_contexts = lambda: None
     engine._detect_current_session_findings = lambda: []
 
     def restore():
