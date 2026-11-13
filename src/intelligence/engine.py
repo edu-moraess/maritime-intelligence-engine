@@ -435,7 +435,7 @@ class MaritimeIntelligenceEngine:
 
     @_synchronized
     def _refresh_environmental_contexts(self) -> None:
-        """Fetch real marine context and retain only the latest two observations per region."""
+        """Refresh one current observation per region, retaining last-good data on failure."""
         previous_contexts = getattr(self, "environmental_contexts", {})
         provider = getattr(self, "environmental_provider", None)
         contexts: dict[str, EnvironmentalContext] = {}
