@@ -37,3 +37,18 @@ def test_traffic_summary_uses_fresh_vessels_and_configured_region_count():
     assert summary["anomaly_vessels"] == 1
     assert summary["stale_vessels"] == 1
     assert summary["regions"] == 2
+
+def test_speed_distribution_excludes_stale_last_known_positions():
+    from src.analytics.traffic import speed_distribution
+
+    now = datetime.now(timezone.utc)
+    vessels = [
+        VesselSnapshot("111111111", 1.0, 2.0, now, 8.0, 90.0, 90.0, "FRESH", 2, stale=False),
+        VesselSnapshot("222222222", 1.1, 2.1, now, 18.0, 90.0, 90.0, "STALE", 2, stale=True),
+    ]
+
+    frame = speed_distribution(vessels)
+
+    assert frame["mmsi"].tolist() == ["111111111"]
+    assert frame["sog_knots"].tolist() == [8.0]
+
