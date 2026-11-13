@@ -496,4 +496,3 @@ def _install_floating_sidebar_controller() -> None:
         _FLOATING_SIDEBAR_PATCHED = True
 
 
-_install_floating_sidebar_controller()
