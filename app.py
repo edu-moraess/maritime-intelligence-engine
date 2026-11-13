@@ -341,6 +341,7 @@ def _render_sidebar(
         worker_status = engine.live_worker.status()
         worker_state = worker_status.state
         live_active = worker_status.thread_alive or worker_state not in {"STOPPED", "ERROR"}
+        finite_active = engine.finite_collection_status()["state"] == "RUNNING"
         collect = False
         clear = False
         start_live = False
@@ -519,35 +520,15 @@ def main() -> None:
             st.session_state.pop("monitoring_bboxes", None)
             st.rerun()
 
-    # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
-    collection_result = st.session_state.pop("collection_result", None)
     if collect:
-        _render_collection_timer(settings.collection_seconds)
-        received = engine.collect(seconds=settings.collection_seconds)
-
-        if received:
-            collection_result = (
-                "success",
-                "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · received {received:,} "
-                f"real AIS position report(s) across {len(settings.monitoring_bboxes)} regions.",
-            )
+        try:
+            started = engine.start_finite_collection(settings.collection_seconds)
+        except (RuntimeError, ValueError) as exc:
+            st.error(f"Finite collection could not start: {exc}")
         else:
-            collection_result = (
-                "warning",
-                "Collection elapsed "
-                f"{engine.last_collection_seconds:.1f} s · REAL AIS DATA "
-                "UNAVAILABLE — no real observations were received in this collection window.",
-            )
-        st.session_state["collection_result"] = collection_result
+            if not started:
+                st.info("A finite AIS collection is already running.")
         st.rerun()
-
-    if collection_result:
-        result_type, result_message = collection_result
-        if result_type == "success":
-            st.success(result_message)
-        else:
-            st.warning(result_message)
 
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
@@ -560,6 +541,21 @@ def main() -> None:
             config_error=active_engine.settings.config_error,
         )
         snapshot = active_engine.snapshot()
+        finite_status = active_engine.finite_collection_status()
+        if finite_status["state"] == "RUNNING":
+            st.info(
+                "FINITE AIS COLLECTION RUNNING · "
+                f"{finite_status['elapsed_seconds']:.0f}s elapsed · "
+                f"{finite_status['received']} reports finalized so far"
+            )
+        elif finite_status["state"] == "COMPLETED":
+            received = int(finite_status["received"])
+            if received:
+                st.success(f"FINITE AIS COLLECTION COMPLETED · {received:,} real AIS reports received.")
+            else:
+                st.warning("FINITE AIS COLLECTION COMPLETED · no real AIS observations were received.")
+        elif finite_status["state"] == "FAILED":
+            st.error(f"FINITE AIS COLLECTION FAILED · {finite_status['error']}")
 
         # Resolve navigation from current Session State on every fragment rerun.
         # A fragment-only rerun does not re-execute main() or refresh its closure.
