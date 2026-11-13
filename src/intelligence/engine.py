@@ -436,33 +436,31 @@ class MaritimeIntelligenceEngine:
     @_synchronized
     def _refresh_environmental_contexts(self) -> None:
         """Fetch real marine context and retain only the latest two observations per region."""
+        previous_contexts = getattr(self, "environmental_contexts", {})
+        provider = getattr(self, "environmental_provider", None)
         contexts: dict[str, EnvironmentalContext] = {}
+        if provider is None:
+            self.environmental_contexts = contexts
+            return
         for index, bbox in enumerate(self.settings.monitoring_bboxes, start=1):
             region = f"region_{index}"
-            # Refreshes represent the current model snapshot; stale evidence
-            # must not survive as if it were part of the latest observation.
-            context = self.environmental_contexts.get(
+            # A successful refresh replaces the prior snapshot. On failure,
+            # retain its last valid observation and mark the context degraded.
+            context = previous_contexts.get(
                 region,
                 EnvironmentalContext(region=region),
             )
             latitude = (bbox[0][0] + bbox[1][0]) / 2.0
             longitude = (bbox[0][1] + bbox[1][1]) / 2.0
             try:
-                observation = self.environmental_provider.current(
+                observation = provider.current(
                     latitude=latitude,
                     longitude=longitude,
                     region=region,
                 )
-                if all(item.observed_at != observation.observed_at for item in context.observations):
-                    context = context.add(observation)
                 context = EnvironmentalContext(
                     region=region,
-                    observations=tuple(
-                        sorted(
-                            context.observations,
-                            key=lambda item: item.observed_at,
-                        )[-2:]
-                    ),
+                    observations=(observation,),
                     attempted_at=observation.observed_at,
                 )
             except Exception as exc:
