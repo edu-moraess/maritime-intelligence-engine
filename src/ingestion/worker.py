@@ -192,7 +192,6 @@ class AISIngestionWorker:
                 with self._lock:
                     self._state = "DEGRADED"
                     self._last_error = f"{exc.__class__.__name__}: {str(exc)[:200]}"
-            delay = self._retry_delay
         with self._lock:
             self._state = "STOPPED"
 
