@@ -465,25 +465,22 @@ def render_vessel_intelligence(
             if finding.mmsi == selected.mmsi
         ]
 
-        max_anomaly = max(
-            (
-                finding.score
-                for finding in findings
-            ),
-            default=0.0,
-        )
-
-        normality = max(
-            0.0,
-            1.0 - max_anomaly,
+        max_rule_score = (
+            max(float(finding.score) for finding in findings)
+            if findings
+            else None
         )
 
         metric_strip(
             {
-                "NORMALITY": f"{normality:.2f}",
-                "ANOMALY": f"{max_anomaly:.2f}",
+                "MAX RULE SCORE": f"{max_rule_score:.2f}" if max_rule_score is not None else "—",
+                "FINDINGS": len(findings),
                 "REPORTS": selected.message_count,
             }
+        )
+        st.caption(
+            "Rule-derived exceedance score; not a probability, confidence, "
+            "or proof of abnormal intent."
         )
 
         st.write("")
