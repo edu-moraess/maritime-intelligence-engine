@@ -134,7 +134,11 @@ def inject_css() -> None:
 
 def render_header(status: IngestionStatus, page_name: str) -> None:
     state = status.state
-    css_state = "live" if state == "LIVE AIS" else "connecting" if state == "CONNECTING" else "disconnected"
+    css_state = (
+        "live" if state == "LIVE AIS"
+        else "connecting" if state in {"CONNECTING", "RECONNECTING", "DEGRADED"}
+        else "disconnected"
+    )
     utc_now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     st.markdown(
         f"<div class='operational-header'><div><span class='brand'>MARITIME INTELLIGENCE <small>/ {escape(page_name.upper())}</small></span></div>"
@@ -242,9 +246,9 @@ def render_ops_bar(
     <span class="region">{escape(str(region_label))}</span>
   </div>
   <div class="ops-metrics">
-    <div class="ops-metric"><div class="lbl">Vessels</div><div class="val">{escape(str(vessels))}</div></div>
+    <div class="ops-metric"><div class="lbl">Active vessels</div><div class="val">{escape(str(vessels))}</div></div>
     <div class="ops-metric"><div class="lbl">Messages</div><div class="val">{escape(str(messages))}</div></div>
-    <div class="ops-metric"><div class="lbl">Anomalies</div><div class="val">{escape(str(anomalies))}</div></div>
+    <div class="ops-metric"><div class="lbl">Anomaly events</div><div class="val">{escape(str(anomalies))}</div></div>
     {extra}
   </div>
   <div class="ops-meta">{escape(str(collection))}<br/>{escape(str(provenance))}</div>
@@ -281,10 +285,10 @@ def render_region_comparison(comparison) -> None:
             st.markdown(f"**{escape(region.label)}**")
             metric_strip(
                 {
-                    "Vessels": region.unique_vessels,
+                    "Observed vessels": region.unique_vessels,
                     "Reports": region.position_reports,
-                    "Avg speed": f"{region.average_speed_knots:.1f} kn",
-                    "Anomalies": region.anomalies,
+                    "Avg speed": (f"{region.average_speed_knots:.1f} kn" if region.average_speed_knots is not None else "N/A"),
+                    "Anomaly events": region.anomalies,
                 }
             )
             temporal_score = (
@@ -292,20 +296,38 @@ def render_region_comparison(comparison) -> None:
                 if region.average_temporal_score is not None
                 else "—"
             )
+            top_quartile_rate = (
+                f"{region.temporal_top_quartile_rate:.1%}"
+                if region.temporal_top_quartile_rate is not None
+                else f"N/A · {region.temporal_status}"
+            )
             st.caption(
                 "Temporal score: " + temporal_score
-                + " · top-quartile rate: "
-                + f"{region.temporal_top_quartile_rate:.1%}"
+                + " · top-quartile rate: " + top_quartile_rate
                 + " · anomaly rate: "
                 + f"{region.anomaly_rate:.1%}"
             )
+            if region.temporal_reason and (
+                region.temporal_status != "READY"
+                or region.temporal_top_quartile_rate is None
+            ):
+                st.caption("Temporal availability · " + escape(region.temporal_reason))
+    exclusions = []
     if comparison.ambiguous_observations:
+        exclusions.append(
+            f"{comparison.ambiguous_observations:,} observation(s) inside both regions"
+        )
+    if comparison.unassigned_observations:
+        exclusions.append(
+            f"{comparison.unassigned_observations:,} observation(s) outside both regions"
+        )
+    if exclusions:
         st.caption(
-            f"{comparison.ambiguous_observations:,} observation(s) fell inside both regions "
-            "and were excluded from both regional metrics to avoid double-counting."
+            "Excluded from regional metrics: " + " · ".join(exclusions)
+            + ". Regional reports therefore need not sum to all session messages."
         )
     else:
-        st.caption("Regional metrics use the same real-AIS session and shared analytical models.")
+        st.caption("Regional metrics use the same real-AIS session and shared analytical models; all session observations were assigned to exactly one region.")
 
 
 def render_regional_events(events) -> None:

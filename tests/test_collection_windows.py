@@ -133,3 +133,71 @@ def test_collect_starts_live_window_before_historical_restore(monkeypatch):
 
     assert engine.collect(seconds=0.1) == 1
     assert events == ["stream-start:0.1", "stream-end", "restore"]
+
+def test_managed_stream_can_exceed_finite_window_message_cap(monkeypatch):
+    stop_event = threading.Event()
+    frames = [
+        _frame(367000001, 1.0, 2.0, 10),
+        _frame(367000002, 1.1, 2.1, 20),
+    ]
+
+    class _TwoFrameSocket:
+        def __init__(self):
+            self.index = 0
+            self.closed = False
+
+        def send(self, _payload):
+            return None
+
+        def settimeout(self, _timeout):
+            return None
+
+        def recv(self):
+            frame = frames[self.index]
+            self.index += 1
+            if self.index == len(frames):
+                stop_event.set()
+            return frame
+
+        def close(self):
+            self.closed = True
+
+    socket = _TwoFrameSocket()
+    monkeypatch.setattr(aisstream.websocket, "create_connection", lambda *_a, **_k: socket)
+    provider = AISStreamProvider(
+        api_key="k",
+        bbox=[[[1.0, 2.0], [3.0, 4.0]]],
+        max_messages=1,
+    )
+
+    observations = list(
+        provider.stream(stop_event, duration_seconds=None, message_limit=0)
+    )
+
+    assert len(observations) == 2
+    assert provider.status.messages_received == 2
+    assert provider.status.websocket_status == "CLOSED"
+    assert provider.status.state == "DISCONNECTED"
+
+def test_provider_records_disconnect_and_reconnect_attempt_telemetry(monkeypatch):
+    class _StopOnWait(threading.Event):
+        def wait(self, timeout=None):
+            self.set()
+            return True
+
+    stop_event = _StopOnWait()
+    socket = _FakeSocket(_frame(367000001, 1.0, 2.0, 10))
+    monkeypatch.setattr(aisstream.websocket, "create_connection", lambda *_a, **_k: socket)
+    provider = AISStreamProvider(
+        api_key="k",
+        bbox=[[[1.0, 2.0], [3.0, 4.0]]],
+        max_messages=5,
+    )
+
+    list(provider.stream(stop_event, duration_seconds=None))
+
+    status = provider.status
+    assert status.reconnect_attempts == 1
+    assert status.last_disconnect_at is not None
+    assert status.last_error is not None
+    assert status.websocket_status == "CLOSED"

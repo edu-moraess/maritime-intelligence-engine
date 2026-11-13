@@ -61,7 +61,7 @@ def classify_vessel_status(row, *, selected_mmsi, anomaly_mmsis, critical_mmsis)
     if selected_mmsi and mmsi == selected_mmsi: return "SELECTED"
     if mmsi in critical_mmsis: return "CRITICAL"
     if mmsi in anomaly_mmsis: return "ANOMALY"
-    if row.get("stale"): return "ATTENTION"
+    if row.get("stale"): return "STALE"
     try:
         messages = row.get("message_count")
         if messages is not None and int(messages) < 2: return "ATTENTION"
@@ -134,7 +134,15 @@ def enrich_tactical_rows(rows, *, selected_mmsi, anomaly_mmsis, critical_mmsis):
         row["tooltip_sog"] = f"{sog_f:.1f} kn" if sog_f is not None else "—"
         row["tooltip_cog"] = f"{course:.1f}°" if course is not None else "—"
         row["tooltip_hdg"] = f"{hdg_f:.0f}°" if hdg_f is not None else "—"
-        row["tooltip_status"] = status
+        received_at = row.get("last_received")
+        age_label = "—"
+        if isinstance(received_at, datetime):
+            if received_at.tzinfo is None:
+                received_at = received_at.replace(tzinfo=timezone.utc)
+            age_seconds = max(0.0, (datetime.now(timezone.utc) - received_at).total_seconds())
+            age_label = f"{age_seconds:.0f}s"
+        row["tooltip_age"] = age_label
+        row["tooltip_status"] = f"STALE · {age_label}" if row.get("stale") else status
         tip = movement_vector_endpoint(lat, lon, course, sog_f) if course is not None and sog_f is not None else None
         if tip is not None:
             row["vector_end_lat"], row["vector_end_lon"] = tip
@@ -187,4 +195,4 @@ def legend_markdown():
 
 def operational_strip(*, live_state, targets, tracks, anomalies, region):
     state_color = "#35c2c9" if "LIVE" in live_state.upper() else "#ef6b73"
-    return (f"<div style='display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.68rem;letter-spacing:.07em;margin:0 0 .4rem;color:#79939b'>" f"<span style='color:{state_color};font-weight:600'>{live_state}</span>" f"<span>TARGETS {targets}</span><span>TRACKS {tracks}</span>" f"<span>ANOMALIES {anomalies}</span><span>REGION {region}</span></div>")
+    return (f"<div style='display:flex;flex-wrap:wrap;gap:1.1rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.68rem;letter-spacing:.07em;margin:0 0 .4rem;color:#79939b'>" f"<span style='color:{state_color};font-weight:600'>{live_state}</span>" f"<span>TARGETS {targets}</span><span>TRACKS {tracks}</span>" f"<span>ANOMALOUS VESSELS {anomalies}</span><span>REGION {region}</span></div>")

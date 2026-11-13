@@ -57,6 +57,8 @@ def test_compare_regions_normalizes_anomalies_and_temporal_scores():
     assert region_a.anomaly_rate == 0.5
     assert region_b.unique_vessels == 1
     assert region_b.anomalies == 1
+    assert comparison.ambiguous_observations == 0
+    assert comparison.unassigned_observations == 0
     assert region_b.anomaly_rate == 1.0
     assert region_a.average_temporal_score == 0.3
     assert region_b.average_temporal_score == 0.9
@@ -69,6 +71,7 @@ def test_overlapping_observations_are_not_double_counted():
     comparison = compare_regions(observations, [], bboxes)
     assert comparison is not None
     assert comparison.ambiguous_observations == 1
+    assert comparison.unassigned_observations == 0
     assert comparison.regions[0].unique_vessels == 0
     assert comparison.regions[1].unique_vessels == 1
 
@@ -86,3 +89,72 @@ def test_overlapping_findings_are_excluded_from_both_regions():
     assert comparison is not None
     assert comparison.regions[0].anomalies == 0
     assert comparison.regions[1].anomalies == 0
+
+def test_temporal_unavailable_is_not_rendered_as_zero_quartile_rate():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [_obs("111000001", 5.0, 5.0), _obs("222000001", 25.0, 25.0)]
+    temporal = TemporalFitResult(
+        status="UNAVAILABLE",
+        reason="Optional temporal runtime is unavailable.",
+    )
+
+    comparison = compare_regions(observations, [], bboxes, temporal)
+
+    assert comparison is not None
+    for region in comparison.regions:
+        assert region.temporal_status == "UNAVAILABLE"
+        assert region.eligible_temporal_tracks is None
+        assert region.temporal_top_quartile_tracks is None
+        assert region.temporal_top_quartile_rate is None
+        assert region.average_temporal_score is None
+        assert region.temporal_reason == "Optional temporal runtime is unavailable."
+
+
+def test_temporal_ready_but_too_few_scores_keeps_quartile_rate_unavailable():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [_obs("111000001", 5.0, 5.0)]
+    temporal = TemporalFitResult(
+        status="READY",
+        reason="One usable score only.",
+        scores=[TemporalScore("111000001", 0.1, 0.2)],
+    )
+
+    comparison = compare_regions(observations, [], bboxes, temporal)
+
+    assert comparison is not None
+    region_a = comparison.regions[0]
+    assert region_a.temporal_status == "READY"
+    assert region_a.eligible_temporal_tracks == 1
+    assert region_a.average_temporal_score == 0.2
+    assert region_a.temporal_top_quartile_tracks is None
+    assert region_a.temporal_top_quartile_rate is None
+
+def test_regional_average_speed_is_unavailable_without_sog_samples():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [
+        _obs("111000001", 5.0, 5.0, speed=None),
+        _obs("222000001", 25.0, 25.0, speed=None),
+    ]
+
+    comparison = compare_regions(observations, [], bboxes)
+
+    assert comparison is not None
+    assert comparison.regions[0].average_speed_knots is None
+    assert comparison.regions[1].average_speed_knots is None
+
+
+
+def test_observations_outside_both_regions_are_reported_as_unassigned():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [
+        _obs("111000001", 5.0, 5.0),
+        _obs("222000001", 25.0, 25.0),
+        _obs("333000001", 40.0, 40.0),
+    ]
+
+    comparison = compare_regions(observations, [], bboxes)
+
+    assert comparison is not None
+    assert sum(region.position_reports for region in comparison.regions) == 2
+    assert comparison.ambiguous_observations == 0
+    assert comparison.unassigned_observations == 1
