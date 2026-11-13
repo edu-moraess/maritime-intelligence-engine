@@ -36,6 +36,7 @@ class RegionComparison:
 
     regions: tuple[RegionMetrics, RegionMetrics]
     ambiguous_observations: int = 0
+    unassigned_observations: int = 0
 
 
 def compare_regions(
@@ -60,12 +61,15 @@ def compare_regions(
 
     region_observations: list[list[AISObservation]] = [[], []]
     ambiguous = 0
+    unassigned = 0
     for observation in observations:
         region_indexes = membership(observation.latitude, observation.longitude, bboxes)
         if len(region_indexes) == 1:
             region_observations[region_indexes[0]].append(observation)
         elif len(region_indexes) > 1:
             ambiguous += 1
+        else:
+            unassigned += 1
 
     finding_counts = [0, 0]
     for finding in findings:
@@ -122,4 +126,8 @@ def compare_regions(
                 temporal_reason=temporal_reason,
             )
         )
-    return RegionComparison(regions=(metrics[0], metrics[1]), ambiguous_observations=ambiguous)
+    return RegionComparison(
+        regions=(metrics[0], metrics[1]),
+        ambiguous_observations=ambiguous,
+        unassigned_observations=unassigned,
+    )
