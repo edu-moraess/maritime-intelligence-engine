@@ -70,7 +70,7 @@ def detect_anomalies(
 
             sog = getattr(row, "sog_knots", None)
 
-            if sog is not None and np.isfinite(sog):
+            if sog is not None and np.isfinite(sog) and 0.0 <= float(sog) <= 102.2:
                 if sog > config.speed_limit_knots:
                     checks.append(
                         (
