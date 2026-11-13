@@ -441,7 +441,7 @@ def render_vessel_quick_intelligence(
             st.markdown(provenance_badge("INSUFFICIENT DATA"), unsafe_allow_html=True)
             notice(
                 "INSUFFICIENT OBSERVATIONS · behavioral assessment requires at least "
-                "3 independent real AIS trajectories in-session.",
+                "3 independent vessels, each with at least 32 contiguous complete real AIS reports (valid position, SOG, and COG).",
                 "yellow",
             )
 
