@@ -19,7 +19,7 @@ class RegionMetrics:
     label: str
     unique_vessels: int
     position_reports: int
-    average_speed_knots: float
+    average_speed_knots: float | None
     eligible_temporal_tracks: int | None
     temporal_top_quartile_tracks: int | None
     temporal_top_quartile_rate: float | None
@@ -104,7 +104,7 @@ def compare_regions(
                 label=names[index],
                 unique_vessels=len(vessel_ids),
                 position_reports=len(region_items),
-                average_speed_knots=round(sum(speeds) / len(speeds), 2) if speeds else 0.0,
+                average_speed_knots=round(sum(speeds) / len(speeds), 2) if speeds else None,
                 eligible_temporal_tracks=len(eligible) if eligible is not None else None,
                 temporal_top_quartile_tracks=top_quartile,
                 temporal_top_quartile_rate=(
