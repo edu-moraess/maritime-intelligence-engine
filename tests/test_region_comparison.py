@@ -126,3 +126,16 @@ def test_temporal_ready_but_too_few_scores_keeps_quartile_rate_unavailable():
     assert region_a.temporal_top_quartile_tracks is None
     assert region_a.temporal_top_quartile_rate is None
 
+def test_regional_average_speed_is_unavailable_without_sog_samples():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [
+        _obs("111000001", 5.0, 5.0, speed=None),
+        _obs("222000001", 25.0, 25.0, speed=None),
+    ]
+
+    comparison = compare_regions(observations, [], bboxes)
+
+    assert comparison is not None
+    assert comparison.regions[0].average_speed_knots is None
+    assert comparison.regions[1].average_speed_knots is None
+
