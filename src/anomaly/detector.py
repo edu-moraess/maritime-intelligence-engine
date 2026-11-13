@@ -78,7 +78,8 @@ def detect_anomalies(
                             min(1.0, (float(sog) - config.speed_limit_knots) / max(config.speed_limit_knots, 1e-9)),
                             (
                                 f"Reported SOG {sog:.1f} kn exceeds "
-                                "the configured real-data review threshold."
+                                "the configured real-data review threshold. "
+                                "Score is a rule-derived exceedance index, not confidence."
                             ),
                         )
                     )
@@ -123,7 +124,7 @@ def detect_anomalies(
                         (
                             f"Observed course change of "
                             f"{heading_change:.0f} degrees "
-                            "between reports."
+                            "between reports. Score is a rule-derived exceedance index, not confidence."
                         ),
                     )
                 )
@@ -184,7 +185,8 @@ def detect_anomalies(
                         explanation=(
                             f"Vessel remained below 0.5 kn for "
                             f"{duration:.0f} minutes "
-                            f"({dwell_ratio:.0%} of reports)."
+                            f"({dwell_ratio:.0%} of reports). "
+                            "Score is the observed dwell-report ratio, not confidence."
                         ),
                     )
                 )
@@ -254,20 +256,16 @@ def _ais_second(value: object) -> int | None:
 def vessel_normality_score(
     findings: list[AnomalyFinding],
     mmsi: str,
-) -> float:
+) -> float | None:
     vessel_findings = [
         finding.score
         for finding in findings
-        if finding.mmsi == mmsi
+        if finding.mmsi == mmsi and finding.score is not None
+        and np.isfinite(finding.score)
     ]
-
-    return round(
-        max(
-            0.0,
-            1.0 - max(vessel_findings, default=0.0),
-        ),
-        3,
-    )
+    if not vessel_findings:
+        return None
+    return round(max(0.0, 1.0 - max(vessel_findings)), 3)
 
 
 def summarize_category(
