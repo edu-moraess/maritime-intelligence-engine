@@ -33,7 +33,8 @@ def test_sidebar_keeps_mission_and_map_controls():
     assert '"Start Live AIS"' in source
     assert '"Stop Live AIS"' in source
     assert '"Collect Finite AIS Window"' in source
-    assert '"Clear Shared Session"' in source
+    assert '"Clear View"' in source
+    assert '"Clear Session"' in source
 
 
 def test_sidebar_no_longer_renders_workspace_modules():
@@ -105,7 +106,7 @@ def test_render_sidebar_return_contract():
     assert returns, "expected return statement"
     last = returns[-1]
     assert isinstance(last.value, ast.Tuple)
-    assert len(last.value.elts) == 7
+    assert len(last.value.elts) == 8
 
 
 def test_no_map_controls_in_sidebar():
