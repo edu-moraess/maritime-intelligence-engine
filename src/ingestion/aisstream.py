@@ -37,7 +37,13 @@ class AISProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def stream(self, stop_event: threading.Event | None = None, duration_seconds: float | None = None) -> Iterator[AISObservation]:
+    def stream(
+        self,
+        stop_event: threading.Event | None = None,
+        duration_seconds: float | None = None,
+        *,
+        message_limit: int | None = None,
+    ) -> Iterator[AISObservation]:
         raise NotImplementedError
 
 
