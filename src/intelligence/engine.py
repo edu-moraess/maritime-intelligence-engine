@@ -713,10 +713,11 @@ class MaritimeIntelligenceEngine:
             worker.reset()
         self._live_started_at = None
         self._live_started_monotonic = None
-        # A cleared shared session must not leak queued reports into the next run.
-        worker.drain(limit=worker.observations.qsize()) if worker is not None else None
+        self._live_last_recompute_monotonic = 0.0
         self.store.clear()
-        self.provider.reset_session()
+        reset_provider = getattr(self.provider, "reset_session", None)
+        if callable(reset_provider):
+            reset_provider()
         self.embeddings = None
         self.findings = []
         self.current_session_findings = []
