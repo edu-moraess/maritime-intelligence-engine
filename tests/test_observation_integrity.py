@@ -67,3 +67,37 @@ def test_temporal_sequence_features_are_transition_only() -> None:
     assert matrix is not None
     assert matrix.shape == (2, 8)
     assert np.isfinite(matrix).all()
+
+
+def test_rule_anomaly_score_is_not_reported_as_confidence() -> None:
+    from src.anomaly.detector import detect_anomalies
+
+    findings = detect_anomalies(
+        {
+            "123456789": [
+                _obs(0, sog=60.0, cog=90.0),
+                _obs(1, sog=60.0, cog=90.0),
+            ]
+        }
+    )
+    speed_findings = [item for item in findings if item.category == "speed anomaly"]
+    assert len(speed_findings) == 2
+    assert all(item.confidence is None for item in speed_findings)
+    assert all(0.0 <= item.score <= 1.0 for item in speed_findings)
+
+
+def test_unobserved_interval_does_not_become_zero_distance() -> None:
+    from src.intelligence.behavior_rest import extract_movement_features
+
+    first = _obs(0)
+    second = AISObservation(
+        mmsi="123456789",
+        latitude=25.01,
+        longitude=-80.0,
+        received_at=first.received_at,
+        sog_knots=8.0,
+        cog_degrees=90.0,
+    )
+    movement = extract_movement_features([first, second])
+    assert movement.traveled_distance_km is None
+    assert movement.trajectory_efficiency is None
