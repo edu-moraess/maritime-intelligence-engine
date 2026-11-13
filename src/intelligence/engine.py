@@ -315,6 +315,12 @@ class MaritimeIntelligenceEngine:
             self.historical_result = None
             self.current_session_observations = []
             self.current_session_findings = []
+            self.findings = []
+            self.embeddings = None
+            self.temporal = None
+            self.region_comparison = None
+            self.regional_events = []
+            self.environmental_contexts = {}
             self._session_generation += 1
             self._temporal_fingerprint = None
         return started
