@@ -16,7 +16,7 @@ def traffic_summary(
     findings: list[AnomalyFinding],
     *,
     monitoring_regions: int | None = None,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | None]:
     """Return canonical session metrics with explicit population definitions."""
     fresh_vessels = [vessel for vessel in vessels if not vessel.stale]
     speeds = [vessel.sog_knots for vessel in fresh_vessels if vessel.sog_knots is not None]
