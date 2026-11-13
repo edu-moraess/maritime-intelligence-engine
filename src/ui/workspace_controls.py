@@ -29,10 +29,13 @@ def _sync_workspace_subarea(module: str) -> None:
     ]
 
 
-def _sync_historical_persistence() -> None:
-    st.session_state["historical_persistence_enabled"] = st.session_state[
-        "historical_persistence_enabled_body"
-    ]
+def _sync_historical_persistence(
+    engine: MaritimeIntelligenceEngine,
+    settings: AppSettings,
+) -> None:
+    enabled = bool(st.session_state["historical_persistence_enabled_body"])
+    st.session_state["historical_persistence_enabled"] = enabled
+    engine.configure_historical_writer(settings.database_url, enabled)
 
 
 def _sync_operator_timezone() -> None:
@@ -64,23 +67,32 @@ def _render_freshness_status(engine: MaritimeIntelligenceEngine) -> None:
 
 def _render_temporal_readiness(engine: MaritimeIntelligenceEngine) -> None:
     """Expose real-track coverage required by temporal intelligence."""
-    diagnostics = analyze_temporal_tracks(engine.store.tracks())
+    snapshot = engine.snapshot()
+    session_tracks: dict[str, list] = {}
+    for observation in snapshot.current_session_observations:
+        session_tracks.setdefault(observation.mmsi, []).append(observation)
+    diagnostics = analyze_temporal_tracks(session_tracks)
     total = diagnostics.nonempty_tracks
     counts = diagnostics.tracks_by_min_points
     eligible_4 = counts.get(4, 0)
     eligible_8 = counts.get(8, 0)
     eligible_16 = counts.get(16, 0)
     eligible_32 = counts.get(32, 0)
-    if eligible_8 >= 8:
+    if total == 0:
+        state = "WAITING"
+        ratio_label = "N/A"
+    elif eligible_8 >= 8:
         state = "READY"
+        ratio_label = f"{eligible_8 / total * 100.0:.0f}%"
     elif eligible_4 >= 8:
         state = "EARLY COVERAGE"
+        ratio_label = f"{eligible_8 / total * 100.0:.0f}%"
     else:
         state = "NOT READY"
-    ratio = (eligible_8 / total * 100.0) if total else 0.0
+        ratio_label = f"{eligible_8 / total * 100.0:.0f}%"
     st.markdown(
         "<div class='data-label'>TEMPORAL READINESS</div>"
-        f"<div class='data-value'>{state} · T8 {ratio:.0f}%</div>"
+        f"<div class='data-value'>{state} · T8 {ratio_label}</div>"
         f"<div class='side-muted'>Tracks ≥4: {eligible_4} · ≥8: {eligible_8} · ≥16: {eligible_16} · ≥32: {eligible_32}</div>",
         unsafe_allow_html=True,
     )
@@ -108,8 +120,9 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
         state = "STABLE"
     st.markdown(
         "<div class='data-label'>WEBSOCKET RECOVERY</div>"
-        f"<div class='data-value'>{state}</div>"
-        f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>",
+        f"<div class='data-value'>{state} · {status.worker_state or status.state}</div>"
+        f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>"
+        f"<div class='side-muted'>Queue {status.queue_depth} · Dropped {status.dropped_messages}</div>",
         unsafe_allow_html=True,
     )
     if status.last_error:
@@ -118,13 +131,15 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
 
 def _render_historical_persistence(engine: MaritimeIntelligenceEngine, settings: AppSettings) -> None:
     """Expose historical persistence configuration and latest write status in System."""
+    global_enabled = bool(engine._historical_persistence_enabled)
+    st.session_state["historical_persistence_enabled_body"] = global_enabled
     historical_enabled = st.checkbox(
         "Historical Persistence",
-        value=settings.historical_persistence_enabled,
+        value=global_enabled,
         key="historical_persistence_enabled_body",
         disabled=settings.database_url is None,
-        help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
-        on_change=_sync_historical_persistence,
+        help="System-wide setting for this process. Persists real AIS observations when a session is finalized.",
+        on_change=lambda: _sync_historical_persistence(engine, settings),
     )
     if settings.database_url is None:
         historical_state = "HISTORICAL DATABASE NOT CONFIGURED"

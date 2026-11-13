@@ -150,9 +150,20 @@ def _plot_layout(title: str, x_title: str, y_title: str) -> dict:
 
 def engine_tracks(snapshot: EngineSnapshot):
     by_mmsi: dict[str, list] = {}
-    for observation in snapshot.observations:
+    for observation in snapshot.current_session_observations:
         by_mmsi.setdefault(observation.mmsi, []).append(observation)
     return by_mmsi.items()
+
+
+def visible_track_count(rows: list[dict], observations: list) -> int:
+    """Count multi-report tracks only for targets actually visible in this map."""
+    visible_mmsis = {str(row.get("mmsi")) for row in rows}
+    counts: dict[str, int] = {}
+    for observation in observations:
+        mmsi = str(observation.mmsi)
+        if mmsi in visible_mmsis:
+            counts[mmsi] = counts.get(mmsi, 0) + 1
+    return sum(1 for count in counts.values() if count >= 2)
 
 
 def _vessel_compact(vessel: VesselSnapshot) -> None:
@@ -510,10 +521,10 @@ def _render_vessel_map(
     rows = enrich_tactical_rows(rows, selected_mmsi=selected_mmsi, anomaly_mmsis=anomaly_mmsis, critical_mmsis=critical_mmsis)
     layers: list[pdk.Layer] = []
 
-    if has_live_rows and show_hexbin and snapshot.observations:
+    if has_live_rows and show_hexbin and snapshot.current_session_observations:
         hex_rows = [
             {"longitude": float(o.longitude), "latitude": float(o.latitude)}
-            for o in list(snapshot.observations)[:4000]
+            for o in list(snapshot.current_session_observations)[:4000]
             if o.latitude is not None and o.longitude is not None
         ]
         if hex_rows:
@@ -574,7 +585,7 @@ def _render_vessel_map(
 
     if has_live_rows and show_trails:
         by_mmsi: dict[str, list] = {}
-        for observation in list(snapshot.observations or []):
+        for observation in list(snapshot.current_session_observations or []):
             by_mmsi.setdefault(str(observation.mmsi), []).append(observation)
         track_segments: list[dict] = []
         for mmsi, track in by_mmsi.items():
@@ -635,11 +646,11 @@ def _render_vessel_map(
 
     style = TACTICAL_MAP_STYLE if map_style in (None, "", "Dark Matter", "dark", "tactical") else MAP_STYLES.get(map_style, TACTICAL_MAP_STYLE)
 
-    by_mmsi_obs: dict[str, int] = {}
-    if has_live_rows:
-        for observation in list(snapshot.current_session_observations or []):
-            by_mmsi_obs[str(observation.mmsi)] = by_mmsi_obs.get(str(observation.mmsi), 0) + 1
-    tracks_count = sum(1 for n in by_mmsi_obs.values() if n >= 2)
+    tracks_count = (
+        visible_track_count(rows, list(snapshot.current_session_observations or []))
+        if has_live_rows
+        else 0
+    )
     live_state = str(getattr(snapshot.status, "state", "DISCONNECTED") or "DISCONNECTED")
     region = "CUSTOM"
     try:

@@ -33,9 +33,21 @@ def _regional_snapshot(snapshot: EngineSnapshot, bbox: RegionBBox) -> EngineSnap
     findings = [f for f in snapshot.findings if _in_bbox(f.latitude, f.longitude, bbox)]
     current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _in_bbox(o.latitude, o.longitude, bbox)]
     current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _in_bbox(f.latitude, f.longitude, bbox)]
-    speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
+    fresh_vessels = [vessel for vessel in vessels if not vessel.stale]
+    speeds = [float(vessel.sog_knots) for vessel in fresh_vessels if vessel.sog_knots is not None]
     summary = dict(snapshot.summary)
-    summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
+    summary.update({
+        "active_vessels": len(fresh_vessels),
+        "observed_vessels": len(vessels),
+        "unique_vessels": len({item.mmsi for item in current_session_observations}),
+        "messages": len(current_session_observations),
+        "speed_sample_count": len(speeds),
+        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else None,
+        "anomalies": len(findings),
+        "anomaly_vessels": len({item.mmsi for item in findings}),
+        "stale_vessels": len(vessels) - len(fresh_vessels),
+        "regions": 1,
+    })
     return replace(snapshot, observations=observations, current_session_observations=current_session_observations, vessels=vessels, findings=findings, current_session_findings=current_session_findings, summary=summary)
 
 
@@ -46,9 +58,21 @@ def _unified_snapshot(snapshot: EngineSnapshot, bboxes: tuple[RegionBBox, ...]) 
     findings = [f for f in snapshot.findings if _inside_bboxes(f.latitude, f.longitude, bboxes)]
     current_session_observations = [o for o in getattr(snapshot, "current_session_observations", []) if _inside_bboxes(o.latitude, o.longitude, bboxes)]
     current_session_findings = [f for f in getattr(snapshot, "current_session_findings", []) if _inside_bboxes(f.latitude, f.longitude, bboxes)]
-    speeds = [float(o.sog_knots) for o in observations if o.sog_knots is not None]
+    fresh_vessels = [vessel for vessel in vessels if not vessel.stale]
+    speeds = [float(vessel.sog_knots) for vessel in fresh_vessels if vessel.sog_knots is not None]
     summary = dict(snapshot.summary)
-    summary.update({"active_vessels": len(vessels), "messages": len(observations), "anomalies": len(findings), "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else 0.0})
+    summary.update({
+        "active_vessels": len(fresh_vessels),
+        "observed_vessels": len(vessels),
+        "unique_vessels": len({item.mmsi for item in current_session_observations}),
+        "messages": len(current_session_observations),
+        "speed_sample_count": len(speeds),
+        "average_speed_knots": (sum(speeds) / len(speeds)) if speeds else None,
+        "anomalies": len(findings),
+        "anomaly_vessels": len({item.mmsi for item in findings}),
+        "stale_vessels": len(vessels) - len(fresh_vessels),
+        "regions": len(bboxes),
+    })
     return replace(snapshot, observations=observations, current_session_observations=current_session_observations, vessels=vessels, findings=findings, current_session_findings=current_session_findings, summary=summary)
 
 
@@ -238,7 +262,7 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     monitoring = tuple(settings.monitoring_bboxes)
     region = "A + B" if len(monitoring) > 1 else (region_name_for_bbox(settings.bbox) or "CUSTOM")
     duration = f"Collection {snapshot.last_collection_seconds:.1f}s" if snapshot.last_collection_seconds > 0 else "Collection —"
-    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=f"{summary['average_speed_knots']:.1f} kn", last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
+    render_ops_bar(live_state=snapshot.status.state, region=region, vessels=summary["active_vessels"], messages=f"{summary['messages']:,}", anomalies=summary["anomalies"], collection=duration, provenance="REAL AIS · VERIFIED SOURCE", avg_speed=(f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A"), last_message=snapshot.status.last_received_at.strftime("%H:%M:%S UTC") if snapshot.status.last_received_at else "—")
     render_region_comparison(snapshot.region_comparison)
     render_regional_events(snapshot.regional_events)
     _render_environmental_context(snapshot, monitoring)
