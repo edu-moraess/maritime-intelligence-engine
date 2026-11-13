@@ -710,6 +710,7 @@ class MaritimeIntelligenceEngine:
             stopped = worker.stop(timeout=10.0)
             if not stopped:
                 raise RuntimeError("AIS worker did not stop; session data was not cleared.")
+            worker.reset()
         self._live_started_at = None
         self._live_started_monotonic = None
         # A cleared shared session must not leak queued reports into the next run.
