@@ -108,10 +108,15 @@ def test_engine_ready():
     assert bench.status in {"COMPLEMENTAR", "REDUNDANTE", "INCONCLUSIVO"}
 
 
-def test_clear():
+def test_clear_blocks_unverified_in_memory_observations():
     e = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
-    e.store.extend(_track("368207620", 5)); e._recompute(); e.clear_session_data()
-    assert e.temporal is None
+    rows = _track("368207620", 5)
+    e.store.extend(rows)
+    e._recompute()
+    with pytest.raises(RuntimeError, match="no verified historical origin"):
+        e.clear_session_data()
+    assert len(e.store.all()) == len(rows)
+    assert e.temporal is not None
 
 
 def test_unavailable(monkeypatch):
