@@ -105,3 +105,37 @@ def test_unexpected_provider_iterator_end_is_not_reported_live():
     assert status.state != "LIVE"
     assert status.reconnect_attempts >= 1
     assert worker.stop(timeout=1.0)
+
+def test_live_health_expires_when_no_new_position_reports_arrive():
+    from datetime import timedelta
+
+    now = [datetime(2026, 11, 13, 3, 0, tzinfo=timezone.utc)]
+
+    class _OneMessageThenIdle:
+        def connect(self):
+            return True, "ready"
+
+        def stream(self, stop_event=None, duration_seconds=None):
+            yield AISObservation(
+                mmsi="123456789",
+                latitude=1.0,
+                longitude=2.0,
+                received_at=now[0],
+            )
+            if stop_event is not None:
+                stop_event.wait(2.0)
+
+    worker = AISIngestionWorker(
+        _OneMessageThenIdle(),
+        live_timeout_seconds=30.0,
+        clock=lambda: now[0],
+    )
+    worker.start()
+    deadline = time.monotonic() + 1.0
+    while worker.status().messages_received == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert worker.status().state == "LIVE"
+
+    now[0] = now[0] + timedelta(seconds=31)
+    assert worker.status().state == "DEGRADED"
+    assert worker.stop(timeout=1.0)
