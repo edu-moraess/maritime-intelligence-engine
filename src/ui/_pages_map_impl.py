@@ -50,8 +50,9 @@ def _no_real_data_reason(status_reason: str) -> str:
 def _track_readiness_reason(module: str, current: int, required: int = 3) -> str:
     return (
         f"{module} analysis requires {required} distinct vessels "
-        "with sufficient trajectory history. "
-        f"Current: {current}/{required}. "
+        "with at least 32 contiguous complete real AIS reports each "
+        "(valid position, SOG, and COG). "
+        f"Current tracks with history: {current}/{required}. "
         "Collect real AIS data for longer or select a denser monitoring region."
     )
 
