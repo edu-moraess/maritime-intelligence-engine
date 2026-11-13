@@ -29,7 +29,7 @@ class QualityReport:
     stale_records: int = 0
     distinct_vessels: int = 0
     tracks_with_history: int = 0
-    quality_percent: float = 100.0
+    quality_percent: float | None = None
 
     @property
     def coverage_status(self) -> str:
