@@ -204,14 +204,18 @@ class _ProcessEngineRegistry:
         with self.lock:
             if self.engine is None or self.signature != signature:
                 previous = self.engine
+                archived_observations = []
                 if previous is not None:
                     stopped = previous.stop_live_monitoring(timeout=10.0)
                     if not stopped:
                         raise RuntimeError(
                             "The previous AIS worker is still alive; refusing to start a second subscription."
                         )
+                    archived_observations = previous.store.all()
                     previous.historical_writer.close()
                 self.engine = create_engine(settings)
+                if archived_observations:
+                    self.engine.store.extend(archived_observations)
                 self.signature = signature
             self.engine.configure_historical_writer(
                 settings.database_url,
@@ -334,8 +338,8 @@ def _render_sidebar(
                 st.session_state["monitoring_bboxes"] = bboxes
                 if region_changed:
                     st.warning(
-                        "Monitoring regions changed. The previous live session "
-                        "will be discarded when the new subscription is collected."
+                        "Monitoring regions changed. The previous session is retained as historical "
+                        "in-memory observations; the new subscription will use the updated regions."
                     )
             else:
                 st.error(region_error)
