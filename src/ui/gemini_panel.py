@@ -141,24 +141,6 @@ def render_gemini_vessel_panel(
         "interpretation only",
     )
 
-    secrets = None
-    try:
-        secrets = st.secrets
-    except Exception:
-        secrets = None
-
-    client = create_gemini_client(secrets=secrets)
-    availability = client.availability()
-
-    if not availability.available:
-        notice(availability.reason, "red")
-        return
-
-    notice(
-        "Gemini provides interpretation only. It does not replace "
-        "Rules, IsolationForest, or Deep Temporal scores.",
-    )
-
     cache_key = f"gemini_analysis_{vessel.mmsi}"
     error_key = f"gemini_error_{vessel.mmsi}"
     run = st.button(
@@ -168,6 +150,23 @@ def render_gemini_vessel_panel(
     )
 
     if run:
+        secrets = None
+        try:
+            secrets = st.secrets
+        except Exception:
+            secrets = None
+
+        client = create_gemini_client(secrets=secrets)
+        availability = client.availability()
+        if not availability.available:
+            st.session_state[error_key] = availability.reason
+            notice(availability.reason, "red")
+            return
+
+        notice(
+            "Gemini provides interpretation only. It does not replace "
+            "Rules, IsolationForest, or Deep Temporal scores.",
+        )
         with st.spinner(
             "Requesting Gemini interpretation "
             f"(timeout {client.timeout_seconds}s)..."
