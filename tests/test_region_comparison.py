@@ -57,6 +57,8 @@ def test_compare_regions_normalizes_anomalies_and_temporal_scores():
     assert region_a.anomaly_rate == 0.5
     assert region_b.unique_vessels == 1
     assert region_b.anomalies == 1
+    assert comparison.ambiguous_observations == 0
+    assert comparison.unassigned_observations == 0
     assert region_b.anomaly_rate == 1.0
     assert region_a.average_temporal_score == 0.3
     assert region_b.average_temporal_score == 0.9
@@ -69,6 +71,7 @@ def test_overlapping_observations_are_not_double_counted():
     comparison = compare_regions(observations, [], bboxes)
     assert comparison is not None
     assert comparison.ambiguous_observations == 1
+    assert comparison.unassigned_observations == 0
     assert comparison.regions[0].unique_vessels == 0
     assert comparison.regions[1].unique_vessels == 1
 
@@ -138,3 +141,20 @@ def test_regional_average_speed_is_unavailable_without_sog_samples():
     assert comparison is not None
     assert comparison.regions[0].average_speed_knots is None
     assert comparison.regions[1].average_speed_knots is None
+
+
+
+def test_observations_outside_both_regions_are_reported_as_unassigned():
+    bboxes = [((0.0, 0.0), (10.0, 10.0)), ((20.0, 20.0), (30.0, 30.0))]
+    observations = [
+        _obs("111000001", 5.0, 5.0),
+        _obs("222000001", 25.0, 25.0),
+        _obs("333000001", 40.0, 40.0),
+    ]
+
+    comparison = compare_regions(observations, [], bboxes)
+
+    assert comparison is not None
+    assert sum(region.position_reports for region in comparison.regions) == 2
+    assert comparison.ambiguous_observations == 0
+    assert comparison.unassigned_observations == 1
