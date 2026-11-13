@@ -205,7 +205,11 @@ class _ProcessEngineRegistry:
             if self.engine is None or self.signature != signature:
                 previous = self.engine
                 if previous is not None:
-                    previous.stop_live_monitoring(timeout=10.0)
+                    stopped = previous.stop_live_monitoring(timeout=10.0)
+                    if not stopped:
+                        raise RuntimeError(
+                            "The previous AIS worker is still alive; refusing to start a second subscription."
+                        )
                     previous.historical_writer.close()
                 self.engine = create_engine(settings)
                 self.signature = signature
