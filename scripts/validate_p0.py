@@ -7,7 +7,6 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,12 +50,27 @@ def main() -> int:
             return 1
 
     print("[P0] Running targeted deterministic tests (no model training, no live AIS network).", flush=True)
-    result = pytest.main(["-q", *P0_TESTS])
-    if int(result) != 0:
+    targeted = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", *P0_TESTS],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if targeted.returncode != 0:
         print("[P0] TARGETED_VALIDATION=FAIL", flush=True)
-        return int(result)
+        return targeted.returncode
     print("[P0] TARGETED_VALIDATION=PASS", flush=True)
-    print("[P0] Live-network acceptance and the complete repository suite remain separate gates.", flush=True)
+
+    print("[P0] Running the complete repository test suite ...", flush=True)
+    full_suite = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if full_suite.returncode != 0:
+        print("[P0] FULL_REPOSITORY_SUITE=FAIL", flush=True)
+        return full_suite.returncode
+    print("[P0] FULL_REPOSITORY_SUITE=PASS", flush=True)
+    print("[P0] Live-network acceptance remains a separate gate.", flush=True)
     return 0
 
 
