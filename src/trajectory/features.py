@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import fmod
 from typing import Iterable
 
 import numpy as np
@@ -19,10 +18,10 @@ class TrajectorySummary:
     points: int
     duration_minutes: float
     distance_km: float
-    average_speed_knots: float
-    max_speed_knots: float
-    average_heading_change: float
-    dwell_ratio: float
+    average_speed_knots: float | None
+    max_speed_knots: float | None
+    average_heading_change: float | None
+    dwell_ratio: float | None
 
 
 def track_to_frame(observations: Iterable[AISObservation]) -> pd.DataFrame:
@@ -38,9 +37,9 @@ def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame.copy()
     result = frame.sort_values("received_at").reset_index(drop=True).copy()
-    result["time_delta_seconds"] = result["received_at"].diff().dt.total_seconds().fillna(0).clip(lower=0)
-    result["distance_km"] = [
-        0.0,
+    result["time_delta_seconds"] = result["received_at"].diff().dt.total_seconds().clip(lower=0)
+    distances = [
+        np.nan,
         *[
             haversine_km(a, b, c, d)
             for a, b, c, d in zip(
@@ -51,13 +50,17 @@ def enrich_track(frame: pd.DataFrame) -> pd.DataFrame:
             )
         ],
     ]
-    result["computed_speed_knots"] = np.where(
-        result["time_delta_seconds"] > 0,
-        result["distance_km"] / (result["time_delta_seconds"] / 3600) / 1.852,
-        0.0,
+    result["distance_km"] = distances
+    valid_delta = result["time_delta_seconds"].gt(0)
+    result["computed_speed_knots"] = (
+        result["distance_km"] / (result["time_delta_seconds"] / 3600) / 1.852
+    ).where(valid_delta)
+    result["heading_change"] = _circular_difference(
+        result["cog_degrees"].to_numpy(dtype=float)
     )
-    result["heading_change"] = _circular_difference(result["cog_degrees"].fillna(0).to_numpy())
-    result["is_dwell"] = result["computed_speed_knots"] < 0.5
+    result["is_dwell"] = result["computed_speed_knots"].lt(0.5).where(
+        result["computed_speed_knots"].notna(), pd.NA
+    )
     return result
 
 
@@ -71,33 +74,41 @@ def summarize_track(observations: Iterable[AISObservation]) -> TrajectorySummary
         mmsi=str(frame["mmsi"].iloc[0]),
         points=len(frame),
         duration_minutes=duration,
-        distance_km=float(frame["distance_km"].sum()),
-        average_speed_knots=float(speeds.mean()) if not speeds.empty else 0.0,
-        max_speed_knots=float(speeds.max()) if not speeds.empty else 0.0,
-        average_heading_change=float(frame["heading_change"].mean()),
-        dwell_ratio=float(frame["is_dwell"].mean()),
+        distance_km=float(frame["distance_km"].sum(min_count=1)) if frame["distance_km"].notna().any() else None,
+        average_speed_knots=float(speeds.mean()) if not speeds.empty else None,
+        max_speed_knots=float(speeds.max()) if not speeds.empty else None,
+        average_heading_change=float(frame["heading_change"].mean()) if frame["heading_change"].notna().any() else None,
+        dwell_ratio=float(frame["is_dwell"].dropna().mean()) if frame["is_dwell"].notna().any() else None,
     )
 
 
 def trajectory_vector(observations: Iterable[AISObservation], length: int = 32) -> np.ndarray | None:
-    """Create a deterministic numeric representation; it is not a pretrained model."""
-    frame = enrich_track(track_to_frame(observations))
-    if len(frame) < 2:
+    """Encode only an exact window of complete, observed AIS rows.
+
+    No missing-value filling, temporal interpolation, or synthetic padding is
+    permitted. Tracks without enough complete source reports are not embedded.
+    """
+    if length < 2:
+        raise ValueError("length must be >= 2")
+    frame = track_to_frame(observations)
+    columns = ["latitude", "longitude", "sog_knots", "cog_degrees"]
+    if len(frame) < length or any(column not in frame for column in columns):
         return None
-    cols = ["latitude", "longitude", "sog_knots", "cog_degrees", "computed_speed_knots", "heading_change", "time_delta_seconds", "distance_km"]
-    values = frame[cols].fillna(0.0).to_numpy(dtype=float)
-    if len(values) != length:
-        source = np.linspace(0.0, 1.0, len(values))
-        target = np.linspace(0.0, 1.0, length)
-        values = np.column_stack([np.interp(target, source, values[:, idx]) for idx in range(values.shape[1])])
-    scale = np.nanstd(values, axis=0)
-    values = (values - np.nanmean(values, axis=0)) / np.where(scale == 0, 1, scale)
-    return values.astype(np.float32).ravel()
+    values = frame[columns].tail(length).to_numpy(dtype=float)
+    if not np.isfinite(values).all():
+        return None
+    scale = values.std(axis=0)
+    normalized = (values - values.mean(axis=0)) / np.where(scale < 1e-9, 1.0, scale)
+    return normalized.astype(np.float32).ravel()
 
 
 def _circular_difference(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=float)
-    if len(values) == 0:
-        return values
-    diff = np.diff(values, prepend=values[0])
-    return np.abs((diff + 180) % 360 - 180)
+    result = np.full(values.shape, np.nan, dtype=float)
+    if len(values) < 2:
+        return result
+    previous, current = values[:-1], values[1:]
+    valid = np.isfinite(previous) & np.isfinite(current)
+    delta = (current[valid] - previous[valid] + 180.0) % 360.0 - 180.0
+    result[1:][valid] = np.abs(delta)
+    return result
