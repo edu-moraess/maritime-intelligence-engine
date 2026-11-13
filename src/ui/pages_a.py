@@ -868,6 +868,7 @@ def render_behavior(
         current_cluster = int(result.clusters[selected_idx])
         current_pc1 = result.projection[selected_idx, 0]
         current_pc2 = result.projection[selected_idx, 1]
+        current_score_label = f"{current_score:.3f}" if current_score is not None else "N/A"
 
         fig.add_trace(
             go.Scatter(
@@ -893,7 +894,7 @@ def render_behavior(
                 hovertemplate=(
                     f"<b>MMSI</b>: {current_mmsi}"
                     f"<br><b>Cluster</b>: {current_cluster}"
-                    f"<br><b>Isolation Forest score</b>: {current_score:.3f}" if current_score is not None else "<br><b>Isolation Forest score</b>: N/A"
+                    f"<br><b>Isolation Forest score</b>: {current_score_label}"
                     "<br><b>Status</b>: CURRENT TARGET"
                     "<extra></extra>"
                 ),
