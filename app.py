@@ -162,6 +162,7 @@ def _with_settings(
             if historical_persistence_enabled is None
             else historical_persistence_enabled
         ),
+        ingestion_queue_capacity=settings.ingestion_queue_capacity,
     )
 
 
@@ -186,6 +187,7 @@ def _engine_signature(settings: AppSettings) -> tuple:
         settings.max_messages,
         settings.max_vessels,
         settings.stale_after_seconds,
+        settings.ingestion_queue_capacity,
         settings.provider,
         settings.config_error,
         settings.database_url,
