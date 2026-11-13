@@ -29,10 +29,13 @@ def _sync_workspace_subarea(module: str) -> None:
     ]
 
 
-def _sync_historical_persistence() -> None:
-    st.session_state["historical_persistence_enabled"] = st.session_state[
-        "historical_persistence_enabled_body"
-    ]
+def _sync_historical_persistence(
+    engine: MaritimeIntelligenceEngine,
+    settings: AppSettings,
+) -> None:
+    enabled = bool(st.session_state["historical_persistence_enabled_body"])
+    st.session_state["historical_persistence_enabled"] = enabled
+    engine.configure_historical_writer(settings.database_url, enabled)
 
 
 def _sync_operator_timezone() -> None:
@@ -119,13 +122,15 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
 
 def _render_historical_persistence(engine: MaritimeIntelligenceEngine, settings: AppSettings) -> None:
     """Expose historical persistence configuration and latest write status in System."""
+    global_enabled = bool(engine._historical_persistence_enabled)
+    st.session_state["historical_persistence_enabled_body"] = global_enabled
     historical_enabled = st.checkbox(
         "Historical Persistence",
-        value=settings.historical_persistence_enabled,
+        value=global_enabled,
         key="historical_persistence_enabled_body",
         disabled=settings.database_url is None,
-        help="Persiste somente observações AIS reais e válidas após a coleta; não altera o live.",
-        on_change=_sync_historical_persistence,
+        help="System-wide setting for this process. Persists real AIS observations when a session is finalized.",
+        on_change=lambda: _sync_historical_persistence(engine, settings),
     )
     if settings.database_url is None:
         historical_state = "HISTORICAL DATABASE NOT CONFIGURED"
