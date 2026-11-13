@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.environment.context import EnvironmentalContext
+from src.environment.open_meteo_marine import classify_environmental_failure
 from src.ingestion.models import EnvironmentalObservation
 
 
@@ -86,4 +87,12 @@ def test_adding_successful_observation_clears_failure_state():
     assert updated.status == "AVAILABLE"
     assert updated.failure_code is None
     assert updated.failure_reason is None
+
+def test_environmental_failure_classifier_distinguishes_failure_domains():
+    from urllib.error import URLError
+
+    assert classify_environmental_failure(TimeoutError("timeout")) == "TIMEOUT"
+    assert classify_environmental_failure(URLError("offline")) == "NETWORK_ERROR"
+    assert classify_environmental_failure(ValueError("invalid payload")) == "INVALID_RESPONSE"
+    assert classify_environmental_failure(RuntimeError("unexpected")) == "PROVIDER_ERROR"
 
