@@ -31,7 +31,7 @@ def test_contract():
 
 
 def test_preprocess_shape():
-    s = build_temporal_sequence(_track("368207620", 32))
+    s = build_temporal_sequence(_track("368207620", 33))
     assert s is not None and s.sequence.shape == (32, 8)
     assert s.sequence_length == 32 and s.feature_names is not None
 
@@ -74,7 +74,7 @@ def test_tcn_forward_contract():
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
 def test_adapter_ready():
-    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
+    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 9, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     r = TemporalAnomalyAdapter().fit(tracks)
     assert r.status == "READY" and r.training_completed and r.inference_available
     assert r.method == "TCN Temporal Autoencoder"
@@ -91,7 +91,7 @@ def test_engine_ready():
     e = MaritimeIntelligenceEngine(AppSettings(aisstream_api_key="k", bbox=DEFAULT_BBOX))
     rows = []
     for v in range(MINIMUM_TRACKS_FOR_DEEP_MODEL):
-        rows.extend(_track(f"3682076{v:02d}", 8, 25 + v * 0.02))
+        rows.extend(_track(f"3682076{v:02d}", 9, 25 + v * 0.02))
     e.store.extend(rows)
     e.current_session_observations = list(rows)
     e._recompute()
