@@ -13,6 +13,10 @@ IngestionState = Literal[
     "CONNECTING",
     "LIVE AIS",
     "REAL AIS DATA UNAVAILABLE",
+    "RECONNECTING",
+    "DEGRADED",
+    "STOPPED",
+    "ERROR",
 ]
 
 VALID_INGESTION_STATES = {
@@ -20,6 +24,10 @@ VALID_INGESTION_STATES = {
     "CONNECTING",
     "LIVE AIS",
     "REAL AIS DATA UNAVAILABLE",
+    "RECONNECTING",
+    "DEGRADED",
+    "STOPPED",
+    "ERROR",
 }
 
 _MMSI_PATTERN = re.compile(r"^\d{9}$")
@@ -188,6 +196,9 @@ class IngestionStatus:
     last_disconnect_at: datetime | None = None
     last_reconnect_at: datetime | None = None
     last_error: str | None = None
+    queue_depth: int = 0
+    dropped_messages: int = 0
+    worker_state: str | None = None
 
 
 @dataclass(frozen=True)

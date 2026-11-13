@@ -65,14 +65,15 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     st.subheader("Traffic analytics")
     summary = snapshot.summary
     metric_strip({"ACTIVE VESSELS": summary["active_vessels"], "MESSAGES": f"{summary['messages']:,}",
-                  "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn", "REGIONS": summary["regions"],
+                  "AVG SPEED": (f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A"), "REGIONS": summary["regions"],
                   "ANOMALIES": summary["anomalies"]})
-    if not snapshot.observations:
+    session_observations = snapshot.current_session_observations
+    if not session_observations:
         empty_state(_no_real_data_reason(snapshot.status.reason))
         return
     left, right = st.columns(2, gap="medium")
     with left:
-        volume = hourly_volume(snapshot.observations)
+        volume = hourly_volume(session_observations)
         fig = go.Figure(
             go.Bar(
                 x=volume["hour"],
@@ -178,7 +179,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
             notice("Data quality is within the operational review threshold for this session.", "green")
         else:
             notice("Data quality requires operator review before using downstream behavioral analysis.", "red")
-    notice("Quality percentages describe the current in-memory session window only. No unobserved data is estimated.")
+    notice("Quality metrics use only observations from the current finite or continuous AIS session. Restored historical records are excluded.")
 
 
 def render_system(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:

@@ -14,10 +14,15 @@ class EnvironmentalContext:
 
     region: str
     observations: tuple[EnvironmentalObservation, ...] = ()
+    failure_code: str | None = None
+    failure_reason: str | None = None
+    attempted_at: datetime | None = None
 
     @property
     def status(self) -> str:
-        return "AVAILABLE" if self.observations else "UNAVAILABLE"
+        if self.observations:
+            return "DEGRADED" if self.failure_code else "AVAILABLE"
+        return "FAILED" if self.failure_code else "UNAVAILABLE"
 
     @property
     def latest(self) -> EnvironmentalObservation | None:
@@ -40,6 +45,7 @@ class EnvironmentalContext:
         return EnvironmentalContext(
             region=self.region,
             observations=self.observations + (observation,),
+            attempted_at=observation.observed_at,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -54,5 +60,12 @@ class EnvironmentalContext:
                 else None
             ),
             "observation_count": len(self.observations),
+            "failure_code": self.failure_code,
+            "failure_reason": self.failure_reason,
+            "attempted_at": (
+                self.attempted_at.astimezone(timezone.utc).isoformat()
+                if self.attempted_at is not None
+                else None
+            ),
             "latest": latest.as_dict() if latest is not None else None,
         }

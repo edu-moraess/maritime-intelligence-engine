@@ -19,13 +19,15 @@ class RegionMetrics:
     label: str
     unique_vessels: int
     position_reports: int
-    average_speed_knots: float
-    eligible_temporal_tracks: int
-    temporal_top_quartile_tracks: int
-    temporal_top_quartile_rate: float
+    average_speed_knots: float | None
+    eligible_temporal_tracks: int | None
+    temporal_top_quartile_tracks: int | None
+    temporal_top_quartile_rate: float | None
     average_temporal_score: float | None
     anomalies: int
     anomaly_rate: float
+    temporal_status: str = "WAITING"
+    temporal_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,9 +73,15 @@ def compare_regions(
         if len(region_indexes) == 1:
             finding_counts[region_indexes[0]] += 1
 
+    temporal_status = temporal.status if temporal is not None else "WAITING"
+    temporal_reason = (
+        temporal.reason if temporal is not None
+        else "Temporal model has not been evaluated."
+    )
+    temporal_available = temporal is not None and temporal.ready
     temporal_scores = {
         score.mmsi: score
-        for score in (temporal.scores if temporal and temporal.ready else [])
+        for score in (temporal.scores if temporal_available else [])
     }
     all_temporal_values = sorted(score.deep_anomaly_score for score in temporal_scores.values())
     temporal_cutoff = None
@@ -84,28 +92,34 @@ def compare_regions(
     for index, region_items in enumerate(region_observations):
         vessel_ids = {item.mmsi for item in region_items}
         speeds = [item.sog_knots for item in region_items if item.sog_knots is not None]
-        eligible = sorted(vessel_ids & set(temporal_scores))
-        scores = [temporal_scores[mmsi] for mmsi in eligible]
+        eligible = sorted(vessel_ids & set(temporal_scores)) if temporal_available else None
+        scores = [temporal_scores[mmsi] for mmsi in eligible] if eligible is not None else []
         top_quartile = (
             sum(score.deep_anomaly_score >= temporal_cutoff for score in scores)
             if temporal_cutoff is not None
-            else 0
+            else None
         )
         metrics.append(
             RegionMetrics(
                 label=names[index],
                 unique_vessels=len(vessel_ids),
                 position_reports=len(region_items),
-                average_speed_knots=round(sum(speeds) / len(speeds), 2) if speeds else 0.0,
-                eligible_temporal_tracks=len(eligible),
+                average_speed_knots=round(sum(speeds) / len(speeds), 2) if speeds else None,
+                eligible_temporal_tracks=len(eligible) if eligible is not None else None,
                 temporal_top_quartile_tracks=top_quartile,
-                temporal_top_quartile_rate=(top_quartile / len(eligible)) if eligible else 0.0,
+                temporal_top_quartile_rate=(
+                    top_quartile / len(eligible)
+                    if top_quartile is not None and eligible
+                    else None
+                ),
                 average_temporal_score=(
                     round(sum(score.deep_anomaly_score for score in scores) / len(scores), 4)
                     if scores else None
                 ),
                 anomalies=finding_counts[index],
                 anomaly_rate=(finding_counts[index] / len(vessel_ids)) if vessel_ids else 0.0,
+                temporal_status=temporal_status,
+                temporal_reason=temporal_reason,
             )
         )
     return RegionComparison(regions=(metrics[0], metrics[1]), ambiguous_observations=ambiguous)

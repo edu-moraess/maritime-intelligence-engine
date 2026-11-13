@@ -52,7 +52,9 @@ def test_environmental_provider_failure_keeps_context_unavailable() -> None:
     engine._refresh_environmental_contexts()
 
     context = engine.environmental_contexts["region_1"]
-    assert context.status == "UNAVAILABLE"
+    assert context.status == "FAILED"
+    assert context.failure_code == "PROVIDER_ERROR"
+    assert context.failure_reason == "RuntimeError: provider unavailable"
     assert context.latest is None
 
 
