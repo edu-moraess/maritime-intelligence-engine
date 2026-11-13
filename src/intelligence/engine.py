@@ -195,8 +195,10 @@ class MaritimeIntelligenceEngine:
         collection duration.
         """
         worker_status = getattr(self, "live_worker", None)
-        if worker_status is not None and worker_status.status().state not in {"STOPPED", "ERROR"}:
-            raise RuntimeError("Stop continuous AIS monitoring before starting a finite collection window.")
+        if worker_status is not None:
+            live_status = worker_status.status()
+            if live_status.thread_alive or live_status.state not in {"STOPPED", "ERROR"}:
+                raise RuntimeError("Stop continuous AIS monitoring before starting a finite collection window.")
         duration = max(0.1, float(seconds if seconds is not None else self.settings.collection_seconds))
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -321,6 +323,9 @@ class MaritimeIntelligenceEngine:
         """Stop the process-local worker and persist the completed live session."""
         worker = getattr(self, "live_worker", None)
         if worker is None:
+            return True
+        before_stop = worker.status()
+        if not before_stop.thread_alive and before_stop.state in {"STOPPED", "ERROR"} and self._live_started_at is None:
             return True
         stopped = worker.stop(timeout=timeout)
         self.sync_live_ingestion()
