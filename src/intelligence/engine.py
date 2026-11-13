@@ -212,12 +212,18 @@ class MaritimeIntelligenceEngine:
         started = time.monotonic()
         stop_event = threading.Event()
         collected: list[AISObservation] = []
-        for observation in self.provider.stream(stop_event, duration_seconds=duration):
-            collected.append(observation)
-            if time.monotonic() - started >= duration:
-                stop_event.set()
-                break
-        stop_event.set()
+        stream_error: Exception | None = None
+        try:
+            for observation in self.provider.stream(stop_event, duration_seconds=duration):
+                collected.append(observation)
+                if time.monotonic() - started >= duration:
+                    stop_event.set()
+                    break
+        except Exception as exc:
+            # Preserve any real reports received before a transient stream failure.
+            stream_error = exc
+        finally:
+            stop_event.set()
         with self._state_lock:
             collection_elapsed = max(0.0, time.monotonic() - started)
             self.last_collection_seconds = collection_elapsed
@@ -296,6 +302,10 @@ class MaritimeIntelligenceEngine:
                 value for key, value in breakdown.items() if key != "total"
             )
             self.last_collection_breakdown = breakdown
+            if stream_error is not None:
+                raise RuntimeError(
+                    f"AIS finite stream ended with {stream_error.__class__.__name__}: {str(stream_error)[:200]}"
+                ) from stream_error
             return len(collected)
 
     def finite_collection_status(self) -> dict[str, object]:
