@@ -108,8 +108,9 @@ def _render_reconnect_telemetry(engine: MaritimeIntelligenceEngine) -> None:
         state = "STABLE"
     st.markdown(
         "<div class='data-label'>WEBSOCKET RECOVERY</div>"
-        f"<div class='data-value'>{state}</div>"
-        f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>",
+        f"<div class='data-value'>{state} · {status.worker_state or status.state}</div>"
+        f"<div class='side-muted'>Last disconnect {disconnect_label} · Last reconnect {reconnect_label}</div>"
+        f"<div class='side-muted'>Queue {status.queue_depth} · Dropped {status.dropped_messages}</div>",
         unsafe_allow_html=True,
     )
     if status.last_error:
