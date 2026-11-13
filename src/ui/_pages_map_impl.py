@@ -136,7 +136,12 @@ def _build_speed_rows(rows):
         longitude = row.get("longitude")
         if latitude is None or longitude is None:
             continue
-        speed = max(0.0, float(sog))
+        try:
+            speed = float(sog)
+        except (TypeError, ValueError):
+            continue
+        if not pd.notna(speed) or not 0.0 <= speed <= 102.2:
+            continue
         radius = max(250.0, min(1200.0, 250.0 + speed * 55.0))
         result.append({
             "latitude": float(latitude),
