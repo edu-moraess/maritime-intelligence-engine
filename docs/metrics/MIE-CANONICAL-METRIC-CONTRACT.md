@@ -14,7 +14,7 @@ All operational summary metrics below are scoped to `current_session_observation
 | `observed_vessels` | Vessels represented in the current session | Fresh plus stale last-known vessel snapshots |
 | `stale_vessels` | Vessels with an old last-known report | Latest report age exceeds `stale_after_seconds` |
 | `speed_sample_count` | Fresh vessels with SOG | Stale vessel speeds are excluded |
-| `average_speed_knots` | Mean SOG | Arithmetic mean over `speed_sample_count`; unavailable samples are not imputed |
+| `average_speed_knots` | Mean SOG | Arithmetic mean over `speed_sample_count`; `N/A` when the sample count is zero; unavailable samples are never replaced with zero |
 | `anomalies` | Finding events | Count of current-session anomaly findings |
 | `anomaly_vessels` | Distinct MMSIs with findings | Unique MMSIs across current-session findings |
 | `regions` | Configured monitoring regions | Number of active Bounding Boxes; never inferred from coordinate clusters |
