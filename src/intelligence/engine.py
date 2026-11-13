@@ -412,7 +412,7 @@ class MaritimeIntelligenceEngine:
         accounted = sum(value for key, value in breakdown.items() if key != "total")
         breakdown["diagnostic_overhead"] = max(0.0, total_elapsed - accounted)
         breakdown["total"] = total_elapsed
-        self.last_collection_seconds = total_elapsed
+        self.last_collection_seconds = breakdown["ais_stream"]
         self.last_collection_breakdown = breakdown
 
         self._live_started_at = None
