@@ -639,7 +639,11 @@ class MaritimeIntelligenceEngine:
                         provider_status.last_error or "AISStream connection lost; reconnecting."
                         if mapped_state == "RECONNECTING"
                         else provider_status.reason if mapped_state == "DISCONNECTED"
-                        else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
+                        else worker_status.last_error or (
+                            provider_status.reason
+                            if mapped_state == "DEGRADED"
+                            else f"AIS ingestion worker state: {worker_status.state}."
+                        )
                     )
                 )
                 provider_status = replace(
@@ -700,6 +704,8 @@ class MaritimeIntelligenceEngine:
                 raise RuntimeError("AIS worker did not stop; session data was not cleared.")
         self._live_started_at = None
         self._live_started_monotonic = None
+        # A cleared shared session must not leak queued reports into the next run.
+        worker.drain(limit=worker.observations.qsize()) if worker is not None else None
         self.store.clear()
         self.provider.reset_session()
         self.embeddings = None
