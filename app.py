@@ -7,6 +7,8 @@ mock, fallback, or fabricated AIS mode.
 
 from __future__ import annotations
 
+import threading
+
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -160,6 +162,7 @@ def _with_settings(
             if historical_persistence_enabled is None
             else historical_persistence_enabled
         ),
+        ingestion_queue_capacity=settings.ingestion_queue_capacity,
     )
 
 
@@ -184,19 +187,59 @@ def _engine_signature(settings: AppSettings) -> tuple:
         settings.max_messages,
         settings.max_vessels,
         settings.stale_after_seconds,
+        settings.ingestion_queue_capacity,
         settings.provider,
         settings.config_error,
+        settings.database_url,
     )
 
 
+class _ProcessEngineRegistry:
+    """Process-shared owner of the active engine and its one AIS worker."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.signature: tuple | None = None
+        self.engine: MaritimeIntelligenceEngine | None = None
+
+    def current_engine(self) -> MaritimeIntelligenceEngine | None:
+        with self.lock:
+            return self.engine
+
+    def current_settings(self) -> AppSettings | None:
+        with self.lock:
+            return self.engine.settings if self.engine is not None else None
+
+    def get(self, signature: tuple, settings: AppSettings) -> MaritimeIntelligenceEngine:
+        with self.lock:
+            if self.engine is None or self.signature != signature:
+                previous = self.engine
+                archived_observations = []
+                if previous is not None:
+                    stopped = previous.stop_live_monitoring(timeout=10.0)
+                    if not stopped:
+                        raise RuntimeError(
+                            "The previous AIS worker is still alive; refusing to start a second subscription."
+                        )
+                    archived_observations = previous.store.all()
+                    previous.historical_writer.close()
+                self.engine = create_engine(settings)
+                if archived_observations:
+                    self.engine.store.extend(archived_observations)
+                self.signature = signature
+            return self.engine
+
+
+@st.cache_resource(show_spinner=False)
+def _process_engine_registry() -> _ProcessEngineRegistry:
+    """One registry per Python process; not a cross-replica distributed lock."""
+    return _ProcessEngineRegistry()
+
+
 def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
-    """Return the engine associated with the current live configuration."""
+    """Return the process-shared engine associated with the active configuration."""
     signature = _engine_signature(settings)
     if st.session_state.get("engine_signature") != signature:
-        previous_engine = st.session_state.get("engine")
-        if previous_engine is not None:
-            previous_engine.historical_writer.close()
-        st.session_state.engine = create_engine(settings)
         st.session_state.engine_signature = signature
         for key in (
             "selected_mmsi",
@@ -205,13 +248,11 @@ def _engine_for(settings: AppSettings) -> MaritimeIntelligenceEngine:
             "selected_mmsi_unified",
         ):
             st.session_state.pop(key, None)
-
-    engine = st.session_state.engine
-    engine.configure_historical_writer(
-        settings.database_url,
-        settings.historical_persistence_enabled,
-    )
-    return engine
+    try:
+        return _process_engine_registry().get(signature, settings)
+    except RuntimeError as exc:
+        st.error(f"Operational configuration change blocked: {exc}")
+        st.stop()
 
 
 def _connection_state(settings: AppSettings, engine: MaritimeIntelligenceEngine) -> str:
@@ -272,20 +313,46 @@ def _render_region_slot(
 
 def _render_sidebar(
     settings: AppSettings,
-) -> tuple[AppSettings, str, bool, bool, bool]:
+) -> tuple[AppSettings, str, bool, bool, bool, bool, bool]:
     """Render mission and map controls in the sidebar."""
     region_changed = False
+    active_settings = _process_engine_registry().current_settings()
+    if active_settings is not None:
+        settings = _with_settings(
+            settings,
+            bboxes=active_settings.monitoring_bboxes,
+            bbox=active_settings.bbox,
+            config_error=active_settings.config_error,
+        )
     with st.sidebar:
         connection_placeholder = st.empty()
         mission_placeholder = st.empty()
 
-        existing = list(
-            st.session_state.get("monitoring_bboxes", settings.monitoring_bboxes)
-        ) or [settings.bbox]
+        existing = list(settings.monitoring_bboxes) or [settings.bbox]
+        if len(existing) == 1:
+            default_second = REGION_PRESETS["Malacca Strait"]
+            if _normalize_bbox(existing[0]) == _normalize_bbox(default_second):
+                default_second = REGION_PRESETS["Singapore"]
+            existing.append(default_second)
+        st.session_state["monitoring_bboxes"] = tuple(existing)
+        for label, bbox in zip(("a", "b"), existing):
+            selected_region = region_name_for_bbox(bbox) or "Custom"
+            st.session_state[f"monitor_region_{label}"] = selected_region
+            if selected_region == "Custom":
+                for key, value in zip(
+                    (
+                        f"region_{label}_min_lat",
+                        f"region_{label}_min_lon",
+                        f"region_{label}_max_lat",
+                        f"region_{label}_max_lon",
+                    ),
+                    _bbox_values(bbox),
+                ):
+                    st.session_state[key] = value
 
         with st.expander("MAP CONFIGURATION", expanded=False):
             st.caption(
-                "Region A + Region B use one MIE app and one AISStream subscription."
+                "One active AISStream subscription per Python process; independent deployment replicas may each own one."
             )
             bbox_a, name_a, error_a = _render_region_slot("A", settings, existing)
             bbox_b, name_b, error_b = _render_region_slot("B", settings, existing)
@@ -303,8 +370,8 @@ def _render_sidebar(
                 st.session_state["monitoring_bboxes"] = bboxes
                 if region_changed:
                     st.warning(
-                        "Monitoring regions changed. The previous live session "
-                        "will be discarded when the new subscription is collected."
+                        "Monitoring regions changed. The previous session is retained as historical "
+                        "in-memory observations; the new subscription will use the updated regions."
                     )
             else:
                 st.error(region_error)
@@ -320,7 +387,7 @@ def _render_sidebar(
         conn_upper = str(conn).upper()
         if conn_upper in {"LIVE AIS", "LIVE"}:
             pill_cls = "status-live"
-        elif "CONNECT" in conn_upper:
+        elif "CONNECT" in conn_upper or conn_upper in {"DEGRADED", "RECONNECTING"}:
             pill_cls = "status-connecting"
         else:
             pill_cls = "status-disconnected"
@@ -333,9 +400,14 @@ def _render_sidebar(
             unsafe_allow_html=True,
         )
 
-        can_collect = settings.config_error is None
+        can_collect = settings.validate_for_connection()[0]
+        worker_status = engine.live_worker.status()
+        worker_state = worker_status.state
+        live_active = worker_status.thread_alive or worker_state not in {"STOPPED", "ERROR"}
         collect = False
         clear = False
+        start_live = False
+        stop_live = False
         with mission_placeholder.container():
             with st.expander("MISSION CONTEXT", expanded=False):
                 duration_options = list(COLLECTION_DURATION_OPTIONS)
@@ -360,14 +432,33 @@ def _render_sidebar(
                         collection_seconds=float(selected_duration),
                     )
 
-                can_collect = settings.config_error is None
+                can_collect = settings.validate_for_connection()[0]
+                live_col, stop_col = st.columns(2)
+                with live_col:
+                    start_live = st.button(
+                        "Start Live AIS",
+                        width="stretch",
+                        type="primary",
+                        disabled=not can_collect or live_active,
+                        help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
+                    )
+                with stop_col:
+                    stop_live = st.button(
+                        "Stop Live AIS",
+                        width="stretch",
+                        disabled=not live_active,
+                    )
                 collect = st.button(
-                    "Collect Real AIS · 2 Regions",
+                    "Collect Finite AIS Window",
                     width="stretch",
-                    type="primary",
-                    disabled=not can_collect,
+                    disabled=not can_collect or live_active,
+                    help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
                 )
-                clear = st.button("Clear Session", width="stretch")
+                clear = st.button(
+                    "Clear Shared Session",
+                    width="stretch",
+                    help="Clears the process-wide in-memory MIE session for all connected users.",
+                )
 
         module = st.session_state.get("workspace_module", "Overview")
         if module not in NAVIGATION:
@@ -379,7 +470,7 @@ def _render_sidebar(
             if page not in views:
                 page = views[0]
 
-    return settings, page, collect, clear, region_changed
+    return settings, page, collect, clear, region_changed, start_live, stop_live
 
 
 def _render_collection_timer(seconds: float) -> None:
@@ -436,26 +527,56 @@ def main() -> None:
             ),
         )
 
-    settings, page, collect, clear, region_changed = _render_sidebar(settings)
+    settings, page, collect, clear, region_changed, start_live, stop_live = _render_sidebar(settings)
     engine = _engine_for(settings)
 
     if region_changed:
         notice(
-            "Monitoring regions changed. Run Collect Real AIS · 2 Regions "
-            "to open the new single AISStream subscription."
+            "Monitoring regions changed. Start Live AIS or run a finite collection "
+            "to open the new process-local AISStream subscription."
         )
 
-    if clear:
-        engine.clear_session_data()
-        for key in (
-            "selected_mmsi",
-            "selected_mmsi_a",
-            "selected_mmsi_b",
-            "selected_mmsi_unified",
-        ):
-            st.session_state.pop(key, None)
-        st.session_state.pop("monitoring_bboxes", None)
+    if start_live:
+        started = engine.start_live_monitoring()
+        if started:
+            st.session_state["live_monitoring_result"] = ("success", "Continuous AIS monitoring started.")
+        else:
+            st.session_state["live_monitoring_result"] = ("info", "Continuous AIS monitoring is already active.")
         st.rerun()
+
+    if stop_live:
+        stopped = engine.stop_live_monitoring()
+        st.session_state["live_monitoring_result"] = (
+            "success" if stopped else "warning",
+            "Continuous AIS monitoring stopped." if stopped else "Worker did not stop before timeout.",
+        )
+        st.rerun()
+
+    live_result = st.session_state.pop("live_monitoring_result", None)
+    if live_result:
+        result_type, result_message = live_result
+        if result_type == "success":
+            st.success(result_message)
+        elif result_type == "warning":
+            st.warning(result_message)
+        else:
+            st.info(result_message)
+
+    if clear:
+        try:
+            engine.clear_session_data()
+        except RuntimeError as exc:
+            st.error(f"Session clear blocked: {exc}")
+        else:
+            for key in (
+                "selected_mmsi",
+                "selected_mmsi_a",
+                "selected_mmsi_b",
+                "selected_mmsi_unified",
+            ):
+                st.session_state.pop(key, None)
+            st.session_state.pop("monitoring_bboxes", None)
+            st.rerun()
 
     # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
     collection_result = st.session_state.pop("collection_result", None)
@@ -487,55 +608,67 @@ def main() -> None:
         else:
             st.warning(result_message)
 
-    snapshot = engine.snapshot()
-    if snapshot.last_collection_breakdown:
-        with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
-            breakdown = snapshot.last_collection_breakdown
-            diagnostic_rows = (
-                ("AIS stream", "ais_stream"),
-                ("Historical restore", "historical_restore"),
-                ("Postgres persist", "postgres_persist"),
-                ("Region persistence", "region_persist"),
-                ("Environmental", "environmental"),
-                ("Recompute / ML", "recompute"),
-                ("Findings", "findings"),
-                ("Total", "total"),
-            )
-            for label, key in diagnostic_rows:
-                st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
-    render_header(snapshot.status, page)
-
-    if page != "Overview":
-        render_aux_workspace_controls(engine, settings, st.columns(3))
-
-    if snapshot.status.state != "LIVE AIS":
-        status_type = (
-            "red"
-            if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE"}
-            else ""
+    @st.fragment(run_every="2s")
+    def render_live_workspace() -> None:
+        """Refresh the active operational page while the process worker ingests AIS."""
+        active_engine = _process_engine_registry().current_engine() or engine
+        active_settings = _with_settings(
+            settings,
+            bboxes=active_engine.settings.monitoring_bboxes,
+            bbox=active_engine.settings.bbox,
+            config_error=active_engine.settings.config_error,
         )
-        notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
+        snapshot = active_engine.snapshot()
+        if page != "Overview":
+            render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
+        if snapshot.last_collection_breakdown:
+            with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
+                breakdown = snapshot.last_collection_breakdown
+                diagnostic_rows = (
+                    ("AIS stream", "ais_stream"),
+                    ("Historical restore", "historical_restore"),
+                    ("Postgres persist", "postgres_persist"),
+                    ("Region persistence", "region_persist"),
+                    ("Environmental", "environmental"),
+                    ("Recompute / ML", "recompute"),
+                    ("Findings", "findings"),
+                    ("Diagnostic overhead", "diagnostic_overhead"),
+                    ("Total", "total"),
+                )
+                for label, key in diagnostic_rows:
+                    st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
+        render_header(snapshot.status, page)
 
-    if page == "Overview":
-        render_overview(engine, snapshot, settings)
-    elif page == "Fleet":
-        render_vessels(engine, snapshot, settings)
-    elif page == "Vessel Intelligence":
-        render_vessel_intelligence(engine, snapshot, settings)
-    elif page == "Trajectory Analysis":
-        render_trajectory_analysis(engine, snapshot, settings)
-    elif page == "Behavior":
-        render_behavior(engine, snapshot, settings)
-    elif page == "Similarity":
-        render_similarity(engine, snapshot, settings)
-    elif page == "Anomalies":
-        render_anomalies(engine, snapshot, settings)
-    elif page == "Traffic":
-        render_traffic(engine, snapshot, settings)
-    elif page == "Data Quality":
-        render_data_quality(engine, snapshot, settings)
-    elif page == "System":
-        render_system(engine, snapshot, settings)
+        if snapshot.status.state != "LIVE AIS":
+            status_type = (
+                "red"
+                if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE", "ERROR"}
+                else ""
+            )
+            notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
+
+        if page == "Overview":
+            render_overview(active_engine, snapshot, active_settings)
+        elif page == "Fleet":
+            render_vessels(active_engine, snapshot, active_settings)
+        elif page == "Vessel Intelligence":
+            render_vessel_intelligence(active_engine, snapshot, active_settings)
+        elif page == "Trajectory Analysis":
+            render_trajectory_analysis(active_engine, snapshot, active_settings)
+        elif page == "Behavior":
+            render_behavior(active_engine, snapshot, active_settings)
+        elif page == "Similarity":
+            render_similarity(active_engine, snapshot, active_settings)
+        elif page == "Anomalies":
+            render_anomalies(active_engine, snapshot, active_settings)
+        elif page == "Traffic":
+            render_traffic(active_engine, snapshot, active_settings)
+        elif page == "Data Quality":
+            render_data_quality(active_engine, snapshot, active_settings)
+        elif page == "System":
+            render_system(active_engine, snapshot, active_settings)
+
+    render_live_workspace()
 
 
 if __name__ == "__main__":

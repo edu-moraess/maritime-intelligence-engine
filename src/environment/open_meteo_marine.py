@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import socket
 from abc import ABC, abstractmethod
+from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -100,6 +102,21 @@ class OpenMeteoMarineProvider(EnvironmentalProvider):
             ocean_current_direction_deg=_number(current.get("ocean_current_direction")),
             sea_surface_temperature_c=_number(current.get("sea_surface_temperature")),
         )
+
+
+def classify_environmental_failure(exc: Exception) -> str:
+    """Classify provider failures without conflating network and payload errors."""
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "TIMEOUT"
+    if isinstance(exc, HTTPError):
+        return "HTTP_ERROR"
+    if isinstance(exc, URLError):
+        return "NETWORK_ERROR"
+    if isinstance(exc, (ValueError, TypeError, KeyError, json.JSONDecodeError)):
+        return "INVALID_RESPONSE"
+    if isinstance(exc, OSError):
+        return "NETWORK_ERROR"
+    return "PROVIDER_ERROR"
 
 
 def _number(value: object) -> float | None:
