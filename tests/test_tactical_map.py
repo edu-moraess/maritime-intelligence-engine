@@ -253,4 +253,3 @@ def test_visible_track_count_uses_only_current_map_targets():
     ]
 
     assert visible_track_count(rows, observations) == 1
-
