@@ -523,16 +523,20 @@ def main() -> None:
             st.info(result_message)
 
     if clear:
-        engine.clear_session_data()
-        for key in (
-            "selected_mmsi",
-            "selected_mmsi_a",
-            "selected_mmsi_b",
-            "selected_mmsi_unified",
-        ):
-            st.session_state.pop(key, None)
-        st.session_state.pop("monitoring_bboxes", None)
-        st.rerun()
+        try:
+            engine.clear_session_data()
+        except RuntimeError as exc:
+            st.error(f"Session clear blocked: {exc}")
+        else:
+            for key in (
+                "selected_mmsi",
+                "selected_mmsi_a",
+                "selected_mmsi_b",
+                "selected_mmsi_unified",
+            ):
+                st.session_state.pop(key, None)
+            st.session_state.pop("monitoring_bboxes", None)
+            st.rerun()
 
     # The sidebar is rendered before collection; completion must trigger a rerun so its state refreshes.
     collection_result = st.session_state.pop("collection_result", None)
