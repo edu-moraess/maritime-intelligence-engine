@@ -83,21 +83,16 @@ def anomaly_mmsi_sets(findings):
         mmsi = str(getattr(finding, "mmsi", "") or "")
         if not mmsi: continue
         anomaly.add(mmsi)
-        try:
-            raw_score = getattr(finding, "score", None)
-            score = float(raw_score) if raw_score is not None else None
-        except (TypeError, ValueError):
-            score = None
         if "critical" in str(getattr(finding, "category", "") or "").lower():
             critical.add(mmsi)
     return anomaly, critical
 
 def vessel_type_family(ship_type):
     try: code = int(ship_type)
-    except (TypeError, ValueError): return "DEFAULT"
+    except (TypeError, ValueError): return "UNSPECIFIED"
     for family, codes in SHIP_TYPE_LABELS.items():
         if code in codes: return family
-    return "DEFAULT"
+    return "UNSPECIFIED"
 
 def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG, ship_type=None):
     if course_deg is None:
@@ -106,7 +101,7 @@ def ship_polygon(lat, lon, course_deg, *, scale_deg=SHIP_SCALE_DEG, ship_type=No
     c, s = cos(angle), sin(angle)
     lon_scale = max(0.1, cos(radians(lat)))
     ring = []
-    for x, y in _SHIP_HULLS[vessel_type_family(ship_type)]:
+    for x, y in _SHIP_HULLS.get(vessel_type_family(ship_type), _SHIP_HULLS["DEFAULT"]):
         east = (x * c + y * s) * scale_deg
         north = (-x * s + y * c) * scale_deg
         ring.append([max(-180.0, min(180.0, lon + east / lon_scale)), max(-90.0, min(90.0, lat + north))])
