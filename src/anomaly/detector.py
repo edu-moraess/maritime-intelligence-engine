@@ -143,7 +143,7 @@ def detect_anomalies(
                         ),
                         latitude=float(row.latitude),
                         longitude=float(row.longitude),
-                        score=round(min(0.99, score), 3),
+                        score=round(min(1.0, max(0.0, score)), 3),
                         category=category,
                         confidence=None,
                         explanation=explanation,
@@ -251,21 +251,6 @@ def _ais_second(value: object) -> int | None:
         if np.isfinite(number) and number.is_integer()
         else None
     )
-
-
-def vessel_normality_score(
-    findings: list[AnomalyFinding],
-    mmsi: str,
-) -> float | None:
-    vessel_findings = [
-        finding.score
-        for finding in findings
-        if finding.mmsi == mmsi and finding.score is not None
-        and np.isfinite(finding.score)
-    ]
-    if not vessel_findings:
-        return None
-    return round(max(0.0, 1.0 - max(vessel_findings)), 3)
 
 
 def summarize_category(
