@@ -177,7 +177,7 @@ def _split_track_on_gaps(
     for obs in cleaned[1:]:
         previous = segments[-1][-1]
         gap = (obs.received_at - previous.received_at).total_seconds()
-        if gap > threshold:
+        if gap <= 0.0 or gap > threshold:
             segments.append([obs])
         else:
             segments[-1].append(obs)
