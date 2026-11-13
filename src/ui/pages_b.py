@@ -40,8 +40,9 @@ def render_similarity(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapsh
 def render_anomalies(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Behavioral anomaly explorer")
     findings = snapshot.findings
+    max_rule_score = max((float(f.score) for f in findings), default=None)
     metric_strip({"FINDINGS": len(findings), "VESSELS": len({f.mmsi for f in findings}),
-                  "HIGH SCORE": f"{max((f.score for f in findings), default=0):.2f}"})
+                  "MAX RULE SCORE": f"{max_rule_score:.2f}" if max_rule_score is not None else "—"})
     if not findings:
         empty_state("Anomalies are calculated only from currently observed real AIS reports. No finding is fabricated when data is insufficient. "
                     "Collect real AIS data for longer or select a denser monitoring region if more history is required.",
@@ -161,7 +162,7 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
 def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
     st.subheader("Data quality")
     report = snapshot.quality
-    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%", "MESSAGES": f"{report.messages_processed:,}",
+    metric_strip({"QUALITY": f"{report.quality_percent:.1f}%" if report.quality_percent is not None else "N/A", "MESSAGES": f"{report.messages_processed:,}",
                   "INVALID": f"{report.invalid_records:,}", "DUPLICATES": f"{report.duplicate_records:,}",
                   "LAST UPDATE": _utc(snapshot.status.last_received_at)})
     st.write("")
