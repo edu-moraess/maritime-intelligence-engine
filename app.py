@@ -250,7 +250,7 @@ def _render_region_slot(
 
 def _render_sidebar(
     settings: AppSettings,
-) -> tuple[AppSettings, str, bool, bool, bool, bool, bool]:
+) -> tuple[AppSettings, str, bool, bool, bool, bool, bool, bool]:
     """Render mission and map controls in the sidebar."""
     region_changed = False
     active_settings = _process_engine_registry().current_settings()
@@ -536,14 +536,21 @@ def main() -> None:
             st.session_state.pop("monitoring_bboxes", None)
             st.rerun()
 
+    start_error = st.session_state.pop("finite_collection_start_error", None)
+    if start_error:
+        st.error(start_error)
     if collect:
         try:
             started = engine.start_finite_collection(settings.collection_seconds)
         except (RuntimeError, ValueError) as exc:
-            st.error(f"Finite collection could not start: {exc}")
+            st.session_state["finite_collection_start_error"] = (
+                f"Finite collection could not start: {exc}"
+            )
         else:
             if not started:
-                st.info("A finite AIS collection is already running.")
+                st.session_state["finite_collection_start_error"] = (
+                    "A finite AIS collection is already running."
+                )
         st.rerun()
 
     @st.fragment(run_every="2s")
@@ -562,7 +569,7 @@ def main() -> None:
             st.info(
                 "FINITE AIS COLLECTION RUNNING · "
                 f"{finite_status['elapsed_seconds']:.0f}s elapsed · "
-                f"{finite_status['received']} reports finalized so far"
+                "waiting for real AIS reports; final count appears at completion"
             )
         elif finite_status["state"] == "COMPLETED":
             received = int(finite_status["received"])
