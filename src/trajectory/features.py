@@ -101,8 +101,9 @@ def summarize_track(observations: Iterable[AISObservation]) -> TrajectorySummary
 def trajectory_vector(observations: Iterable[AISObservation], length: int = 32) -> np.ndarray | None:
     """Encode only an exact window of complete, observed AIS rows.
 
-    No missing-value filling, temporal interpolation, or synthetic padding is
-    permitted. Tracks without enough complete source reports are not embedded.
+    No missing-value filling, temporal interpolation, gap-spanning, or synthetic
+    padding is permitted. Tracks without enough contiguous complete source
+    reports are not embedded.
     """
     if length < 2:
         raise ValueError("length must be >= 2")
@@ -112,6 +113,15 @@ def trajectory_vector(observations: Iterable[AISObservation], length: int = 32) 
     )
     columns = ["latitude", "longitude", "sog_knots", "cog_degrees"]
     if len(frame) < length or any(column not in frame for column in columns):
+        return None
+    gaps = frame["received_at"].diff().dt.total_seconds()
+    breaks = [
+        index for index, gap in enumerate(gaps)
+        if index > 0 and (not np.isfinite(gap) or gap <= 0.0 or gap > 900.0)
+    ]
+    if breaks:
+        frame = frame.iloc[breaks[-1]:]
+    if len(frame) < length:
         return None
     values = frame[columns].tail(length).to_numpy(dtype=float)
     if not np.isfinite(values).all():
