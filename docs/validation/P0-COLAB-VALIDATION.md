@@ -2,7 +2,7 @@
 
 - Repository: `edu-moraess/vyra-maritime-intell`
 - Branch: `feat/mie-p0-operational-reliability`
-- Expected implementation commit: `104e7e99b8628a468472d4546a0d31e08db16010`
+- The Colab cell verifies the cloned commit against the remote branch head at execution time.
 - Baseline: `5bbe456f657bd4524e71937cf73da420db4f0898`
 
 Run the following as **one Colab cell**. It creates a separate checkout and does not overwrite the existing `/content/mie_recovery` working directory.
@@ -14,8 +14,11 @@ import sys
 
 REPO_URL = "https://github.com/edu-moraess/vyra-maritime-intell.git"
 BRANCH = "feat/mie-p0-operational-reliability"
-EXPECTED_HEAD = "104e7e99b8628a468472d4546a0d31e08db16010"
 WORKDIR = Path("/content/mie_p0_validation")
+REMOTE_HEAD = subprocess.check_output(
+    ["git", "ls-remote", REPO_URL, f"refs/heads/{BRANCH}"],
+    text=True,
+).split()[0]
 
 if WORKDIR.exists():
     raise RuntimeError(
