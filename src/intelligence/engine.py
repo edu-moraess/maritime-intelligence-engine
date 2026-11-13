@@ -787,10 +787,15 @@ class MaritimeIntelligenceEngine:
             # stop_live_monitoring drains the worker queue before finalizing.
             self.sync_live_ingestion()
 
+        all_in_memory = self.store.all()
         valid_current = [
             observation for observation in self.current_session_observations
             if not validate_observation(observation)
         ]
+        if all_in_memory and not self.current_session_observations and not self._historical_loaded:
+            raise RuntimeError(
+                "Clear Session blocked: in-memory observations have no verified historical origin."
+            )
         if valid_current:
             result = self.historical_result
             covered = (
