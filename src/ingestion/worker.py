@@ -175,6 +175,7 @@ class AISIngestionWorker:
                         with self._lock:
                             self._dropped_messages += 1
                             self._state = "DEGRADED"
+                            self._last_error = "Ingestion queue is full; one or more AIS observations were dropped."
                     with self._lock:
                         self._messages_received += 1
                         self._last_message_at = observation.received_at
