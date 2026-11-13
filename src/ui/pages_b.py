@@ -176,7 +176,7 @@ def render_data_quality(engine: MaritimeIntelligenceEngine, snapshot: EngineSnap
     with right:
         if report.messages_processed == 0:
             empty_state("Quality metrics will populate after real AIS messages are received.", "NO REAL AIS OBSERVATIONS")
-        elif report.quality_percent >= 95:
+        elif report.quality_percent is not None and report.quality_percent >= 95:
             notice("Data quality is within the operational review threshold for this session.", "green")
         else:
             notice("Data quality requires operator review before using downstream behavioral analysis.", "red")
