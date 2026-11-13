@@ -48,7 +48,6 @@ class AISIngestionWorker:
         max_retry_delay_seconds: float = 8.0,
         live_timeout_seconds: float = 30.0,
         clock: Callable[[], datetime] | None = None,
-        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if queue_capacity < 1:
             raise ValueError("queue_capacity must be >= 1")
@@ -62,7 +61,6 @@ class AISIngestionWorker:
         self._max_retry_delay = max_retry_delay_seconds
         self._live_timeout = live_timeout_seconds
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        self._sleep = sleep
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
