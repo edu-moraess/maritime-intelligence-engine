@@ -27,7 +27,7 @@ def traffic_summary(
         "unique_vessels": len({observation.mmsi for observation in observations}),
         "messages": len(observations),
         "speed_sample_count": len(speeds),
-        "average_speed_knots": round(sum(speeds) / len(speeds), 2) if speeds else 0.0,
+        "average_speed_knots": round(sum(speeds) / len(speeds), 2) if speeds else None,
         "anomalies": len(findings),
         "anomaly_vessels": len(anomaly_vessels),
         "stale_vessels": len(vessels) - len(fresh_vessels),
