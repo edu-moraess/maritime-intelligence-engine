@@ -139,7 +139,7 @@ def test_temporal_failure_does_not_break_classical(monkeypatch):
 
 @pytest.mark.skipif(not torch_available(), reason="no torch")
 def test_trainer_direct_defaults_to_tcn():
-    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 8, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
+    tracks = {f"3682076{i:02d}": _track(f"3682076{i:02d}", 9, 25 + i * 0.02) for i in range(MINIMUM_TRACKS_FOR_DEEP_MODEL)}
     seqs = build_temporal_sequences(tracks, sequence_length=8, minimum_points=8)
     tr = TemporalTrainer(TrainingConfig(max_training_seconds=3.0, seed=42)).train(seqs)
     assert len(seqs) >= MINIMUM_TRACKS_FOR_DEEP_MODEL and tr.ok and tr.model_state is not None
