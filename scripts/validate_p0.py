@@ -30,6 +30,15 @@ P0_TESTS = (
 
 
 def main() -> int:
+    base_sha = "5bbe456f657bd4524e71937cf73da420db4f0898"
+    print("[P0] Checking patch whitespace and merge markers ...", flush=True)
+    import subprocess
+    subprocess.run(
+        ["git", "diff", "--check", base_sha, "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+
     print("[P0] Compiling app.py, src/, and tests/ ...", flush=True)
     if not compileall.compile_file("app.py", quiet=1):
         print("[P0] FAIL: app.py compilation failed.", flush=True)
