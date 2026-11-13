@@ -91,4 +91,4 @@ Impact:
 
 Baseline source audit: COMPLETE.
 Runtime baseline: NOT RUN.
-P0 implementation: NOT STARTED in this checkpoint.
+P0 implementation: PARTIAL — isolated worker primitive and deterministic tests added; not yet integrated into engine/Streamlit runtime.
