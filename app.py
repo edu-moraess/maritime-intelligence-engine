@@ -54,69 +54,6 @@ st.set_page_config(
 
 inject_css()
 
-# Keep the native Streamlit sidebar as the widget host, but turn it into an
-# overlay drawer so opening it does not permanently consume workspace width.
-# The native collapse control remains responsible for opening/closing it.
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {
-        position: fixed !important;
-        top: 0 !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        z-index: 1000000 !important;
-        width: min(22rem, 88vw) !important;
-        box-shadow: 14px 0 36px rgba(0, 0, 0, .32);
-        border-right: 1px solid var(--line) !important;
-        transition: transform .22s ease, box-shadow .22s ease;
-    }
-
-    [data-testid="stSidebar"] > div:first-child {
-        width: 100% !important;
-    }
-
-    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        padding-top: .7rem;
-    }
-
-    /* Streamlit hides the sidebar through its own state classes/attributes.
-       These rules prevent the hidden state from leaving a dead visual rail. */
-    [data-testid="stSidebar"][aria-expanded="false"] {
-        width: 0 !important;
-        min-width: 0 !important;
-        transform: translateX(-100%);
-        box-shadow: none;
-        border-right: 0 !important;
-        overflow: hidden;
-    }
-
-    [data-testid="stSidebar"][aria-expanded="false"] > div:first-child {
-        width: 0 !important;
-        min-width: 0 !important;
-    }
-
-    /* Main workspace remains full-width; the drawer overlays it instead of
-       pushing content sideways. */
-    [data-testid="stAppViewContainer"] > .main {
-        margin-left: 0 !important;
-    }
-
-    [data-testid="stSidebar"] button[kind="headerNoPadding"] {
-        margin-left: .15rem;
-    }
-
-    @media (max-width: 760px) {
-        [data-testid="stSidebar"] {
-            width: min(19rem, 92vw) !important;
-        }
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
 def _read_settings() -> AppSettings:
     """Load runtime settings from Streamlit secrets/environment."""
     try:
@@ -326,7 +263,6 @@ def _render_sidebar(
         )
     with st.sidebar:
         connection_placeholder = st.empty()
-        mission_placeholder = st.empty()
 
         existing = list(settings.monitoring_bboxes) or [settings.bbox]
         if len(existing) == 1:
@@ -408,57 +344,59 @@ def _render_sidebar(
         clear = False
         start_live = False
         stop_live = False
-        with mission_placeholder.container():
-            with st.expander("MISSION CONTEXT", expanded=False):
-                duration_options = list(COLLECTION_DURATION_OPTIONS)
-                duration_index = min(
-                    range(len(duration_options)),
-                    key=lambda i: abs(
-                        duration_options[i] - settings.collection_seconds
-                    ),
-                )
-                st.selectbox(
-                    "Collection duration",
-                    duration_options,
-                    index=duration_index,
-                    format_func=lambda seconds: f"Collection duration · {seconds} s",
-                    key="collection_duration_seconds",
-                    label_visibility="collapsed",
-                )
-                selected_duration = st.session_state["collection_duration_seconds"]
-                if float(selected_duration) != settings.collection_seconds:
-                    settings = _with_settings(
-                        settings,
-                        collection_seconds=float(selected_duration),
-                    )
+        st.markdown(
+            "<div class='side-section-title'>MISSION CONTEXT</div>",
+            unsafe_allow_html=True,
+        )
+        duration_options = list(COLLECTION_DURATION_OPTIONS)
+        duration_index = min(
+            range(len(duration_options)),
+            key=lambda i: abs(
+                duration_options[i] - settings.collection_seconds
+            ),
+        )
+        st.selectbox(
+            "Collection duration",
+            duration_options,
+            index=duration_index,
+            format_func=lambda seconds: f"Collection duration · {seconds} s",
+            key="collection_duration_seconds",
+            label_visibility="collapsed",
+        )
+        selected_duration = st.session_state["collection_duration_seconds"]
+        if float(selected_duration) != settings.collection_seconds:
+            settings = _with_settings(
+                settings,
+                collection_seconds=float(selected_duration),
+            )
 
-                can_collect = settings.validate_for_connection()[0]
-                live_col, stop_col = st.columns(2)
-                with live_col:
-                    start_live = st.button(
-                        "Start Live AIS",
-                        width="stretch",
-                        type="primary",
-                        disabled=not can_collect or live_active,
-                        help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
-                    )
-                with stop_col:
-                    stop_live = st.button(
-                        "Stop Live AIS",
-                        width="stretch",
-                        disabled=not live_active,
-                    )
-                collect = st.button(
-                    "Collect Finite AIS Window",
-                    width="stretch",
-                    disabled=not can_collect or live_active,
-                    help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
-                )
-                clear = st.button(
-                    "Clear Shared Session",
-                    width="stretch",
-                    help="Clears the process-wide in-memory MIE session for all connected users.",
-                )
+        can_collect = settings.validate_for_connection()[0]
+        live_col, stop_col = st.columns(2)
+        with live_col:
+            start_live = st.button(
+                "Start Live AIS",
+                width="stretch",
+                type="primary",
+                disabled=not can_collect or live_active,
+                help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
+            )
+        with stop_col:
+            stop_live = st.button(
+                "Stop Live AIS",
+                width="stretch",
+                disabled=not live_active,
+            )
+        collect = st.button(
+            "Collect Finite AIS Window",
+            width="stretch",
+            disabled=not can_collect or live_active,
+            help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
+        )
+        clear = st.button(
+            "Clear Shared Session",
+            width="stretch",
+            help="Clears the process-wide in-memory MIE session for all connected users.",
+        )
 
         module = st.session_state.get("workspace_module", "Overview")
         if module not in NAVIGATION:
