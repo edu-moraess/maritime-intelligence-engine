@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import compileall
+import os
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ P0_TESTS = (
 
 
 def main() -> int:
+    os.chdir(REPO_ROOT)
     base_sha = "5bbe456f657bd4524e71937cf73da420db4f0898"
     print("[P0] Checking patch whitespace and merge markers ...", flush=True)
     import subprocess
