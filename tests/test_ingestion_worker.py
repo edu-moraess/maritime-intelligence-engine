@@ -262,4 +262,3 @@ def test_worker_reset_discards_pending_queue_and_clears_telemetry():
     assert status.queue_depth == 0
     assert status.messages_received == 0
     assert status.thread_alive is False
-
