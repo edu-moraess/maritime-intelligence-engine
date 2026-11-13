@@ -210,7 +210,7 @@ class MaritimeIntelligenceEngine:
                 stop_event.set()
                 break
         stop_event.set()
-        collection_elapsed = min(duration, max(0.0, time.monotonic() - started))
+        collection_elapsed = max(0.0, time.monotonic() - started)
         self.last_collection_seconds = collection_elapsed
         ended_at = datetime.now(timezone.utc)
         breakdown: dict[str, float] = {"ais_stream": collection_elapsed}
@@ -341,11 +341,20 @@ class MaritimeIntelligenceEngine:
             return True
         stopped = worker.stop(timeout=timeout)
         self.sync_live_ingestion()
+        if not stopped:
+            return False
+
         ended_at = datetime.now(timezone.utc)
-        if self._live_started_at is not None and self.current_session_observations:
-            started_at = self._live_started_at
+        started_at = self._live_started_at or ended_at
+        started_monotonic = self._live_started_monotonic or time.monotonic()
+        breakdown: dict[str, float] = {
+            "ais_stream": max(0.0, time.monotonic() - started_monotonic),
+            "historical_restore": 0.0,
+        }
+
+        if self.current_session_observations:
+            phase_started = time.monotonic()
             elapsed = max(0.0, (ended_at - started_at).total_seconds())
-            self.last_collection_seconds = elapsed
             self.historical_result = self.historical_writer.persist_collection(
                 list(self.current_session_observations),
                 self.settings.bbox,
@@ -353,6 +362,9 @@ class MaritimeIntelligenceEngine:
                 started_at,
                 ended_at,
             )
+            breakdown["postgres_persist"] = time.monotonic() - phase_started
+
+            phase_started = time.monotonic()
             if (
                 self.historical_result.session_id is not None
                 and self._historical_persistence_enabled
@@ -371,13 +383,35 @@ class MaritimeIntelligenceEngine:
                             "Exact multi-region session provenance could not be persisted."
                         ),
                     )
+            breakdown["region_persist"] = time.monotonic() - phase_started
+        else:
+            self.historical_result = None
+            breakdown["postgres_persist"] = 0.0
+            breakdown["region_persist"] = 0.0
+
+        phase_started = time.monotonic()
+        self._refresh_environmental_contexts()
+        breakdown["environmental"] = time.monotonic() - phase_started
+
+        phase_started = time.monotonic()
+        self._recompute()
+        breakdown["recompute"] = time.monotonic() - phase_started
+
+        phase_started = time.monotonic()
+        self.current_session_findings = self._detect_current_session_findings()
+        breakdown["findings"] = time.monotonic() - phase_started
+
+        total_elapsed = time.monotonic() - started_monotonic
+        accounted = sum(value for key, value in breakdown.items() if key != "total")
+        breakdown["diagnostic_overhead"] = max(0.0, total_elapsed - accounted)
+        breakdown["total"] = total_elapsed
+        self.last_collection_seconds = total_elapsed
+        self.last_collection_breakdown = breakdown
+
         self._live_started_at = None
         self._live_started_monotonic = None
         self._live_last_recompute_monotonic = 0.0
-        self._refresh_environmental_contexts()
-        self._recompute()
-        self.current_session_findings = self._detect_current_session_findings()
-        return stopped
+        return True
 
     @_synchronized
     def _refresh_environmental_contexts(self) -> None:
