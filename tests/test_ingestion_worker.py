@@ -139,3 +139,47 @@ def test_live_health_expires_when_no_new_position_reports_arrive():
     now[0] = now[0] + timedelta(seconds=31)
     assert worker.status().state == "DEGRADED"
     assert worker.stop(timeout=1.0)
+
+def test_engine_drains_live_worker_and_transitions_to_disconnected_on_stop(monkeypatch):
+    from src.config.settings import AppSettings, DEFAULT_BBOX
+    from src.intelligence.engine import MaritimeIntelligenceEngine
+
+    class _EngineProvider:
+        def stream(self, stop_event=None, duration_seconds=None, *, message_limit=None):
+            for mmsi in ("123456789", "123456788"):
+                if stop_event is not None and stop_event.is_set():
+                    return
+                yield AISObservation(
+                    mmsi=mmsi,
+                    latitude=1.0,
+                    longitude=2.0,
+                    received_at=datetime.now(timezone.utc),
+                )
+            while stop_event is not None and not stop_event.is_set():
+                time.sleep(0.005)
+
+    engine = MaritimeIntelligenceEngine(
+        AppSettings(aisstream_api_key="test-key", bbox=DEFAULT_BBOX)
+    )
+    provider = _EngineProvider()
+    engine.provider = provider
+    engine.live_worker = AISIngestionWorker(provider, queue_capacity=10)
+    engine._recompute = lambda: None
+    engine._detect_current_session_findings = lambda: []
+    engine._refresh_environmental_contexts = lambda: None
+
+    assert engine.start_live_monitoring() is True
+    deadline = time.monotonic() + 1.0
+    while engine.live_worker.status().messages_received < 2 and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+    live_snapshot = engine.snapshot()
+    assert live_snapshot.status.state == "LIVE AIS"
+    assert len(live_snapshot.current_session_observations) == 2
+    assert len(live_snapshot.vessels) == 2
+
+    assert engine.stop_live_monitoring(timeout=1.0) is True
+    stopped_snapshot = engine.snapshot()
+    assert stopped_snapshot.status.state == "DISCONNECTED"
+    assert stopped_snapshot.status.websocket_status == "CLOSED"
+
