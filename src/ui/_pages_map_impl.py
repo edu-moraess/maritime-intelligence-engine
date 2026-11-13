@@ -52,7 +52,8 @@ def _track_readiness_reason(module: str, current: int, required: int = 3) -> str
         f"{module} analysis requires {required} distinct vessels "
         "with at least 32 contiguous complete real AIS reports each "
         "(valid position, SOG, and COG). "
-        f"Current tracks with history: {current}/{required}. "
+        f"Current tracks with at least two reports: {current}; this is not yet "
+        "a count of eligible 32-report tracks. "
         "Collect real AIS data for longer or select a denser monitoring region."
     )
 
