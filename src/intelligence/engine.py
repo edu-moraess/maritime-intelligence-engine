@@ -613,16 +613,30 @@ class MaritimeIntelligenceEngine:
                     "ERROR": "ERROR",
                 }
                 mapped_state = state_map.get(worker_status.state, "DISCONNECTED")
+                if (
+                    worker_status.state == "LIVE"
+                    and provider_status.websocket_status != "OPEN"
+                ):
+                    mapped_state = "RECONNECTING"
                 reason = (
                     "Receiving recent real AIS PositionReports."
                     if mapped_state == "LIVE AIS"
-                    else provider_status.reason if mapped_state == "DISCONNECTED"
-                    else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
+                    else (
+                        provider_status.last_error or "AISStream connection lost; reconnecting."
+                        if mapped_state == "RECONNECTING"
+                        else provider_status.reason if mapped_state == "DISCONNECTED"
+                        else worker_status.last_error or f"AIS ingestion worker state: {worker_status.state}."
+                    )
                 )
                 provider_status = replace(
                     provider_status,
                     state=mapped_state,
                     reason=reason,
+                    websocket_status=(
+                        "RECONNECTING"
+                        if mapped_state == "RECONNECTING"
+                        else provider_status.websocket_status
+                    ),
                     reconnect_attempts=provider_status.reconnect_attempts,
                     last_error=provider_status.last_error or worker_status.last_error,
                     queue_depth=worker_status.queue_depth,
