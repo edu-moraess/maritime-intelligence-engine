@@ -65,7 +65,7 @@ def render_traffic(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot,
     st.subheader("Traffic analytics")
     summary = snapshot.summary
     metric_strip({"ACTIVE VESSELS": summary["active_vessels"], "MESSAGES": f"{summary['messages']:,}",
-                  "AVG SPEED": f"{summary['average_speed_knots']:.1f} kn", "REGIONS": summary["regions"],
+                  "AVG SPEED": (f"{summary['average_speed_knots']:.1f} kn" if summary["average_speed_knots"] is not None else "N/A"), "REGIONS": summary["regions"],
                   "ANOMALIES": summary["anomalies"]})
     session_observations = snapshot.current_session_observations
     if not session_observations:
