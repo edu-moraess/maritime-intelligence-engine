@@ -16,7 +16,7 @@ from src.anomaly.detector import detect_anomalies
 from src.config.settings import AppSettings
 from src.ingestion.aisstream import AISStreamProvider
 from src.environment.context import EnvironmentalContext
-from src.environment.open_meteo_marine import OpenMeteoMarineProvider
+from src.environment.open_meteo_marine import OpenMeteoMarineProvider, classify_environmental_failure
 from src.historical import HistoricalWriteResult, create_historical_writer
 from src.historical.reader import load_recent_observations, load_recent_observations_for_bboxes
 from src.historical.session_regions import persist_collection_session_regions
@@ -395,8 +395,13 @@ class MaritimeIntelligenceEngine:
                         )[-2:]
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                context = EnvironmentalContext(
+                    region=region,
+                    failure_code=classify_environmental_failure(exc),
+                    failure_reason=f"{exc.__class__.__name__}: {str(exc)[:200]}",
+                    attempted_at=datetime.now(timezone.utc),
+                )
             contexts[region] = context
         self.environmental_contexts = contexts
     def _current_session_tracks(self) -> dict[str, list[AISObservation]]:
