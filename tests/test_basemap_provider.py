@@ -10,6 +10,7 @@ def test_nautical_chart_uses_maplibre_and_standalone_renderer():
     assert 'map_projection = "mercator"' in RENDER_SOURCE
     assert 'components.html(deck.to_html(as_string=True)' in RENDER_SOURCE
     assert 'if map_provider == "maplibre"' in RENDER_SOURCE
+    assert 'show_error=(map_provider == "maplibre")' in RENDER_SOURCE
 
 
 def test_non_nautical_styles_keep_native_streamlit_pydeck_renderer():
