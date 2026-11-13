@@ -440,6 +440,7 @@ class MaritimeIntelligenceEngine:
                             key=lambda item: item.observed_at,
                         )[-2:]
                     ),
+                    attempted_at=observation.observed_at,
                 )
             except Exception as exc:
                 context = EnvironmentalContext(
