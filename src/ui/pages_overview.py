@@ -87,9 +87,9 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
         )
         include_stale = st.checkbox(
             "Include stale session targets",
-            value=False,
+            value=True,
             key="overview_include_stale",
-            help="Off keeps the operational map live-only. Session observations and temporal tracks are never deleted.",
+            help="Keeps last-known positions visible after the freshness threshold. Stale targets are visually distinct and show report age; they are not live positions.",
         )
         map_style = st.selectbox(
             "Basemap",
