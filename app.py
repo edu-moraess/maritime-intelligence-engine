@@ -263,6 +263,7 @@ def _render_sidebar(
         )
     with st.sidebar:
         connection_placeholder = st.empty()
+        mission_placeholder = st.empty()
 
         existing = list(settings.monitoring_bboxes) or [settings.bbox]
         if len(existing) == 1:
@@ -348,55 +349,57 @@ def _render_sidebar(
             "<div class='side-section-title'>MISSION CONTEXT</div>",
             unsafe_allow_html=True,
         )
-        duration_options = list(COLLECTION_DURATION_OPTIONS)
-        duration_index = min(
-            range(len(duration_options)),
-            key=lambda i: abs(
-                duration_options[i] - settings.collection_seconds
-            ),
-        )
-        st.selectbox(
-            "Collection duration",
-            duration_options,
-            index=duration_index,
-            format_func=lambda seconds: f"Collection duration · {seconds} s",
-            key="collection_duration_seconds",
-            label_visibility="collapsed",
-        )
-        selected_duration = st.session_state["collection_duration_seconds"]
-        if float(selected_duration) != settings.collection_seconds:
-            settings = _with_settings(
-                settings,
-                collection_seconds=float(selected_duration),
+        with mission_placeholder.container():
+            with st.expander("MISSION CONTEXT", expanded=True):
+            duration_options = list(COLLECTION_DURATION_OPTIONS)
+            duration_index = min(
+                range(len(duration_options)),
+                key=lambda i: abs(
+                    duration_options[i] - settings.collection_seconds
+                ),
             )
-
-        can_collect = settings.validate_for_connection()[0]
-        live_col, stop_col = st.columns(2)
-        with live_col:
-            start_live = st.button(
-                "Start Live AIS",
+            st.selectbox(
+                "Collection duration",
+                duration_options,
+                index=duration_index,
+                format_func=lambda seconds: f"Collection duration · {seconds} s",
+                key="collection_duration_seconds",
+                label_visibility="collapsed",
+            )
+            selected_duration = st.session_state["collection_duration_seconds"]
+            if float(selected_duration) != settings.collection_seconds:
+                settings = _with_settings(
+                    settings,
+                    collection_seconds=float(selected_duration),
+                )
+    
+            can_collect = settings.validate_for_connection()[0]
+            live_col, stop_col = st.columns(2)
+            with live_col:
+                start_live = st.button(
+                    "Start Live AIS",
+                    width="stretch",
+                    type="primary",
+                    disabled=not can_collect or live_active,
+                    help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
+                )
+            with stop_col:
+                stop_live = st.button(
+                    "Stop Live AIS",
+                    width="stretch",
+                    disabled=not live_active,
+                )
+            collect = st.button(
+                "Collect Finite AIS Window",
                 width="stretch",
-                type="primary",
                 disabled=not can_collect or live_active,
-                help="Starts one process-local continuous AIS subscription shared by MIE sessions.",
+                help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
             )
-        with stop_col:
-            stop_live = st.button(
-                "Stop Live AIS",
+            clear = st.button(
+                "Clear Shared Session",
                 width="stretch",
-                disabled=not live_active,
+                help="Clears the process-wide in-memory MIE session for all connected users.",
             )
-        collect = st.button(
-            "Collect Finite AIS Window",
-            width="stretch",
-            disabled=not can_collect or live_active,
-            help="Runs the existing bounded collection mode; unavailable while continuous monitoring is active.",
-        )
-        clear = st.button(
-            "Clear Shared Session",
-            width="stretch",
-            help="Clears the process-wide in-memory MIE session for all connected users.",
-        )
 
         module = st.session_state.get("workspace_module", "Overview")
         if module not in NAVIGATION:
