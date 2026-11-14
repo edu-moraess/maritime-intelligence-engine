@@ -528,16 +528,6 @@ def main() -> None:
         )
         st.rerun()
 
-    live_result = st.session_state.pop("live_monitoring_result", None)
-    if live_result:
-        result_type, result_message = live_result
-        if result_type == "success":
-            st.success(result_message)
-        elif result_type == "warning":
-            st.warning(result_message)
-        else:
-            st.info(result_message)
-
     if clear:
         try:
             engine.clear_session_data()
@@ -593,6 +583,15 @@ def main() -> None:
             )
             snapshot = active_engine.snapshot()
             render_header(snapshot.status, "Overview")
+            live_result = st.session_state.pop("live_monitoring_result", None)
+            if live_result:
+                result_type, result_message = live_result
+                if result_type == "success":
+                    st.success(result_message)
+                elif result_type == "warning":
+                    st.warning(result_message)
+                else:
+                    st.info(result_message)
             finite_status = active_engine.finite_collection_status()
             if finite_status["state"] == "RUNNING":
                 st.info(
@@ -693,6 +692,15 @@ def main() -> None:
 
 
         render_header(snapshot.status, active_page)
+        live_result = st.session_state.pop("live_monitoring_result", None)
+        if live_result:
+            result_type, result_message = live_result
+            if result_type == "success":
+                st.success(result_message)
+            elif result_type == "warning":
+                st.warning(result_message)
+            else:
+                st.info(result_message)
         finite_status = active_engine.finite_collection_status()
         if finite_status["state"] == "RUNNING":
             st.info(
