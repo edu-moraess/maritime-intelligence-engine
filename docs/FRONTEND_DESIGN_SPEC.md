@@ -401,3 +401,16 @@ Not changed:
 - Removed the top padding reserved for the native chrome.
 - No application controls, navigation, session state, data, or runtime behavior changed.
 - Visual confirmation in the deployed app remains pending.
+
+### UI follow-up — Restore Streamlit sidebar access
+
+**Code commit:** `5fe322c039d7a34eed51fcfa6a1f40a64af58ec0`  
+**File changed:** `src/ui/presentation.py`
+
+- Kept Streamlit's native header shell visible with a transparent background instead of hiding the entire header.
+- Explicitly preserved the sidebar expansion control using the supported test-id selectors for current/older Streamlit variants.
+- Continued hiding the nonessential toolbar, decoration/status widgets, Main Menu and footer.
+- Left the Streamlit Cloud app-management control untouched; this application CSS does not target it.
+- No engine, ingestion, session, navigation, data, persistence or database behavior changed.
+
+**Validation status:** GitHub source update committed. Automated tests, Python compilation, deployment and visual confirmation on Android remain pending.
