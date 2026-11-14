@@ -468,3 +468,21 @@ The mobile screenshot exposed a yellow/amber strip above the MIE identity. Sourc
 The mobile screenshot showed the green “Continuous AIS monitoring started” confirmation above the MIE command header. The message was consumed and rendered in `main()` before either timed workspace fragment rendered its header. The result is now consumed exactly once inside the active workspace fragment, immediately after `render_header()`. Both Overview and secondary workspaces follow the same order. The feedback remains visible; only its placement changed.
 
 **Validation:** GitHub source verification completed; deployed visual confirmation remains pending. No ingestion, worker, session, engine, or persistence behavior changed.
+
+
+### UI follow-up — Keep vessel selection stable during live AIS refresh
+
+**Scope:** presentation-layer selection state only.
+
+Source audit found that the shared vessel selector in `_pages_map_render.py` relied on an option-list index and had no explicit Streamlit widget key. The separate vessel-inspection selector had a key, but its widget state was not synchronized with the canonical `selected_mmsi` when selection changed elsewhere. Since vessel options can be reordered as new AIS reports arrive, the widget state could diverge from the intended target.
+
+**Correction:**
+- Added one stable key to the shared vessel selector.
+- Synchronized widget changes to the canonical `selected_mmsi` through a callback.
+- Seeded widget state from the canonical MMSI before widget creation, so map-driven selection is reflected when opening another vessel workspace.
+- Applied the same synchronization pattern to the vessel-inspection selector.
+- Kept the selected MMSI as the identity; option order is no longer used as the selection identity.
+
+**Preserved:** AIS ingestion, collection lifecycle, worker behavior, engine snapshots, vessel ordering, map layers, session identity/isolation, analytics, persistence and database contracts.
+
+**Validation status:** Source-level regression assertions added. Pytest, compileall, Colab execution, deployed behavior and Android visual validation have not yet been run. No runtime fix is claimed until those checks are completed.
