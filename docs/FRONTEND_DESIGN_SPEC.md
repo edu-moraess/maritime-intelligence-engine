@@ -460,3 +460,11 @@ The mobile screenshot exposed a yellow/amber strip above the MIE identity. Sourc
 **Validation:** GitHub source ordering verified; automated tests and deployed visual confirmation remain pending.
 
 **Follow-up correction:** commit `6789b5df78c0c6df19a6700db36a61b985ce1c1c` keeps active-page resolution ahead of header rendering in the secondary-page fragment. This preserves the current page label while ensuring the header precedes collection notices. Source order was re-read from the branch after this correction.
+
+### UI follow-up — Render live-monitoring feedback below the MIE header
+
+**Code commit:** `c0e402530f70db0891aa35b27b5ac1b82a9e3451`
+
+The mobile screenshot showed the green “Continuous AIS monitoring started” confirmation above the MIE command header. The message was consumed and rendered in `main()` before either timed workspace fragment rendered its header. The result is now consumed exactly once inside the active workspace fragment, immediately after `render_header()`. Both Overview and secondary workspaces follow the same order. The feedback remains visible; only its placement changed.
+
+**Validation:** GitHub source verification completed; deployed visual confirmation remains pending. No ingestion, worker, session, engine, or persistence behavior changed.
