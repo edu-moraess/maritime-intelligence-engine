@@ -442,3 +442,11 @@ The previous adjustment still hid Streamlit's toolbar and menu, which prevented 
 The mobile screenshot showed the first line of the MIE command identity clipped after restoring Streamlit's native header. Increased the top padding of the main Streamlit block container from `.75rem` to `1.5rem` so the application identity has breathing room below the native header. No header/sidebar controls or application behavior were changed.
 
 **Validation:** GitHub source update committed; deployed visual confirmation remains pending.
+
+### UI follow-up — Align ingestion status with page context
+
+**Code commit:** `f2921f9c345da0bfa0faa79b523b79284d725429`
+
+Adjusted the command-header layout so the MIE identity remains on its own first row, while the page context (for example, `OVERVIEW · MARITIME INTELLIGENCE`) and ingestion status/UTC clock share the following row. The status and clock remain visible; their spacing and clock font are compacted to suit the mobile viewport. No ingestion or status logic changed.
+
+**Validation:** Source committed; deployed visual confirmation remains pending.
