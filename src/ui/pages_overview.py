@@ -129,9 +129,8 @@ def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: App
     with st.container(key="workspace-controls"):
         columns = st.columns(4)
         map_values = _render_map_controls(columns[0])
-        # DATA / ANALYSIS / SYSTEM are rendered outside the timed fragment.
-        if not st.session_state.get("_mie_workspace_controls_external", False):
-            render_aux_workspace_controls(engine, settings, columns[1:])
+        # Keep DATA / ANALYSIS / SYSTEM beside map controls, directly above the map.
+        render_aux_workspace_controls(engine, settings, columns[1:])
     return map_values
 
 
