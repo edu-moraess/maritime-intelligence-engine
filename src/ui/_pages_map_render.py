@@ -316,7 +316,6 @@ def _render_track_chart(
     fig.update_layout(
         **_plot_layout(title, "Longitude", "Latitude"),
         height=420 if event_rows else 400,
-        showlegend=True,
         legend={"orientation": "h", "y": -0.12, "x": 0, "font": {"size": 9}},
     )
     st.plotly_chart(fig, width="stretch")
