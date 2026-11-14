@@ -518,6 +518,7 @@ The visual-identification panel previously resolved a Wikimedia image from the M
 - Require the MMSI-linked Wikidata entity's English label or alias to match the AIS vessel name after conservative normalization.
 - If AIS provides an IMO, require the Wikidata IMO property to match it.
 - Require the Wikimedia Commons file title or image description to mention the expected vessel name or IMO before downloading image bytes.
+- Mark the cache entry with a separate identity-verification flag; legacy session-cached photos without this flag are discarded instead of being rendered after deployment.
 - If any identity check fails or metadata is insufficient, suppress the image and show the existing no-verified-image fallback.
 - Show the source URL and label the rendered asset as an identity-matched image.
 
