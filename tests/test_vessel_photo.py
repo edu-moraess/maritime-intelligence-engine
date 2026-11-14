@@ -118,7 +118,8 @@ def test_commons_download_success_when_exact_identity_is_in_description():
         expected_name="HOEGH SUNRISE"
     )
     assert isinstance(photo, VesselPhoto)
-    assert photo.verified and photo.license_name == "CC BY-SA 4.0"
+    assert photo.verified and photo.identity_verified
+    assert photo.license_name == "CC BY-SA 4.0"
 
 
 def test_http_failure_soft():
@@ -168,3 +169,4 @@ def test_end_to_end_mocked_resolve_requires_all_identity_checks():
         "235102528", expected_name="Example Ship", client=client
     )
     assert photo is not None and photo.image_bytes == b"abc123"
+    assert photo.identity_verified
