@@ -285,8 +285,13 @@ def _render_sidebar(
             existing.append(default_second)
         st.session_state["monitoring_bboxes"] = tuple(existing)
         for label, bbox in zip(("a", "b"), existing):
+            # Initialize widget state once. Re-seeding these keys on every
+            # rerun overwrites the operator's selection with the active engine
+            # regions before Streamlit can process the new choice.
+            region_key = f"monitor_region_{label}"
             selected_region = region_name_for_bbox(bbox) or "Custom"
-            st.session_state[f"monitor_region_{label}"] = selected_region
+            if region_key not in st.session_state:
+                st.session_state[region_key] = selected_region
             if selected_region == "Custom":
                 for key, value in zip(
                     (
@@ -297,7 +302,8 @@ def _render_sidebar(
                     ),
                     _bbox_values(bbox),
                 ):
-                    st.session_state[key] = value
+                    if key not in st.session_state:
+                        st.session_state[key] = value
 
         with st.expander("MAP CONFIGURATION", expanded=False):
             st.caption(
