@@ -23,8 +23,22 @@ html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
 [data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
-/* Hide Streamlit's native chrome; keep the MIE command header rendered in the app body. */
-header[data-testid="stHeader"],
+/* Keep the native header shell so Streamlit's sidebar toggle remains reachable. */
+header[data-testid="stHeader"] {
+  display: block !important;
+  visibility: visible !important;
+  background: transparent !important;
+}
+
+/* Preserve the sidebar expand control across Streamlit versions. */
+button[data-testid="stSidebarCollapsedControl"],
+button[data-testid="collapsedControl"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Hide only nonessential native chrome; leave the app-management UI untouched. */
 div[data-testid="stToolbar"],
 div[data-testid="stDecoration"],
 div[data-testid="stStatusWidget"],
