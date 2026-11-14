@@ -46,13 +46,13 @@ div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, textarea { ba
 .stButton > button:hover { border-color: var(--cyan); color: var(--cyan); }
 div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
 .operational-header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding:.1rem 0 .55rem; margin-bottom:.55rem; }
-.mie-command-header { min-height:2.7rem; gap:.65rem; }
-.mie-command-identity { display:flex; flex-direction:column; gap:.18rem; min-width:0; }
-.mie-command-identity .brand { font-size:.88rem; letter-spacing:.14em; }
+.mie-command-header { min-height:2.7rem; gap:.4rem .65rem; flex-wrap:wrap; }
+.mie-command-identity { display:contents; }
+.mie-command-identity .brand { flex:0 0 100%; font-size:.88rem; letter-spacing:.14em; }
 .mie-command-identity .brand small { color:var(--muted); font-size:.62rem; }
-.mie-command-context { color:var(--muted); font:500 .58rem 'IBM Plex Mono',monospace; letter-spacing:.09em; }
-.mie-command-status { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; }
-.mie-command-status .utc { white-space:nowrap; }
+.mie-command-context { flex:1 1 auto; min-width:0; color:var(--muted); font:500 .58rem 'IBM Plex Mono',monospace; letter-spacing:.09em; }
+.mie-command-status { flex:0 1 auto; display:flex; align-items:center; justify-content:flex-end; gap:.35rem; flex-wrap:nowrap; min-width:0; }
+.mie-command-status .utc { white-space:nowrap; font-size:.58rem; }
 .brand { font-weight:700; letter-spacing:.12em; font-size:.82rem; color:var(--text); }
 .brand small { color:var(--muted); font-weight:500; letter-spacing:.04em; margin-left:.5rem; }
 .utc { color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:.68rem; }
