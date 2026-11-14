@@ -629,6 +629,105 @@ def main() -> None:
 
 
 
+    @st.fragment(run_every="2s")
+    def render_live_workspace() -> None:
+        """Refresh the active operational page while the process worker ingests AIS."""
+        active_engine = _process_engine_registry().current_engine() or engine
+        active_settings = _with_settings(
+            settings,
+            bboxes=active_engine.settings.monitoring_bboxes,
+            bbox=active_engine.settings.bbox,
+            config_error=active_engine.settings.config_error,
+        )
+        snapshot = active_engine.snapshot()
+        finite_status = active_engine.finite_collection_status()
+        if finite_status["state"] == "RUNNING":
+            st.info(
+                "FINITE AIS COLLECTION RUNNING · "
+                f"{finite_status['elapsed_seconds']:.0f}s elapsed · "
+                "waiting for real AIS reports; final count appears at completion"
+            )
+        elif finite_status["state"] == "COMPLETED":
+            received = int(finite_status["received"])
+            if received:
+                st.success(f"FINITE AIS COLLECTION COMPLETED · {received:,} real AIS reports received.")
+            else:
+                st.warning("FINITE AIS COLLECTION COMPLETED · no real AIS observations were received.")
+        elif finite_status["state"] == "FAILED":
+            st.error(f"FINITE AIS COLLECTION FAILED · {finite_status['error']}")
+
+        # Resolve navigation from current Session State on every fragment rerun.
+        # A fragment-only rerun does not re-execute main() or refresh its closure.
+        active_module = st.session_state.get("workspace_module", "Overview")
+        if active_module not in NAVIGATION:
+            active_module = "Overview"
+        active_views = NAVIGATION[active_module]
+        active_page = active_views[0]
+        if len(active_views) > 1:
+            candidate_page = st.session_state.get(
+                f"workspace_subarea_{active_module}", active_views[0]
+            )
+            active_page = candidate_page if candidate_page in active_views else active_views[0]
+
+        worker_is_active = snapshot.status.worker_state in {
+            "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
+        }
+        if snapshot.last_collection_breakdown and not worker_is_active:
+            with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
+                breakdown = snapshot.last_collection_breakdown
+                diagnostic_rows = (
+                    ("AIS stream", "ais_stream"),
+                    ("Historical restore", "historical_restore"),
+                    ("Postgres persist", "postgres_persist"),
+                    ("Region persistence", "region_persist"),
+                    ("Environmental", "environmental"),
+                    ("Recompute / ML", "recompute"),
+                    ("Findings", "findings"),
+                    ("Diagnostic overhead", "diagnostic_overhead"),
+                    ("Total", "total"),
+                )
+                for label, key in diagnostic_rows:
+                    st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
+        render_header(snapshot.status, active_page)
+
+        if snapshot.status.state != "LIVE AIS":
+            status_type = (
+                "red"
+                if snapshot.status.state in {"DISCONNECTED", "REAL AIS DATA UNAVAILABLE", "ERROR"}
+                else ""
+            )
+            notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
+
+        if active_page == "Overview":
+            render_overview(
+                active_engine,
+                snapshot,
+                active_settings,
+                workspace_controls=overview_map_controls,
+            )
+        elif active_page == "Fleet":
+            render_vessels(active_engine, snapshot, active_settings)
+        elif active_page == "Vessel Intelligence":
+            render_vessel_intelligence(active_engine, snapshot, active_settings)
+        elif active_page == "Trajectory Analysis":
+            render_trajectory_analysis(active_engine, snapshot, active_settings)
+        elif active_page == "Behavior":
+            render_behavior(active_engine, snapshot, active_settings)
+        elif active_page == "Similarity":
+            render_similarity(active_engine, snapshot, active_settings)
+        elif active_page == "Anomalies":
+            render_anomalies(active_engine, snapshot, active_settings)
+        elif active_page == "Traffic":
+            render_traffic(active_engine, snapshot, active_settings)
+        elif active_page == "Data Quality":
+            render_data_quality(active_engine, snapshot, active_settings)
+        elif active_page == "System":
+            render_system(active_engine, snapshot, active_settings)
+
+    if page != "Overview":
+        render_live_workspace()
+
+
 
 if __name__ == "__main__":
     main()
