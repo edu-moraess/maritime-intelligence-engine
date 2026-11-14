@@ -505,3 +505,22 @@ A deeper source audit identified the remaining issue: the map read the persisten
 **Preserved:** map data, target ordering, AIS collection, worker lifecycle, engine snapshots, regional isolation, map layers, and vessel intelligence calculations.
 
 **Validation status:** Source update and targeted regression checks pending. Runtime behavior must still be confirmed in the deployed Streamlit app while AIS collection is active.
+
+
+### UI follow-up — Require vessel identity corroboration before photo display
+
+**Branch:** `fix/vessel-photo-identity-validation`
+
+The visual-identification panel previously resolved a Wikimedia image from the MMSI-linked Wikidata entity and displayed its P18 image without comparing the entity's vessel name to the AIS name. The UI also did not pass an available IMO to the resolver.
+
+**Correction:**
+- Require a non-empty AIS vessel name; unknown identities do not trigger photo lookup.
+- Require the MMSI-linked Wikidata entity's English label or alias to match the AIS vessel name after conservative normalization.
+- If AIS provides an IMO, require the Wikidata IMO property to match it.
+- Require the Wikimedia Commons file title or image description to mention the expected vessel name or IMO before downloading image bytes.
+- If any identity check fails or metadata is insufficient, suppress the image and show the existing no-verified-image fallback.
+- Show the source URL and label the rendered asset as an identity-matched image.
+
+**Scope:** vessel-photo enrichment and its presentation only. AIS ingestion, map selection, session state, analytics, database, and collection lifecycle are unchanged.
+
+**Validation status:** focused mocked regression tests added. Pytest, compileall, and deployed visual validation remain pending; no production verification is claimed.
