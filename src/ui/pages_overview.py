@@ -116,9 +116,11 @@ def render_overview_workspace_controls(
     engine: MaritimeIntelligenceEngine,
     settings: AppSettings,
 ):
-    """Render map-specific controls above the map, outside the timed fragment."""
-    with st.container(key="workspace-map-controls"):
-        map_values = _render_map_controls(st.container())
+    """Render MAP CONTROLS, DATA, ANALYSIS and SYSTEM in one rail above the map."""
+    with st.container(key="workspace-controls"):
+        columns = st.columns(4)
+        map_values = _render_map_controls(columns[0])
+        render_aux_workspace_controls(engine, settings, columns[1:])
     return map_values
 
 
