@@ -563,6 +563,21 @@ def main() -> None:
                 )
         st.rerun()
 
+    # Keep navigation popovers outside the timed fragment.
+    # Otherwise its 2-second refresh can close them before mobile interaction.
+    st.session_state["_mie_workspace_controls_external"] = True
+    navigation_engine = _process_engine_registry().current_engine() or engine
+    navigation_settings = _with_settings(
+        settings,
+        bboxes=navigation_engine.settings.monitoring_bboxes,
+        bbox=navigation_engine.settings.bbox,
+        config_error=navigation_engine.settings.config_error,
+    )
+    with st.container():
+        render_aux_workspace_controls(
+            navigation_engine, navigation_settings, st.columns(3)
+        )
+
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
         """Refresh the active operational page while the process worker ingests AIS."""
@@ -603,9 +618,6 @@ def main() -> None:
             )
             active_page = candidate_page if candidate_page in active_views else active_views[0]
 
-        # Overview renders its own workspace controls; secondary pages share this rail.
-        if active_page != "Overview":
-            render_aux_workspace_controls(active_engine, active_settings, st.columns(3))
         worker_is_active = snapshot.status.worker_state in {
             "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
         }
