@@ -124,3 +124,19 @@ def test_render_vessel_map_surface_defaults_and_selection_contract():
     assert "@st.fragment\ndef _render_vessel_map" not in source
     assert 'on_select="rerun"' in source or "on_select='rerun'" in source
     assert "st.session_state.selected_mmsi = mmsi" in source
+
+
+
+def test_vessel_selectors_use_stable_keys_and_sync_shared_mmsi():
+    map_source = Path("src/ui/_pages_map_render.py").read_text(encoding="utf-8")
+    pages_source = Path("src/ui/pages_a.py").read_text(encoding="utf-8")
+
+    assert 'widget_key = "mie_selected_vessel"' in map_source
+    assert 'key=widget_key' in map_source
+    assert "on_change=_sync_selected_vessel" in map_source
+    assert "args=(widget_key,)" in map_source
+
+    assert 'widget_key = "vessels_inspect_mmsi"' in pages_source
+    assert "on_change=_sync_selected_vessel" in pages_source
+    assert "args=(widget_key,)" in pages_source
+    assert "st.session_state.selected_mmsi = selected" in pages_source
