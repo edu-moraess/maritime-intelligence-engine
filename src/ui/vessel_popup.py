@@ -498,7 +498,10 @@ def render_vessel_quick_intelligence(
     with st.expander("Visual identification", expanded=False):
         photo_key = f"vessel_photo:{mmsi}"
         photo = st.session_state.get(photo_key)
-        if photo:
+        if photo is not None and not getattr(photo, "identity_verified", False):
+            st.session_state.pop(photo_key, None)
+            photo = None
+        if photo and getattr(photo, "identity_verified", False):
             st.image(
                 photo.image_bytes,
                 caption=f"Identity-matched image · {photo.license_name} · {photo.author}",
