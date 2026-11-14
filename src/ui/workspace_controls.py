@@ -167,13 +167,13 @@ def render_aux_workspace_controls(
 ) -> None:
     """Render DATA, ANALYSIS and SYSTEM into the workspace rail."""
     with columns[0]:
-        with st.popover("DATA", use_container_width=True):
+        with st.expander("DATA", expanded=False):
             quality = engine.snapshot().quality
             st.metric("Messages", quality.messages_processed)
             st.metric("Quality", f"{quality.quality_percent:.1f}%")
             st.caption(f"Valid records · {quality.valid_records}")
     with columns[1]:
-        with st.popover("ANALYSIS", use_container_width=True):
+        with st.expander("ANALYSIS", expanded=False):
             module = st.radio(
                 "Workspace module",
                 list(NAVIGATION),
@@ -194,7 +194,7 @@ def render_aux_workspace_controls(
 
     with columns[2]:
         conn = "NOT CONFIGURED" if not settings.aisstream_api_key else engine.snapshot().status.state
-        with st.popover("SYSTEM", use_container_width=True):
+        with st.expander("SYSTEM", expanded=False):
             st.markdown(
                 f"<div class='data-label'>CONNECTION STATE</div><div class='data-value'>{conn}</div>",
                 unsafe_allow_html=True,
