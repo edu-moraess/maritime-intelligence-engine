@@ -678,6 +678,20 @@ def main() -> None:
             config_error=active_engine.settings.config_error,
         )
         snapshot = active_engine.snapshot()
+        # Resolve navigation from current Session State on every fragment rerun.
+        # A fragment-only rerun does not re-execute main() or refresh its closure.
+        active_module = st.session_state.get("workspace_module", "Overview")
+        if active_module not in NAVIGATION:
+            active_module = "Overview"
+        active_views = NAVIGATION[active_module]
+        active_page = active_views[0]
+        if len(active_views) > 1:
+            candidate_page = st.session_state.get(
+                f"workspace_subarea_{active_module}", active_views[0]
+            )
+            active_page = candidate_page if candidate_page in active_views else active_views[0]
+
+
         render_header(snapshot.status, active_page)
         finite_status = active_engine.finite_collection_status()
         if finite_status["state"] == "RUNNING":
@@ -714,20 +728,6 @@ def main() -> None:
                 )
                 for label, key in diagnostic_rows:
                     st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
-        # Resolve navigation from current Session State on every fragment rerun.
-        # A fragment-only rerun does not re-execute main() or refresh its closure.
-        active_module = st.session_state.get("workspace_module", "Overview")
-        if active_module not in NAVIGATION:
-            active_module = "Overview"
-        active_views = NAVIGATION[active_module]
-        active_page = active_views[0]
-        if len(active_views) > 1:
-            candidate_page = st.session_state.get(
-                f"workspace_subarea_{active_module}", active_views[0]
-            )
-            active_page = candidate_page if candidate_page in active_views else active_views[0]
-
-
         # Keep secondary-page workspace controls inside the same fragment as
         # the page they navigate. This avoids a split rerun boundary where the
         # top rail is rendered by the app script but its destination is refreshed
