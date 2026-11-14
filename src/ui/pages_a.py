@@ -30,6 +30,7 @@ from src.ui.pages_helpers import (
     _utc,
     _vessel_compact,
     _vessel_label,
+    _sync_selected_vessel,
 )
 
 from src.ui.presentation import (
@@ -371,21 +372,23 @@ def render_vessels(
             "selected_mmsi"
         )
 
-        index = (
-            options.index(current)
-            if current in options
-            else 0
-        )
+        widget_key = "vessels_inspect_mmsi"
+        if current in options:
+            if st.session_state.get(widget_key) != current:
+                st.session_state[widget_key] = current
+        elif st.session_state.get(widget_key) not in options:
+            st.session_state[widget_key] = options[0]
 
         selected = st.selectbox(
             "Inspect vessel",
             options,
-            index=index,
             format_func=lambda value: _vessel_label(
                 value,
                 snapshot.vessels,
             ),
-            key="vessels_inspect_mmsi",
+            key=widget_key,
+            on_change=_sync_selected_vessel,
+            args=(widget_key,),
         )
 
         st.session_state.selected_mmsi = selected
