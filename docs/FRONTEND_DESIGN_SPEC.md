@@ -377,3 +377,18 @@ Not changed:
 **Validation status:** GitHub source and commit diff were re-read and checked for the intended token/header changes. Automated tests, Python compilation, deployment and desktop/Android visual validation have not yet been run.
 
 **Current status:** UI-01 source change committed; awaiting consolidated Colab validation and visual review before UI-02.
+
+
+### UI-02 — Tactical map legend hierarchy
+
+**Code changes:**
+- Grouped the existing tactical map legend into TARGET STATUS and MOVEMENT.
+- Added the already-supported STALE target state to the legend.
+- Replaced the previous triangle glyphs with neutral status swatches; retained a ring for SELECTED and line treatments for observed tracks and heading/COG vectors.
+- Added responsive styling using the existing MIE design tokens.
+- Added a source-level unit test for legend coverage.
+
+**Preserved:**
+- No changes to vessel classification, AIS data, map layers, layer toggles, selection handling, map keys, session state, controls rail, engine or ingestion behavior.
+
+**Validation status:** Source changes and test were committed; automated tests, Python compilation, deployment and desktop/Android visual validation remain pending.
