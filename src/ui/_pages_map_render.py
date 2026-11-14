@@ -55,7 +55,12 @@ def _apply_map_selection(event) -> None:
     if mmsi.isdigit() and len(mmsi) == 9:
         if st.session_state.get("selected_mmsi") != mmsi:
             st.session_state.selected_mmsi = mmsi
-            st.rerun()
+
+
+def _dispatch_map_selection(map_key: str, selection_handler=None) -> None:
+    """Consume the chart selection only from Streamlit's user-event callback."""
+    event = st.session_state.get(map_key)
+    (selection_handler or _apply_map_selection)(event)
 
 
 def _sync_selected_vessel(widget_key: str) -> None:
@@ -690,8 +695,14 @@ def _render_vessel_map(
         )
     st.markdown(legend_markdown(), unsafe_allow_html=True)
     deck = pdk.Deck(map_style=style, initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0, bearing=0), layers=layers, tooltip={"html": TACTICAL_TOOLTIP_HTML, "style": TACTICAL_TOOLTIP_STYLE})
-    event = st.pydeck_chart(deck, width="stretch", height=580, key="operational_ais_map" if map_key == "operational_ais_map" else map_key, selection_mode="single-object", on_select="rerun")
-    (selection_handler or _apply_map_selection)(event)
+    st.pydeck_chart(
+        deck,
+        width="stretch",
+        height=580,
+        key="operational_ais_map" if map_key == "operational_ais_map" else map_key,
+        selection_mode="single-object",
+        on_select=lambda: _dispatch_map_selection(map_key, selection_handler),
+    )
     st.markdown(
         f"<div style='display:flex;justify-content:space-between;font-family:IBM Plex Mono,monospace;font-size:0.64rem;color:#79939b;letter-spacing:.06em;margin-top:.2rem'>"
         f"<span>N ▲</span><span>LAT {center_lat:.4f} · LON {center_lon:.4f}</span><span>TARGETS {len(rows)}</span></div>",
