@@ -40,6 +40,7 @@ from src.ui.pages import (
     render_vessels,
 )
 from src.ui.presentation import inject_css, notice, render_header
+from src.ui.pages_overview import render_overview_workspace_controls
 from src.ui.workspace_controls import NAVIGATION, render_aux_workspace_controls
 from src.ui.temporal import OPERATOR_TIMEZONE_OPTIONS
 
@@ -563,6 +564,26 @@ def main() -> None:
                 )
         st.rerun()
 
+    # Keep navigation mounted across every page and outside the 2-second fragment.
+    # Overview gets MAP CONTROLS in the same row; other pages retain the same
+    # DATA / ANALYSIS / SYSTEM navigation rail.
+    navigation_engine = _process_engine_registry().current_engine() or engine
+    navigation_settings = _with_settings(
+        settings,
+        bboxes=navigation_engine.settings.monitoring_bboxes,
+        bbox=navigation_engine.settings.bbox,
+        config_error=navigation_engine.settings.config_error,
+    )
+    overview_map_controls = None
+    if page == "Overview":
+        overview_map_controls = render_overview_workspace_controls(
+            navigation_engine, navigation_settings
+        )
+    else:
+        render_aux_workspace_controls(
+            navigation_engine, navigation_settings, st.columns(3)
+        )
+
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
         """Refresh the active operational page while the process worker ingests AIS."""
@@ -633,7 +654,12 @@ def main() -> None:
             notice(snapshot.status.state + ": " + snapshot.status.reason, status_type)
 
         if active_page == "Overview":
-            render_overview(active_engine, snapshot, active_settings)
+            render_overview(
+                active_engine,
+                snapshot,
+                active_settings,
+                workspace_controls=overview_map_controls,
+            )
         elif active_page == "Fleet":
             render_vessels(active_engine, snapshot, active_settings)
         elif active_page == "Vessel Intelligence":
