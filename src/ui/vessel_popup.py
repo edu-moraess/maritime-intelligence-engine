@@ -501,9 +501,10 @@ def render_vessel_quick_intelligence(
         if photo:
             st.image(
                 photo.image_bytes,
-                caption=f"Visual identification · {photo.license_name} · {photo.author}",
+                caption=f"Identity-matched image · {photo.license_name} · {photo.author}",
                 use_container_width=True,
             )
+            st.caption(f"Source · {photo.source_url}")
         elif st.button(
             "Load visual identification",
             key=f"load_photo:{mmsi}",
@@ -513,7 +514,7 @@ def render_vessel_quick_intelligence(
                 from src.enrichment.vessel_photo import resolve_vessel_photo
 
                 with st.spinner("Resolving verified vessel image…"):
-                    photo = resolve_vessel_photo(mmsi)
+                    photo = resolve_vessel_photo(mmsi, expected_name=name, imo=identity.imo)
                 if photo:
                     st.session_state[photo_key] = photo
                     st.rerun()
