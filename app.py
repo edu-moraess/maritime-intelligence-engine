@@ -664,6 +664,12 @@ def main() -> None:
 
         render_overview_map_fragment()
 
+        # On Overview, DATA / ANALYSIS / SYSTEM belong below the tactical map.
+        with st.container(key="workspace-controls"):
+            render_aux_workspace_controls(
+                navigation_engine, navigation_settings, st.columns(3)
+            )
+
 
     @st.fragment(run_every="2s")
     def render_live_workspace() -> None:
@@ -730,9 +736,11 @@ def main() -> None:
         # the page they navigate. This avoids a split rerun boundary where the
         # top rail is rendered by the app script but its destination is refreshed
         # independently every two seconds.
-        render_aux_workspace_controls(
-            active_engine, active_settings, st.columns(3)
-        )
+        if active_page != "Overview":
+            # Secondary pages keep the workspace rail at the top.
+            render_aux_workspace_controls(
+                active_engine, active_settings, st.columns(3)
+            )
 
         if snapshot.status.state != "LIVE AIS":
             status_type = (
@@ -749,6 +757,12 @@ def main() -> None:
                 active_settings,
                 workspace_controls=overview_map_controls,
             )
+            # Returning to Overview restores the DATA / ANALYSIS / SYSTEM rail
+            # below the map instead of leaving it in the secondary-page header.
+            with st.container(key="workspace-controls"):
+                render_aux_workspace_controls(
+                    active_engine, active_settings, st.columns(3)
+                )
         elif active_page == "Fleet":
             render_vessels(active_engine, snapshot, active_settings)
         elif active_page == "Vessel Intelligence":
