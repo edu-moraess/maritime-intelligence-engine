@@ -21,7 +21,8 @@ CSS = """
 }
 html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
-.block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
+/* Keep the app identity clear of Streamlit's native fixed header. */
+.block-container { max-width: 1680px; padding: 1.5rem 1rem 2rem; }
 [data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
 /* Keep Streamlit's native header, toolbar and sidebar controls available. */
 /* Only hide the decorative top stripe and footer; do not alter native navigation. */
