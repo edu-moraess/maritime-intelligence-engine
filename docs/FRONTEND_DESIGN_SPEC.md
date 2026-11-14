@@ -486,3 +486,22 @@ Source audit found that the shared vessel selector in `_pages_map_render.py` rel
 **Preserved:** AIS ingestion, collection lifecycle, worker behavior, engine snapshots, vessel ordering, map layers, session identity/isolation, analytics, persistence and database contracts.
 
 **Validation status:** Source-level regression assertions added. Pytest, compileall, Colab execution, deployed behavior and Android visual validation have not yet been run. No runtime fix is claimed until those checks are completed.
+
+
+### UI follow-up — Process map selection only on user interaction
+
+**Code change:** pending validation in the current branch.
+
+The previous stable widget-key correction did not resolve the live behavior. A screen recording showed that the vessel intelligence panels continued changing targets during AIS refreshes without a new user selection.
+
+A deeper source audit identified the remaining issue: the map read the persistent PyDeck selection state after every app rerun. Because the selection state is read-only and the underlying AIS target rows can change as new reports arrive, an old selected-object index could be resolved against a newly ordered data set.
+
+**Correction:**
+- Changed PyDeck selection handling from `on_select="rerun"` plus unconditional event consumption to a callable `on_select` callback.
+- The callback reads the chart's selection state only when Streamlit reports a user selection event.
+- Removed redundant explicit reruns from map-selection handlers; the chart callback already initiates the rerun.
+- Applied the same event-only handling to both region-local and unified map selection.
+
+**Preserved:** map data, target ordering, AIS collection, worker lifecycle, engine snapshots, regional isolation, map layers, and vessel intelligence calculations.
+
+**Validation status:** Source update and targeted regression checks pending. Runtime behavior must still be confirmed in the deployed Streamlit app while AIS collection is active.
