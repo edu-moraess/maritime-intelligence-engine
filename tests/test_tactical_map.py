@@ -127,11 +127,11 @@ def test_enrich_integrity_and_selection_helper():
         class selection:
             objects = {AIS_TARGETS_LAYER_ID: [{"mmsi": "235102528"}]}
 
-    st.session_state.selected_mmsi = "111111111"
+    st.session_state["selected_mmsi"] = "111111111"
     _apply_map_selection(EventTrack())
-    assert st.session_state.selected_mmsi == "111111111"
+    assert st.session_state["selected_mmsi"] == "111111111"
     _apply_map_selection(EventOk())
-    assert st.session_state.selected_mmsi == "235102528"
+    assert st.session_state["selected_mmsi"] == "235102528"
 
 
 def test_density_points_from_real_observations_only():
@@ -169,7 +169,7 @@ def test_density_failure_does_not_remove_essential_layer_ids():
 def test_selection_only_from_ais_targets_layer():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-    st.session_state.selected_mmsi = "000000000"
+    st.session_state["selected_mmsi"] = "000000000"
     class EventDensity:
         class selection:
             objects = {"HeatmapLayer":[{"mmsi":"111111111"}],"density":[{"mmsi":"111111111"}]}
@@ -185,34 +185,34 @@ def test_selection_only_from_ais_targets_layer():
     class EventTargetsAltKey:
         class selection:
             objects = {"ais_targets":[{"mmsi":"564130001"}]}
-    _apply_map_selection(EventDensity()); assert st.session_state.selected_mmsi == "000000000"
-    _apply_map_selection(EventPath()); assert st.session_state.selected_mmsi == "000000000"
-    _apply_map_selection(EventLine()); assert st.session_state.selected_mmsi == "000000000"
-    _apply_map_selection(EventTargets()); assert st.session_state.selected_mmsi == "564130000"
-    _apply_map_selection(EventTargetsAltKey()); assert st.session_state.selected_mmsi == "564130001"
+    _apply_map_selection(EventDensity()); assert st.session_state["selected_mmsi"] == "000000000"
+    _apply_map_selection(EventPath()); assert st.session_state["selected_mmsi"] == "000000000"
+    _apply_map_selection(EventLine()); assert st.session_state["selected_mmsi"] == "000000000"
+    _apply_map_selection(EventTargets()); assert st.session_state["selected_mmsi"] == "564130000"
+    _apply_map_selection(EventTargetsAltKey()); assert st.session_state["selected_mmsi"] == "564130001"
 
 
 def test_selection_ignores_invalid_mmsi():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-    st.session_state.selected_mmsi = "111111111"
+    st.session_state["selected_mmsi"] = "111111111"
     class EventBad:
         class selection:
             objects = {AIS_TARGETS_LAYER_ID:[{"mmsi":"ABC"},{"mmsi":"12"}]}
     _apply_map_selection(EventBad())
-    assert st.session_state.selected_mmsi == "111111111"
+    assert st.session_state["selected_mmsi"] == "111111111"
 
 
 def test_selection_handles_none_and_missing_event():
     from src.ui.pages_helpers import _apply_map_selection
     import streamlit as st
-    st.session_state.selected_mmsi = "111111111"
+    st.session_state["selected_mmsi"] = "111111111"
     _apply_map_selection(None)
-    assert st.session_state.selected_mmsi == "111111111"
+    assert st.session_state["selected_mmsi"] == "111111111"
     class Empty:
         selection = None
     _apply_map_selection(Empty())
-    assert st.session_state.selected_mmsi == "111111111"
+    assert st.session_state["selected_mmsi"] == "111111111"
 
 
 def test_ais_targets_layer_id_constant():
