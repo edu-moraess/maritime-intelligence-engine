@@ -124,14 +124,25 @@ def _render_map_controls(container) -> tuple[float, bool, str, bool, bool, bool,
     )
 
 
-def _render_workspace_controls(engine: MaritimeIntelligenceEngine, settings: AppSettings):
-    """Render map, data, analysis, and system controls in one workspace row."""
+def render_overview_workspace_controls(
+    engine: MaritimeIntelligenceEngine,
+    settings: AppSettings,
+):
+    """Render the persistent Overview control row outside the timed fragment."""
     with st.container(key="workspace-controls"):
         columns = st.columns(4)
         map_values = _render_map_controls(columns[0])
         # Keep DATA / ANALYSIS / SYSTEM beside map controls, directly above the map.
         render_aux_workspace_controls(engine, settings, columns[1:])
     return map_values
+
+
+def _render_workspace_controls(
+    engine: MaritimeIntelligenceEngine,
+    settings: AppSettings,
+):
+    """Backward-compatible wrapper for callers using the former private helper."""
+    return render_overview_workspace_controls(engine, settings)
 
 
 def _render_environmental_context(snapshot: EngineSnapshot, bboxes=None) -> None:
