@@ -450,3 +450,11 @@ The mobile screenshot showed the first line of the MIE command identity clipped 
 Adjusted the command-header layout so the MIE identity remains on its own first row, while the page context (for example, `OVERVIEW · MARITIME INTELLIGENCE`) and ingestion status/UTC clock share the following row. The status and clock remain visible; their spacing and clock font are compacted to suit the mobile viewport. No ingestion or status logic changed.
 
 **Validation:** Source committed; deployed visual confirmation remains pending.
+
+### UI follow-up — Prevent collection notices from preceding the command header
+
+**Code commit:** `faa619f998a292da268eac21857f132e8aed23f1`
+
+The mobile screenshot exposed a yellow/amber strip above the MIE identity. Source inspection identified the cause: finite-collection notices and collection diagnostics were rendered before `render_header()` inside the timed Overview and secondary-workspace fragments. Reordered presentation so the command header is rendered first and operational notices/diagnostics follow it. No notice, diagnostic, status source, collection behavior or engine logic was removed or changed.
+
+**Validation:** GitHub source ordering verified; automated tests and deployed visual confirmation remain pending.
