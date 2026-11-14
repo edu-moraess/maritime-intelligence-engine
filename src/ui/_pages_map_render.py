@@ -58,17 +58,36 @@ def _apply_map_selection(event) -> None:
             st.rerun()
 
 
+def _sync_selected_vessel(widget_key: str) -> None:
+    """Keep the shared MMSI selection synchronized with a keyed widget."""
+    selected = st.session_state.get(widget_key)
+    if selected is not None:
+        st.session_state.selected_mmsi = selected
+
+
 def _select_vessel(snapshot: EngineSnapshot, label: str) -> VesselSnapshot | None:
     if not snapshot.vessels:
         return None
     mmsis = [vessel.mmsi for vessel in snapshot.vessels]
+    widget_key = "mie_selected_vessel"
     current = st.session_state.get("selected_mmsi")
-    index = mmsis.index(current) if current in mmsis else 0
+
+    # Seed/synchronize the widget from the canonical MMSI before Streamlit
+    # instantiates it. The explicit key prevents option reordering on AIS
+    # refresh from changing the selected target.
+    if current in mmsis:
+        if st.session_state.get(widget_key) != current:
+            st.session_state[widget_key] = current
+    elif st.session_state.get(widget_key) not in mmsis:
+        st.session_state[widget_key] = mmsis[0]
+
     selected = st.selectbox(
         label,
         mmsis,
-        index=index,
         format_func=lambda value: _vessel_label(value, snapshot.vessels),
+        key=widget_key,
+        on_change=_sync_selected_vessel,
+        args=(widget_key,),
     )
     st.session_state.selected_mmsi = selected
     return next(vessel for vessel in snapshot.vessels if vessel.mmsi == selected)
