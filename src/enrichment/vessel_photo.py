@@ -2,7 +2,8 @@
 MMSI → Wikidata P587 → unique Q-ID → P18 → Commons. No fallback.
 """
 from __future__ import annotations
-import logging, re
+import logging, re, unicodedata
+from html import unescape
 from dataclasses import dataclass
 from typing import Any
 import httpx
@@ -26,9 +27,10 @@ class VesselPhoto:
     qid: str
     verified: bool = True
 
-def resolve_vessel_photo(mmsi: str, *, imo: str | None = None, client: httpx.Client | None = None) -> VesselPhoto | None:
+def resolve_vessel_photo(mmsi: str, *, expected_name: str, imo: str | None = None, client: httpx.Client | None = None) -> VesselPhoto | None:
     mmsi = str(mmsi or "").strip()
-    if not _MMSI_RE.match(mmsi):
+    expected_name = str(expected_name or "").strip()
+    if not _MMSI_RE.match(mmsi) or not expected_name or expected_name.upper() == "UNKNOWN VESSEL":
         return None
     owns = client is None
     if client is None:
@@ -39,10 +41,12 @@ def resolve_vessel_photo(mmsi: str, *, imo: str | None = None, client: httpx.Cli
             return None
         if imo and not _qid_matches_imo(client, qid, str(imo).strip()):
             return None
+        if not _qid_matches_name(client, qid, expected_name):
+            return None
         title = _fetch_p18_title(client, qid)
         if not title:
             return None
-        return _download_commons_image(client, title, qid=qid)
+        return _download_commons_image(client, title, qid=qid, expected_name=expected_name, imo=imo)
     except Exception as exc:
         logger.info("Vessel photo resolve failed for %s: %s", mmsi, type(exc).__name__)
         return None
@@ -74,6 +78,29 @@ def _qid_matches_imo(client, qid, imo):
     values = {str(b.get("imo", {}).get("value", "")).strip() for b in resp.json().get("results", {}).get("bindings", [])}
     return imo in values
 
+def _normalize_identity_text(value: str) -> str:
+    value = unicodedata.normalize("NFKD", unescape(str(value or "")))
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return re.sub(r"[^A-Z0-9]+", " ", value.upper()).strip()
+
+
+def _qid_matches_name(client, qid, expected_name):
+    """Require the MMSI-linked Wikidata entity to carry the AIS vessel name."""
+    resp = client.get(WIKIDATA_API, params={
+        "action": "wbgetentities", "ids": qid, "props": "labels|aliases",
+        "languages": "en", "format": "json",
+    })
+    if resp.status_code != 200:
+        return False
+    entity = resp.json().get("entities", {}).get(qid, {})
+    candidates = []
+    label = entity.get("labels", {}).get("en", {}).get("value")
+    if label:
+        candidates.append(label)
+    candidates.extend(alias.get("value", "") for alias in entity.get("aliases", {}).get("en", []))
+    expected = _normalize_identity_text(expected_name)
+    return bool(expected) and expected in {_normalize_identity_text(x) for x in candidates}
+
 def _fetch_p18_title(client, qid):
     resp = client.get(WIKIDATA_API, params={"action": "wbgetclaims", "entity": qid, "property": "P18", "format": "json"})
     if resp.status_code != 200:
@@ -86,7 +113,7 @@ def _fetch_p18_title(client, qid):
         return None
     return title if title.startswith("File:") else f"File:{title}"
 
-def _download_commons_image(client, file_title, *, qid):
+def _download_commons_image(client, file_title, *, qid, expected_name, imo=None):
     resp = client.get(COMMONS_API, params={"action": "query", "titles": file_title, "prop": "imageinfo",
         "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 800, "format": "json"})
     if resp.status_code != 200:
@@ -110,6 +137,12 @@ def _download_commons_image(client, file_title, *, qid):
         return str(n.get("value") if isinstance(n, dict) else n or "").strip()
     license_name = mv("LicenseShortName") or mv("UsageTerms") or "Unknown"
     author = re.sub(r"<[^>]+>", "", mv("Artist") or mv("Attribution") or "Unknown").strip() or "Unknown"
+    description = re.sub(r"<[^>]+>", " ", mv("ImageDescription"))
+    identity_text = _normalize_identity_text(f"{page.get('title', '')} {file_title} {description}")
+    name_match = _normalize_identity_text(expected_name) in identity_text
+    imo_match = bool(imo) and _normalize_identity_text(str(imo)) in identity_text
+    if not (name_match or imo_match):
+        return None
     img = client.get(url)
     if img.status_code != 200 or not img.content or len(img.content) > MAX_IMAGE_BYTES:
         return None
