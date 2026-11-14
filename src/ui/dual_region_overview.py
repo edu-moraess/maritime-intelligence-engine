@@ -12,7 +12,7 @@ from src.geospatial.map_data import filter_rows_to_bboxes, live_vessel_rows, ves
 from src.geospatial.region_membership import contains_point, belongs_to_any
 from src.intelligence.engine import EngineSnapshot, MaritimeIntelligenceEngine
 from src.ui import _pages_map_render as map_render
-from src.ui.pages_overview import _render_environmental_context, _render_workspace_controls
+from src.ui.pages_overview import _render_environmental_context, _render_map_controls
 from src.ui.pages_helpers import _render_vessel_map
 from src.ui.presentation import render_ops_bar, render_region_comparison, render_regional_events
 from src.ui.vessel_popup import render_vessel_quick_intelligence
@@ -256,7 +256,12 @@ def _render_unified_map(bboxes: tuple[RegionBBox, ...], snapshot: EngineSnapshot
                 render_vessel_quick_intelligence(selected, snapshot, show_gemini_hook=True, engine=engine)
 
 
-def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot, settings: AppSettings) -> None:
+def render_overview(
+    engine: MaritimeIntelligenceEngine,
+    snapshot: EngineSnapshot,
+    settings: AppSettings,
+    workspace_controls=None,
+) -> None:
     """Render dual-region tactical monitoring in SPLIT or UNIFIED presentation modes."""
     summary = snapshot.summary
     monitoring = tuple(settings.monitoring_bboxes)
@@ -266,7 +271,13 @@ def render_overview(engine: MaritimeIntelligenceEngine, snapshot: EngineSnapshot
     render_region_comparison(snapshot.region_comparison)
     render_regional_events(snapshot.regional_events)
     _render_environmental_context(snapshot, monitoring)
-    controls = _render_workspace_controls(engine, settings)
+    # The app mounts the persistent workspace row outside its timed fragment.
+    # Keep a map-only fallback for direct renderer callers and focused tests.
+    controls = (
+        workspace_controls
+        if workspace_controls is not None
+        else _render_map_controls(st.container())
+    )
     if len(monitoring) >= 2:
         map_mode = st.segmented_control("DISPLAY MODE", options=["SPLIT", "UNIFIED"], default="SPLIT", key="dual_region_map_mode", label_visibility="visible")
         if map_mode == "UNIFIED":
