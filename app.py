@@ -586,6 +586,41 @@ def main() -> None:
                 config_error=active_engine.settings.config_error,
             )
             snapshot = active_engine.snapshot()
+            finite_status = active_engine.finite_collection_status()
+            if finite_status["state"] == "RUNNING":
+                st.info(
+                    "FINITE AIS COLLECTION RUNNING · "
+                    f"{finite_status['elapsed_seconds']:.0f}s elapsed · "
+                    "waiting for real AIS reports; final count appears at completion"
+                )
+            elif finite_status["state"] == "COMPLETED":
+                received = int(finite_status["received"])
+                if received:
+                    st.success(f"FINITE AIS COLLECTION COMPLETED · {received:,} real AIS reports received.")
+                else:
+                    st.warning("FINITE AIS COLLECTION COMPLETED · no real AIS observations were received.")
+            elif finite_status["state"] == "FAILED":
+                st.error(f"FINITE AIS COLLECTION FAILED · {finite_status['error']}")
+
+            worker_is_active = snapshot.status.worker_state in {
+                "STARTING", "CONNECTING", "LIVE", "RECONNECTING", "DEGRADED"
+            }
+            if snapshot.last_collection_breakdown and not worker_is_active:
+                with st.expander("COLLECTION DIAGNOSTICS", expanded=True):
+                    breakdown = snapshot.last_collection_breakdown
+                    diagnostic_rows = (
+                        ("AIS stream", "ais_stream"),
+                        ("Historical restore", "historical_restore"),
+                        ("Postgres persist", "postgres_persist"),
+                        ("Region persistence", "region_persist"),
+                        ("Environmental", "environmental"),
+                        ("Recompute / ML", "recompute"),
+                        ("Findings", "findings"),
+                        ("Diagnostic overhead", "diagnostic_overhead"),
+                        ("Total", "total"),
+                    )
+                    for label, key in diagnostic_rows:
+                        st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
             render_header(snapshot.status, "Overview")
             if snapshot.status.state != "LIVE AIS":
                 status_type = (
