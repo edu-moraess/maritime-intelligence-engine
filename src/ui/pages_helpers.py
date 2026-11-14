@@ -24,6 +24,7 @@ from src.ui._pages_map_render import (  # noqa: F401
     _render_track_chart,
     _render_vessel_map,
     _select_vessel,
+    _sync_selected_vessel,
     _selected_vessel,
     _utc,
     _vessel_compact,
