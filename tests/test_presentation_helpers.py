@@ -122,7 +122,10 @@ def test_render_vessel_map_surface_defaults_and_selection_contract():
     assert "legend_markdown()" in source
     assert "if show_operational_strip:" in source
     assert "@st.fragment\ndef _render_vessel_map" not in source
-    assert 'on_select="rerun"' in source or "on_select='rerun'" in source
+    assert 'on_select=lambda: _dispatch_map_selection(map_key, selection_handler)' in source
+    assert "def _dispatch_map_selection(map_key: str, selection_handler=None)" in source
+    assert 'event = st.session_state.get(map_key)' in source
+    assert 'on_select="rerun"' not in source
     assert "st.session_state.selected_mmsi = mmsi" in source
 
 
