@@ -663,11 +663,6 @@ def main() -> None:
             )
 
         render_overview_map_fragment()
-    else:
-        render_aux_workspace_controls(
-            navigation_engine, navigation_settings, st.columns(3)
-        )
-
 
 
     @st.fragment(run_every="2s")
@@ -730,6 +725,14 @@ def main() -> None:
                 for label, key in diagnostic_rows:
                     st.caption(f"{label} · {breakdown.get(key, 0.0):.1f} s")
         render_header(snapshot.status, active_page)
+
+        # Keep secondary-page workspace controls inside the same fragment as
+        # the page they navigate. This avoids a split rerun boundary where the
+        # top rail is rendered by the app script but its destination is refreshed
+        # independently every two seconds.
+        render_aux_workspace_controls(
+            active_engine, active_settings, st.columns(3)
+        )
 
         if snapshot.status.state != "LIVE AIS":
             status_type = (
