@@ -26,6 +26,7 @@ class VesselPhoto:
     author: str
     qid: str
     verified: bool = True
+    identity_verified: bool = False
 
 def resolve_vessel_photo(mmsi: str, *, expected_name: str, imo: str | None = None, client: httpx.Client | None = None) -> VesselPhoto | None:
     mmsi = str(mmsi or "").strip()
@@ -147,4 +148,4 @@ def _download_commons_image(client, file_title, *, qid, expected_name, imo=None)
     if img.status_code != 200 or not img.content or len(img.content) > MAX_IMAGE_BYTES:
         return None
     return VesselPhoto(image_bytes=img.content, mime_type=mime, source_url=str(info.get("descriptionurl") or url),
-                       commons_title=file_title, license_name=license_name, author=author, qid=qid, verified=True)
+                       commons_title=file_title, license_name=license_name, author=author, qid=qid, verified=True, identity_verified=True)
