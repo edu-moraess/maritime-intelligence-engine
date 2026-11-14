@@ -414,3 +414,15 @@ Not changed:
 - No engine, ingestion, session, navigation, data, persistence or database behavior changed.
 
 **Validation status:** GitHub source update committed. Automated tests, Python compilation, deployment and visual confirmation on Android remain pending.
+
+### UI follow-up — Use native Streamlit header and sidebar behavior
+
+**Code commit:** `5eaadb2c35f4212f5cbff9e8ac5401e28b57c380`  
+**File changed:** `src/ui/presentation.py`
+
+- Removed the custom CSS overrides for the native Streamlit header and sidebar toggle.
+- Streamlit now controls the header visibility, appearance and sidebar expansion control using its native behavior.
+- Kept the existing rules for nonessential toolbar/decoration/status elements and footer; the Cloud app-management UI remains outside this app-level change.
+- No engine, ingestion, collection, session, data, persistence or database behavior changed.
+
+**Validation status:** Source update committed and pending visual confirmation in the deployed app, especially sidebar expansion on Android.
