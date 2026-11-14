@@ -23,19 +23,13 @@ html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
 [data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
-/* Use Streamlit's native header and sidebar toggle without overrides. */
-/* Hide only nonessential native chrome; leave the app-management UI untouched. */
-div[data-testid="stToolbar"],
+/* Keep Streamlit's native header, toolbar and sidebar controls available. */
+/* Only hide the decorative top stripe and footer; do not alter native navigation. */
 div[data-testid="stDecoration"],
-div[data-testid="stStatusWidget"],
-#MainMenu,
 footer {
   display: none !important;
   visibility: hidden !important;
   height: 0 !important;
-}
-.stAppViewContainer > .main {
-  padding-top: 0 !important;
 }
 
 h1, h2, h3 { letter-spacing: -0.02em; }
