@@ -191,7 +191,24 @@ def build_density_layer_spec(points: list[dict]) -> dict | None:
     return {"type": DENSITY_LAYER_TYPE,"data": points,"get_position": ["longitude", "latitude"],"get_fill_color": list(DENSITY_FILL_COLOR),"get_radius": DENSITY_RADIUS,"radius_min_pixels": DENSITY_RADIUS_MIN_PX,"radius_max_pixels": DENSITY_RADIUS_MAX_PX,"pickable": False}
 
 def legend_markdown():
-    return ("<div style='display:flex;flex-wrap:wrap;gap:.85rem;align-items:center;font-family:IBM Plex Mono,monospace;font-size:0.66rem;color:#79939b;letter-spacing:.05em;margin:.3rem 0 .15rem'>" "<span style='color:#d9e6e9'>VESSEL STATUS</span>" "<span><span style='color:#35c2c9'>▲</span> NORMAL</span>" "<span><span style='color:#e9b857'>▲</span> ATTENTION</span>" "<span><span style='color:#ef6b73'>▲</span> ANOMALY</span>" "<span><span style='color:#dc323c'>▲</span> CRITICAL</span>" "<span><span style='color:#ffffff'>◎</span> SELECTED</span>" "<span style='color:#d9e6e9'>━━ TRACK</span>" "<span style='color:#e9b857'>→ VECTOR</span></div>")
+    """Render a compact, grouped legend for existing tactical map symbology."""
+    return (
+        "<div class='mie-map-legend' role='group' aria-label='Map legend'>"
+        "<div class='mie-map-legend__group'>"
+        "<span class='mie-map-legend__heading'>TARGET STATUS</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch' style='--legend-color:#35c2c9'></i>NORMAL</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch' style='--legend-color:#e9b857'></i>ATTENTION</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch' style='--legend-color:#ef6b73'></i>ANOMALY</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch' style='--legend-color:#dc323c'></i>CRITICAL</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch mie-map-legend__swatch--selected'></i>SELECTED</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__swatch' style='--legend-color:#79939b'></i>STALE</span>"
+        "</div>"
+        "<div class='mie-map-legend__group'>"
+        "<span class='mie-map-legend__heading'>MOVEMENT</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__line'></i>OBSERVED TRACK</span>"
+        "<span class='mie-map-legend__item'><i class='mie-map-legend__vector'></i>HEADING / COG VECTOR</span>"
+        "</div></div>"
+    )
 
 def operational_strip(*, live_state, targets, tracks, anomalies, region):
     state_color = "#35c2c9" if "LIVE" in live_state.upper() else "#ef6b73"
