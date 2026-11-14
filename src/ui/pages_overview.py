@@ -116,12 +116,9 @@ def render_overview_workspace_controls(
     engine: MaritimeIntelligenceEngine,
     settings: AppSettings,
 ):
-    """Render the persistent Overview control row outside the timed fragment."""
-    with st.container(key="workspace-controls"):
-        columns = st.columns(4)
-        map_values = _render_map_controls(columns[0])
-        # Keep DATA / ANALYSIS / SYSTEM beside map controls, directly above the map.
-        render_aux_workspace_controls(engine, settings, columns[1:])
+    """Render map-specific controls above the map, outside the timed fragment."""
+    with st.container(key="workspace-map-controls"):
+        map_values = _render_map_controls(st.container())
     return map_values
 
 
