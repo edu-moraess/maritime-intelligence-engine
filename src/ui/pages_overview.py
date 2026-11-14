@@ -42,22 +42,13 @@ _WORKSTATION_CSS = """
     display: none !important;
 }
 
-/* Keep the three workspace controls as one equal-width horizontal rail. */
-.st-key-workspace-controls > div {
-    display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.75rem;
-    align-items: stretch;
-}
-
-.st-key-workspace-controls [data-testid="column"] {
-    min-width: 0;
-    width: 100% !important;
-    align-self: stretch;
-}
-
-.st-key-workspace-controls [data-testid="stPopover"] > button {
-    width: 100%;
+/* Native expanders replace popover portals for reliable touch interaction.
+   Preserve Streamlit's own column sizing and provide a touch-safe header. */
+.st-key-workspace-controls [data-testid="stExpander"] details > summary {
+    min-height: 2.75rem;
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+    align-items: center;
 }
 
 @media (max-width: 900px) {
@@ -68,9 +59,6 @@ _WORKSTATION_CSS = """
         margin-top: 0.75rem;
     }
 
-    .st-key-workspace-controls > div {
-        grid-template-columns: 1fr;
-    }
 }
 </style>
 """
