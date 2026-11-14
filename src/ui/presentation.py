@@ -15,9 +15,9 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
 :root {
-  --bg:#071116; --panel:#0d1c24; --panel-2:#10242d; --line:#1b3640;
-  --text:#d9e6e9; --muted:#79939b; --cyan:#35c2c9; --green:#51c79b;
-  --amber:#e9b857; --red:#ef6b73;
+  --bg:#0A1118; --panel:#111E29; --panel-2:#172733; --line:#263A47;
+  --text:#DCE5EA; --muted:#91A4B0; --cyan:#39A9C7; --green:#63A68A;
+  --amber:#D5A34A; --red:#D45B5B;
 }
 html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
@@ -37,6 +37,13 @@ div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, textarea { ba
 .stButton > button:hover { border-color: var(--cyan); color: var(--cyan); }
 div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; }
 .operational-header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding:.1rem 0 .55rem; margin-bottom:.55rem; }
+.mie-command-header { min-height:2.7rem; gap:.65rem; }
+.mie-command-identity { display:flex; flex-direction:column; gap:.18rem; min-width:0; }
+.mie-command-identity .brand { font-size:.88rem; letter-spacing:.14em; }
+.mie-command-identity .brand small { color:var(--muted); font-size:.62rem; }
+.mie-command-context { color:var(--muted); font:500 .58rem 'IBM Plex Mono',monospace; letter-spacing:.09em; }
+.mie-command-status { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; }
+.mie-command-status .utc { white-space:nowrap; }
 .brand { font-weight:700; letter-spacing:.12em; font-size:.82rem; color:var(--text); }
 .brand small { color:var(--muted); font-weight:500; letter-spacing:.04em; margin-left:.5rem; }
 .utc { color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:.68rem; }
@@ -123,6 +130,9 @@ div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(
   .block-container { padding:.65rem .55rem 1.75rem; }
   .operational-header { align-items:flex-start; gap:.4rem; }
   .brand small { display:block; margin:.12rem 0 0; }
+  .mie-command-header { flex-wrap:wrap; }
+  .mie-command-status { justify-content:flex-start; gap:.4rem; }
+  .mie-command-context { font-size:.54rem; }
 }
 </style>
 """
@@ -133,17 +143,24 @@ def inject_css() -> None:
 
 
 def render_header(status: IngestionStatus, page_name: str) -> None:
+    """Render the persistent command header from the current ingestion status."""
     state = status.state
     css_state = (
         "live" if state == "LIVE AIS"
         else "connecting" if state in {"CONNECTING", "RECONNECTING", "DEGRADED"}
         else "disconnected"
     )
-    utc_now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    utc_now = datetime.now(timezone.utc).strftime("%Y-%m-%d · %H:%M:%S UTC")
     st.markdown(
-        f"<div class='operational-header'><div><span class='brand'>MARITIME INTELLIGENCE <small>/ {escape(page_name.upper())}</small></span></div>"
-        f"<div style='display:flex;gap:.55rem;align-items:center'><span class='status-pill status-{css_state}'>{escape(state)}</span>"
-        f"<span class='utc'>{utc_now}</span></div></div>",
+        f"<div class='operational-header mie-command-header'>"
+        f"<div class='mie-command-identity'>"
+        f"<span class='brand'>MIE <small>/ ARQTECH LABS</small></span>"
+        f"<span class='mie-command-context'>{escape(page_name.upper())} · MARITIME INTELLIGENCE</span>"
+        f"</div>"
+        f"<div class='mie-command-status'>"
+        f"<span class='status-pill status-{css_state}'>{escape(state)}</span>"
+        f"<span class='utc'>{utc_now}</span>"
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
