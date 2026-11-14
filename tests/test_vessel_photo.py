@@ -85,7 +85,7 @@ def test_commons_image_requires_name_or_imo_in_file_metadata():
                 "ImageDescription": {"value": "A harbor tug boat"},
             },
         }],
-    }}})
+    }}}})
     assert _download_commons_image(
         client, "File:Generic tug.jpg", qid="Q9",
         expected_name="HOEGH SUNRISE", imo="1234567"
@@ -108,7 +108,7 @@ def test_commons_download_success_when_exact_identity_is_in_description():
                 "ImageDescription": {"value": "The HOEGH SUNRISE underway"},
             },
         }],
-    }}})
+    }}}})
     img = MagicMock()
     img.status_code = 200
     img.content = b"\\xff\\xd8\\xfffakejpeg"
@@ -160,7 +160,7 @@ def test_end_to_end_mocked_resolve_requires_all_identity_checks():
                 "ImageDescription": {"value": "Example Ship"},
             },
         }],
-    }}})
+    }}}})
     img = MagicMock()
     img.status_code = 200
     img.content = b"abc123"
