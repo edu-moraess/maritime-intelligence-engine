@@ -392,3 +392,12 @@ Not changed:
 - No changes to vessel classification, AIS data, map layers, layer toggles, selection handling, map keys, session state, controls rail, engine or ingestion behavior.
 
 **Validation status:** Source changes and test were committed; automated tests, Python compilation, deployment and desktop/Android visual validation remain pending.
+
+
+### UI-02 follow-up — Hide native Streamlit chrome
+
+- Hid the native Streamlit header, toolbar, decoration/status widgets, Main Menu and footer through presentation-layer CSS.
+- Kept the MIE command header intact because it is rendered in the application body, independently of Streamlit's native header.
+- Removed the top padding reserved for the native chrome.
+- No application controls, navigation, session state, data, or runtime behavior changed.
+- Visual confirmation in the deployed app remains pending.
