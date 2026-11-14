@@ -19,6 +19,7 @@ from src.ui.tactical_map import (
     resolve_vessel_course,
     ship_polygon,
     vessel_type_family,
+    legend_markdown,
 )
 
 
@@ -253,3 +254,14 @@ def test_visible_track_count_uses_only_current_map_targets():
     ]
 
     assert visible_track_count(rows, observations) == 1
+
+
+
+def test_map_legend_groups_status_and_movement_without_inventing_states():
+    legend = legend_markdown()
+    assert "TARGET STATUS" in legend
+    assert "MOVEMENT" in legend
+    for status in ("NORMAL", "ATTENTION", "ANOMALY", "CRITICAL", "SELECTED", "STALE"):
+        assert status in legend
+    assert "OBSERVED TRACK" in legend
+    assert "HEADING / COG VECTOR" in legend
