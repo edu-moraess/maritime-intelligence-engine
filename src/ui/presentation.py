@@ -23,7 +23,21 @@ html, body, [class*="css"] { font-family: Inter, sans-serif; }
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { max-width: 1680px; padding: .75rem 1rem 2rem; }
 [data-testid="stSidebar"] { background: #091820; border-right: 1px solid var(--line); }
-header[data-testid="stHeader"] { background: transparent; }
+/* Hide Streamlit's native chrome; keep the MIE command header rendered in the app body. */
+header[data-testid="stHeader"],
+div[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"],
+#MainMenu,
+footer {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+}
+.stAppViewContainer > .main {
+  padding-top: 0 !important;
+}
+
 h1, h2, h3 { letter-spacing: -0.02em; }
 h1 { font-size: 1.35rem !important; margin-bottom: .15rem !important; }
 h2 { font-size: 1.0rem !important; margin-top: .35rem !important; margin-bottom: .35rem !important; }
