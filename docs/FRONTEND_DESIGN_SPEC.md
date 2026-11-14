@@ -434,3 +434,11 @@ Not changed:
 The previous adjustment still hid Streamlit's toolbar and menu, which prevented the native header/navigation controls from appearing in the mobile screenshot. This follow-up removes those hiding rules and the forced zero top-padding override. Streamlit now controls its native header, toolbar and sidebar navigation. Only the decorative top stripe and footer remain hidden. The Cloud app-management control is not modified.
 
 **Validation:** GitHub source verification pending below; visual confirmation in the deployed mobile app remains pending.
+
+### UI follow-up — Prevent MIE identity clipping below native header
+
+**Code commit:** `aa051f985937160e5d8d63563623bac920c26df3`
+
+The mobile screenshot showed the first line of the MIE command identity clipped after restoring Streamlit's native header. Increased the top padding of the main Streamlit block container from `.75rem` to `1.5rem` so the application identity has breathing room below the native header. No header/sidebar controls or application behavior were changed.
+
+**Validation:** GitHub source update committed; deployed visual confirmation remains pending.
