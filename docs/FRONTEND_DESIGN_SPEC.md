@@ -356,4 +356,24 @@ The design system is considered implemented only after:
 - no unauthorized engine/data behavior has changed;
 - remaining limitations are explicitly documented.
 
-**Current status:** specification authored and stored. No UI implementation, automated test, deployment or visual validation is claimed by this document.
+## 10. Implementation log
+
+### UI-01 — Design tokens and Command Header
+
+**Code commit:** `f3dc002e9037b940689818144b228128c0754ae5`  
+**File changed:** `src/ui/presentation.py`
+
+Implemented:
+- Applied the approved base, surface, border, text, geospatial, warning, critical and operational color tokens to the existing CSS variables.
+- Reworked the shared header identity to show MIE / ARQTECH LABS and the active workspace name.
+- Expanded the UTC timestamp to include the date.
+- Added compact responsive wrapping rules for the command header.
+- Preserved the existing ingestion status as the sole source for the displayed connection state.
+
+Not changed:
+- No engine, ingestion, collection, session, persistence, analytics, model or database code.
+- No navigation keys, callbacks, fragment boundaries or workspace rail placement.
+
+**Validation status:** GitHub source and commit diff were re-read and checked for the intended token/header changes. Automated tests, Python compilation, deployment and desktop/Android visual validation have not yet been run.
+
+**Current status:** UI-01 source change committed; awaiting consolidated Colab validation and visual review before UI-02.
