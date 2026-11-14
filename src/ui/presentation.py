@@ -96,6 +96,24 @@ div[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(
 .prov-historical { color:var(--cyan); border-color:#1e4a52; background:#0b1a21; }
 .prov-derived { color:var(--amber); border-color:#5d4821; background:#17170e; }
 .prov-insufficient { color:var(--muted); border-color:var(--line); background:#0a1419; }
+.mie-map-legend {
+  display:flex; flex-wrap:wrap; align-items:center; gap:.45rem 1.1rem;
+  padding:.5rem .65rem; margin:.35rem 0 .25rem;
+  background:var(--panel); border:1px solid var(--line);
+  color:var(--muted); font:500 .58rem 'IBM Plex Mono',monospace;
+  letter-spacing:.045em;
+}
+.mie-map-legend__group { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem .7rem; }
+.mie-map-legend__heading { color:var(--text); font-size:.55rem; letter-spacing:.1em; }
+.mie-map-legend__item { display:inline-flex; align-items:center; gap:.32rem; white-space:nowrap; }
+.mie-map-legend__swatch { width:.48rem; height:.48rem; display:inline-block; background:var(--legend-color); border-radius:1px; }
+.mie-map-legend__swatch--selected { background:transparent; border:1.5px solid #fff; border-radius:50%; }
+.mie-map-legend__line { width:1rem; border-top:2px solid var(--cyan); display:inline-block; }
+.mie-map-legend__vector { width:1rem; border-top:2px dashed var(--amber); display:inline-block; }
+@media (max-width:760px) {
+  .mie-map-legend { align-items:flex-start; gap:.55rem; }
+  .mie-map-legend__group { flex-basis:100%; gap:.35rem .65rem; }
+}
 .vessel-id { margin:.1rem 0 .45rem; }
 .vessel-id .name { font:650 1.0rem Inter,sans-serif; color:var(--text); }
 .vessel-id .mmsi { font:500 .66rem 'IBM Plex Mono',monospace; color:var(--muted); letter-spacing:.06em; margin-top:.12rem; }
