@@ -426,3 +426,11 @@ Not changed:
 - No engine, ingestion, collection, session, data, persistence or database behavior changed.
 
 **Validation status:** Source update committed and pending visual confirmation in the deployed app, especially sidebar expansion on Android.
+
+### UI follow-up — Restore visible native navigation controls
+
+**Code commit:** `9ea9a06a1acc5a443e3b992ba9c0f5829a17b1f9`
+
+The previous adjustment still hid Streamlit's toolbar and menu, which prevented the native header/navigation controls from appearing in the mobile screenshot. This follow-up removes those hiding rules and the forced zero top-padding override. Streamlit now controls its native header, toolbar and sidebar navigation. Only the decorative top stripe and footer remain hidden. The Cloud app-management control is not modified.
+
+**Validation:** GitHub source verification pending below; visual confirmation in the deployed mobile app remains pending.
