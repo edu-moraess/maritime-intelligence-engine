@@ -458,3 +458,5 @@ Adjusted the command-header layout so the MIE identity remains on its own first 
 The mobile screenshot exposed a yellow/amber strip above the MIE identity. Source inspection identified the cause: finite-collection notices and collection diagnostics were rendered before `render_header()` inside the timed Overview and secondary-workspace fragments. Reordered presentation so the command header is rendered first and operational notices/diagnostics follow it. No notice, diagnostic, status source, collection behavior or engine logic was removed or changed.
 
 **Validation:** GitHub source ordering verified; automated tests and deployed visual confirmation remain pending.
+
+**Follow-up correction:** commit `6789b5df78c0c6df19a6700db36a61b985ce1c1c` keeps active-page resolution ahead of header rendering in the secondary-page fragment. This preserves the current page label while ensuring the header precedes collection notices. Source order was re-read from the branch after this correction.
